@@ -23,6 +23,15 @@ export type ComplianceTier = {
     failuresTruncated: boolean;
   } | null;
 };
+export type Cost = {
+  day: string;
+  group: string;
+  project: string;
+  currency: string;
+  cost: number;
+  unallocatedCost: number;
+  sampledHours: number;
+};
 export type Session = {
   username: string;
   organizations: { name: string; roles: string[] }[];
@@ -108,6 +117,12 @@ export class AepApi {
   compliance(org: string) {
     return this.request<{ organization: string; items: ComplianceTier[] }>(
       `/v1/organizations/${encodeURIComponent(org)}/compliance`,
+    );
+  }
+  costs(org: string, from: string, to: string, groupBy: string) {
+    const query = new URLSearchParams({ from, to, groupBy });
+    return this.request<{ items: Cost[] }>(
+      `/v1/organizations/${encodeURIComponent(org)}/costs?${query}`,
     );
   }
   changes(org: string) {

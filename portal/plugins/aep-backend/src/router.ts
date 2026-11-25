@@ -13,7 +13,7 @@ export function createRouter(options: {
     const read =
       req.method === 'GET' &&
       (/^\/v1\/me$/.test(req.path) ||
-        /^\/v1\/organizations\/[a-z0-9-]+\/(services|changes|compliance)$/.test(
+        /^\/v1\/organizations\/[a-z0-9-]+\/(services|changes|compliance|costs)$/.test(
           req.path,
         ));
     const change =
@@ -54,7 +54,9 @@ export function createRouter(options: {
         `${(read ? options.readApiUrl : options.changeApiUrl).replace(
           /\/$/,
           '',
-        )}${req.path}`,
+        )}${req.path}${
+          req.path.endsWith('/costs') ? costQuery(req.query) : ''
+        }`,
         {
           method: req.method,
           headers,
@@ -74,4 +76,12 @@ export function createRouter(options: {
     }
   });
   return router;
+}
+
+function costQuery(query: express.Request['query']) {
+  const values = new URLSearchParams();
+  for (const key of ['from', 'to', 'groupBy']) {
+    if (typeof query[key] === 'string') values.set(key, query[key] as string);
+  }
+  return `?${values}`;
 }
