@@ -123,20 +123,25 @@ for future accounting integrations, not billing implementation.
    object mutation is denied to each group. Install admission rules before granting
    access: delegated admin roles cannot expand the action allowlist or remove the
    nonprod constraints, reference ClusterAuthzRoles, or modify reserved `aep-*`
-   roles. Cascading Project/Component/Resource deletion currently requires platform
+   roles. User access is granted only after `PoliciesReady`. Cascading Project/Component/Resource deletion currently requires platform
    decommission rather than permitting potentially destructive user deletion.
-7. Run a bridge Deployment per tier on management, using only a RoleBinding in
+7. After `DataPlanesConnected`, deliver Kyverno and baseline/tier charts through
+   remote Flux HelmReleases and wait for `PoliciesReady`. Production requires
+   `spec.policy.cosignPublicKey`; its image verification always enforces. Independent
+   policy maintenance expires exceptions every minute and collects compliance
+   every five minutes. See [policies](policies.md) for configuration and publication.
+8. Run a bridge Deployment per tier on management, using only a RoleBinding in
    that tier's namespace. Mount a token Secret as a directory (never subPath),
    request 24-hour bridge tokens and renew with 12 hours remaining. Honor the
    actual API-returned expiration. Set allowed kinds and maxPreset from the tier; propagate backupPolicy as a
    managed-application annotation for subsequent Backups Plan integration.
    Both tiers retain managed services. Credential renewal runs independently of
    provisioning gates while the Organization is active.
-8. Optionally create five Keycloak groups in the existing configured realm. Group
+9. Optionally create five Keycloak groups in the existing configured realm. Group
    creation is idempotent. **TODO:** map `spec.access` external groups through the
    deployment's federation provider; no generic AD/Entra mapping is assumed.
 
-The seven conditions carry observedGeneration; errors return through the
+The eight conditions carry observedGeneration; errors return through the
 controller workqueue's exponential backoff. Successful organizations poll every
 minute for external drift and connection changes. Reconciliation never rolls back
 completed resources. aep-cp objects are written through the operator's Kubernetes

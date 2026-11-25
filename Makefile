@@ -18,7 +18,7 @@ docker-build:
 policies-render:
 	helm template test policies/app-cluster-baseline --set organizationUID=test-org > policies/app-cluster-baseline/tests/rendered.yaml
 	helm template test policies/app-cluster-nonprod > policies/app-cluster-nonprod/tests/rendered.yaml
-	helm template test policies/app-cluster-prod --set cosignPublicKey=test-render-only > policies/app-cluster-prod/tests/rendered.yaml
+	helm template test policies/app-cluster-prod --set-file cosignPublicKey=policies/app-cluster-prod/tests/cosign.pub > policies/app-cluster-prod/tests/rendered.yaml
 policies-test: policies-render
 	@command -v kyverno >/dev/null || { echo 'Install Kyverno CLI 1.19.2 to run policy tests'; exit 1; }
 	kyverno test policies/app-cluster-baseline/tests
