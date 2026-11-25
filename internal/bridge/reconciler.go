@@ -134,6 +134,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return r.reportError(ctx, c, "ApplyFailed", e)
 		}
 	}
+	if e = r.backupPlan(ctx, c, app); e != nil {
+		return r.reportError(ctx, c, "BackupPlanFailed", e)
+	}
 	// Cozystack defaults spec at admission. Hash the accepted spec, not just the request.
 	accepted, _, _ := unstructured.NestedMap(app.Object, "spec")
 	appliedHash := policy.Hash(accepted)

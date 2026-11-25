@@ -269,6 +269,7 @@ func TestBackupPolicyReference(t *testing.T) {
 	c := testClaim()
 	r, _ := harness(t, c)
 	r.Policy.BackupPolicy = "prod-default"
+	r.Policy.Backup = &policy.BackupConfig{ClassName: "aep-acme-prod", Schedule: "0 2 * * *", RetentionPolicy: "30d"}
 	c = reconcile(t, r, c)
 	if got := boundApp(t, r, c).GetAnnotations()[Domain+"backup-policy"]; got != "prod-default" {
 		t.Fatal(got)
