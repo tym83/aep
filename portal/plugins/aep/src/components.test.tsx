@@ -205,3 +205,49 @@ it('matches a Resource binding and exposes only change-request actions', async (
   expect(screen.getByRole('button', { name: 'Resize' })).toBeInTheDocument();
   expect(api.services).toHaveBeenCalledWith('acme');
 });
+
+it('shows stale compliance as unknown and renders policy counts and failures', async () => {
+  const { ComplianceSummary } = await import('./components');
+  render(
+    <ComplianceSummary
+      tier={{
+        tier: 'prod',
+        stale: true,
+        snapshot: {
+          collectedAt: '2026-11-25T00:00:00Z',
+          policies: {
+            'aep-prod-images': { pass: 4, fail: 1, warn: 0, error: 0, skip: 0 },
+          },
+          failingResources: [
+            {
+              policy: 'aep-prod-images',
+              rule: 'digest-only',
+              apiVersion: 'v1',
+              kind: 'Pod',
+              namespace: 'dp-prod',
+              name: 'orders',
+            },
+          ],
+          failuresTruncated: true,
+        },
+      }}
+    />,
+  );
+  expect(screen.getByRole('status')).toHaveTextContent('compliance is unknown');
+  expect(screen.getByRole('table')).toHaveTextContent('aep-prod-images');
+  expect(screen.getByText(/Pod dp-prod\/orders/)).toBeInTheDocument();
+  expect(screen.getByText(/first 50 failures/)).toBeInTheDocument();
+});
+
+it('does not show a successful compliance result before the first collection', async () => {
+  const { ComplianceSummary } = await import('./components');
+  render(
+    <ComplianceSummary
+      tier={{ tier: 'nonprod', stale: true, snapshot: null }}
+    />,
+  );
+  expect(
+    screen.getByText('Waiting for the first collection.'),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+});

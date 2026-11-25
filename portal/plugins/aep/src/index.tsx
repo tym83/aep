@@ -15,6 +15,7 @@ import { openChoreoAuthApiRef } from '@openchoreo/backstage-plugin';
 import { AepApi, aepApiRef } from './api';
 const infrastructure = createRouteRef();
 const changes = createRouteRef();
+const compliance = createRouteRef();
 export default createFrontendPlugin({
   pluginId: 'aep',
   extensions: [
@@ -56,6 +57,18 @@ export default createFrontendPlugin({
         routeRef: changes,
         loader: () =>
           import('./components').then(m => compatWrapper(<m.ChangesPage />)),
+      },
+    }),
+    PageBlueprint.make({
+      name: 'compliance',
+      params: {
+        path: '/aep/compliance',
+        title: 'Compliance',
+        icon: <AssignmentIcon />,
+        noHeader: true,
+        routeRef: compliance,
+        loader: () =>
+          import('./components').then(m => compatWrapper(<m.CompliancePage />)),
       },
     }),
     EntityCardBlueprint.make({
