@@ -1,0 +1,13 @@
+[
+ {"apiVersion":"aep.aenix.io/v1alpha1","kind":"RateCard","metadata":{"name":"nov"},"spec":{"effectiveFrom":"2026-11-01T00:00:00Z","currency":"USD","vcpuHour":1,"memoryGiBHour":0.1,"storageGiBMonth":{"fast":0.72},"gpuHour":{"nvidia.com/A100":2},"externalIPMonth":72,"bucketGiBMonth":0.72,"shared":{"management":{"monthly":720,"allocationKey":"equal"},"aep-cp":{"monthly":720,"allocationKey":"resourceShare"}}}},
+ {"apiVersion":"aep.aenix.io/v1alpha1","kind":"Organization","metadata":{"name":"acme"},"spec":{"tiers":{"prod":{}}}},
+ {"apiVersion":"aep.aenix.io/v1alpha1","kind":"Organization","metadata":{"name":"beta"},"spec":{"tiers":{"nonprod":{}}}},
+ {"apiVersion":"instancetype.kubevirt.io/v1beta1","kind":"VirtualMachineClusterInstancetype","metadata":{"name":"u1.large"},"spec":{"cpu":{"guest":2},"memory":{"guest":"8Gi"}}},
+ {"apiVersion":"kubevirt.io/v1","kind":"VirtualMachine","metadata":{"name":"worker","namespace":"tenant-acme-prod"},"spec":{"instancetype":{"name":"u1.large"},"template":{"spec":{"domain":{"devices":{"gpus":[{"deviceName":"nvidia.com/A100"}]}}}}}},
+ {"apiVersion":"v1","kind":"Pod","metadata":{"name":"virt-launcher-worker","namespace":"tenant-acme-prod","labels":{"kubevirt.io":"virt-launcher"}},"spec":{"containers":[{"name":"compute","resources":{"requests":{"cpu":"200m","memory":"1Gi"}}}]}},
+ {"apiVersion":"apps.cozystack.io/v1alpha1","kind":"Postgres","metadata":{"name":"db","namespace":"tenant-beta-nonprod","labels":{"aep.aenix.io/project":"orders","aep.aenix.io/resource":"database","aep.aenix.io/environment":"dev"}}},
+ {"apiVersion":"v1","kind":"Pod","metadata":{"name":"postgres-db-1","namespace":"tenant-beta-nonprod","labels":{"cnpg.io/cluster":"postgres-db"}},"spec":{"containers":[{"name":"postgres","resources":{"requests":{"cpu":"500m","memory":"2Gi"}}}]}},
+ {"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"name":"disk","namespace":"tenant-acme-prod"},"spec":{"storageClassName":"fast","resources":{"requests":{"storage":"100Gi"}}}},
+ {"apiVersion":"v1","kind":"Service","metadata":{"name":"public","namespace":"tenant-beta-nonprod"},"status":{"loadBalancer":{"ingress":[{"ip":"192.0.2.1"}]}}},
+ {"apiVersion":"apps.cozystack.io/v1alpha1","kind":"Bucket","metadata":{"name":"assets","namespace":"tenant-beta-nonprod","annotations":{"aep.aenix.io/bucket-used-bytes":"10Gi"}}}
+]
