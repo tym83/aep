@@ -132,6 +132,14 @@ func EvaluateApprovals(spec api.ChangeRequestSpec, approvals []api.ChangeApprova
 	}
 	var decisions []eligible
 	for _, a := range approvals {
+		// Standard changes approve themselves; the controller vetted the
+		// template before recording the approval.
+		if a.Role == RoleStandard && a.Source == "system" {
+			if a.Decision == DecisionApprove {
+				decisions = append(decisions, eligible{a, RoleStandard})
+			}
+			continue
+		}
 		if a.User == spec.Requester || IsServiceAccount(a.User) {
 			continue
 		}

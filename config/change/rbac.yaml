@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aep-change-controller
+  namespace: aep-system
+---
+# The controller reconciles ChangeRequests of every organization and holds a
+# per-binding Lease during applies; enumeration is explicit, no wildcards.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-change-controller
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests]
+    verbs: [get, list, watch]
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests/status]
+    verbs: [get, update, patch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update, delete]
+  # Per-organization OpenChoreo client credentials, read at use time.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-change-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-change-controller
+subjects:
+  - kind: ServiceAccount
+    name: aep-change-controller
+    namespace: aep-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aep-change-api
+  namespace: aep-system
+---
+# The API records requests and human decisions; it never applies anything.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-change-api
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests]
+    verbs: [get, list, create]
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests/status]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-change-api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-change-api
+subjects:
+  - kind: ServiceAccount
+    name: aep-change-api
+    namespace: aep-system
