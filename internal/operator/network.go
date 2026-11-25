@@ -44,7 +44,13 @@ func RenderNetwork(o *api.Organization, svc *corev1.Service, cluster string) ([]
 	if port <= 0 || svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
 		return nil, fmt.Errorf("gateway mirror requires numeric targetPort on TCP 8443 and ClusterIP")
 	}
-	selected := svc.Spec.Selector["cluster.x-k8s.io/cluster-name"]
+	// KubeVirt's cloud controller mirrors tenant LoadBalancer Services without
+	// a selector and manages the endpoints itself; the owning cluster is
+	// recorded as a label. Fall back to the selector for other providers.
+	selected := svc.Labels["cluster.x-k8s.io/cluster-name"]
+	if selected == "" {
+		selected = svc.Spec.Selector["cluster.x-k8s.io/cluster-name"]
+	}
 	if selected != "kubernetes-"+cluster {
 		return nil, fmt.Errorf("gateway mirror VM selector does not match configured aep-cp cluster")
 	}

@@ -334,3 +334,17 @@ func TestReplaceOwnedSpecRemovesDroppedKeys(t *testing.T) {
 		t.Fatal("fields not set by the operator must be kept")
 	}
 }
+
+func TestRenderNetworkUsesClusterLabelOfSelectorlessMirror(t *testing.T) {
+	o := &api.Organization{}
+	o.Name = "acme"
+	svc := &corev1.Service{}
+	svc.Namespace = "tenant-aep-cp"
+	svc.Labels = map[string]string{"cluster.x-k8s.io/cluster-name": "kubernetes-aepcp"}
+	svc.Spec.ClusterIP = "10.96.57.50"
+	svc.Spec.Ports = []corev1.ServicePort{{Port: 8443, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt32(30268)}}
+	objs, err := RenderNetwork(o, svc, "aepcp")
+	if err != nil || len(objs) != 2 {
+		t.Fatalf("expected two policies, got %v, %v", objs, err)
+	}
+}
