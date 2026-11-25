@@ -196,7 +196,7 @@
                                     "Redis"
                                   ]
                                 },
-                                "uniqueItems": true
+                                "x-kubernetes-list-type": "set"
                               },
                               "maxPreset": {
                                 "type": "string"
@@ -277,7 +277,7 @@
                                     "Redis"
                                   ]
                                 },
-                                "uniqueItems": true
+                                "x-kubernetes-list-type": "set"
                               },
                               "maxPreset": {
                                 "type": "string"
