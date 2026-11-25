@@ -2,11 +2,13 @@ package operator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"slices"
@@ -34,9 +36,10 @@ type session struct {
 
 var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady"}
 
-func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(m).For(&api.Organization{}).Complete(r)
+func retryLimiter() workqueue.TypedRateLimiter[ctrl.Request] {
+	return workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](5*time.Millisecond, 2*time.Minute)
 }
+
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	o := &api.Organization{}
 	if e := r.Get(ctx, req.NamespacedName, o); e != nil {
@@ -94,7 +97,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	for index, step := range steps {
 		err := step.run(ctx)
 		if err != nil {
-			setCondition(o, step.name, false, "Retrying", err.Error())
+			var waiting *pendingError
+			reason := "Retrying"
+			if errors.As(err, &waiting) {
+				reason = "Pending"
+			}
+			setCondition(o, step.name, false, reason, err.Error())
 			for _, dependent := range steps[index+1:] {
 				if dependent.name != step.name {
 					setCondition(o, dependent.name, false, "DependencyPending", "Waiting for "+step.name)
@@ -103,6 +111,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			o.Status.Phase = "Pending"
 			if e := r.Status().Update(ctx, o); e != nil {
 				return ctrl.Result{}, e
+			}
+			if waiting != nil {
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 			}
 			return ctrl.Result{}, fmt.Errorf("%s: %w", step.name, err)
 		}

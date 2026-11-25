@@ -142,7 +142,14 @@ func ready(u *unstructured.Unstructured) bool {
 	}
 	return false
 }
-func pending(format string, a ...any) error { return fmt.Errorf(format, a...) }
+
+type pendingError struct{ message string }
+
+func (e *pendingError) Error() string { return e.message }
+
+func pending(format string, a ...any) error {
+	return &pendingError{message: fmt.Sprintf(format, a...)}
+}
 
 const appsAPI = "apps.cozystack.io/v1alpha1"
 const helmAPI = "helm.toolkit.fluxcd.io/v2"
