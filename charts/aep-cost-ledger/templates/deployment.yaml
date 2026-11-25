@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: ledger
+          image: {{ .Values.image | quote }}
+          args:
+            - {{ printf "--installation=%s" .Values.installation | quote }}
+            - {{ printf "--tier-opencost-url-template=%s" .Values.tierOpenCostURLTemplate | quote }}
+            - {{ printf "--s3-tls=%t" .Values.s3TLS | quote }}
+            - {{ printf "--s3-region=%s" .Values.s3Region | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ required "credentialsSecret required" .Values.credentialsSecret | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
