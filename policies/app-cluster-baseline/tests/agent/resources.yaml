@@ -1,0 +1,19 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "spoofed",
+    "namespace": "apps",
+    "labels": {
+      "openchoreo.dev/organization": "victim"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:v1"
+      }
+    ]
+  }
+}

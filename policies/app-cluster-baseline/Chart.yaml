@@ -1,0 +1,4 @@
+apiVersion: v2
+name: app-cluster-baseline
+version: 0.1.0
+description: AEP workload safety, ownership and isolation policies

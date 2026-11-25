@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-cost-labels
+spec:
+  validationFailureAction: {{ .Values.mode | title }}
+  background: false
+  rules:
+    - name: organization-namespace-label
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              names: [aep-system, openchoreo-data-plane]
+          - resources:
+              kinds: [Namespace]
+              selector:
+                matchLabels:
+                  app.kubernetes.io/managed-by: aep
+          - resources:
+              kinds: [Namespace]
+            subjects:
+              - kind: ServiceAccount
+                namespace: aep-system
+                name: aep-operator
+      validate:
+        message: AEP namespaces must carry the organization UID for cost attribution.
+        pattern:
+          metadata:
+            labels:
+              aep.aenix.io/organization: {{ required "organizationUID is required" .Values.organizationUID | quote }}

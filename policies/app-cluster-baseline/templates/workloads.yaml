@@ -1,0 +1,63 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-baseline
+spec:
+  validationFailureAction: {{ .Values.mode | title }}
+  background: true
+  rules:
+    - name: no-host-access
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Host namespaces and hostPath volumes are forbidden.
+        pattern:
+          spec:
+            =(hostNetwork): false
+            =(hostPID): false
+            =(hostIPC): false
+            =(volumes):
+              - X(hostPath): "null"
+    - name: safe-containers
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Containers need CPU and memory limits and cannot be privileged or use latest.
+        foreach:
+          - list: request.object.spec.[containers, initContainers, ephemeralContainers][]
+            pattern:
+              image: "!*:latest"
+              =(securityContext):
+                =(privileged): false
+              resources:
+                limits:
+                  cpu: "?*"
+                  memory: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-registry
+spec:
+  validationFailureAction: {{ if .Values.registries }}{{ .Values.mode | title }}{{ else }}Audit{{ end }}
+  background: true
+  rules:
+    - name: allowed-registries
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Image registry is not in the organization allow-list (an empty list is audit only).
+        foreach:
+          - list: request.object.spec.[containers, initContainers, ephemeralContainers][]
+            deny:
+              conditions:
+                all:
+                  - key: {{ "{{ regex_replace_all('^([^/]+).*$' , element.image, '${1}') }}" | quote }}
+                    operator: AnyNotIn
+                    value: {{ .Values.registries | toJson }}

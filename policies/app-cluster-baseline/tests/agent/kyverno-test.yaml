@@ -1,0 +1,26 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Test",
+  "metadata": {
+    "name": "agent"
+  },
+  "policies": [
+    "../rendered.yaml"
+  ],
+  "resources": [
+    "resources.yaml"
+  ],
+  "variables": "variables.yaml",
+  "userinfo": "userinfo.yaml",
+  "results": [
+    {
+      "policy": "aep-openchoreo-labels",
+      "rule": "reserved-labels",
+      "resources": [
+        "spoofed"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Test",
+  "metadata": {
+    "name": "aep-prod"
+  },
+  "policies": [
+    "rendered.yaml"
+  ],
+  "resources": [
+    "resources.yaml"
+  ],
+  "results": [
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "safe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "unsafe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "digest"
+      ],
+      "kind": "Pod",
+      "result": "pass"
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Test",
+  "metadata": {
+    "name": "isolation"
+  },
+  "policies": [
+    "../rendered.yaml"
+  ],
+  "resources": [
+    "resources.yaml"
+  ],
+  "variables": "variables.yaml",
+  "userinfo": "userinfo.yaml",
+  "results": [
+    {
+      "policy": "aep-openchoreo-labels",
+      "rule": "reserved-labels",
+      "resources": [
+        "spoofed"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-labels",
+      "rule": "reserved-labels",
+      "resources": [
+        "dp-workload"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-openchoreo-labels",
+      "rule": "reserved-labels",
+      "resources": [
+        "spoofed-template"
+      ],
+      "kind": "Deployment",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "outside-httproute"
+      ],
+      "kind": "HTTPRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "inside-httproute"
+      ],
+      "kind": "HTTPRoute",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "other-httproute"
+      ],
+      "kind": "HTTPRoute",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "implicit-httproute"
+      ],
+      "kind": "HTTPRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "outside-tlsroute"
+      ],
+      "kind": "TLSRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "inside-tlsroute"
+      ],
+      "kind": "TLSRoute",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "other-tlsroute"
+      ],
+      "kind": "TLSRoute",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "implicit-tlsroute"
+      ],
+      "kind": "TLSRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "outside-grpcroute"
+      ],
+      "kind": "GRPCRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "inside-grpcroute"
+      ],
+      "kind": "GRPCRoute",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "other-grpcroute"
+      ],
+      "kind": "GRPCRoute",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-openchoreo-routes",
+      "rule": "reserved-gateway",
+      "resources": [
+        "implicit-grpcroute"
+      ],
+      "kind": "GRPCRoute",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-cost-labels",
+      "rule": "organization-namespace-label",
+      "resources": [
+        "aep-system"
+      ],
+      "kind": "Namespace",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-cost-labels",
+      "rule": "organization-namespace-label",
+      "resources": [
+        "marked"
+      ],
+      "kind": "Namespace",
+      "result": "pass"
+    }
+  ]
+}
