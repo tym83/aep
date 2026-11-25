@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aep-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: aep-operator}
+  template:
+    metadata:
+      labels: {app: aep-operator}
+    spec:
+      serviceAccountName: aep-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: operator
+          image: {{ .Values.image | quote }}
+          args:
+            - {{ printf "--namespace=%s" .Release.Namespace | quote }}
+            - {{ printf "--bridge-image=%s" .Values.bridgeImage | quote }}
+            - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}
+            - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
+            - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}
+            - {{ printf "--gateway-host-template=%s" .Values.gatewayHostTemplate | quote }}
+            - {{ printf "--tenant-egress-workaround=%t" .Values.tenantEgressWorkaround | quote }}
+            - {{ printf "--keycloak-enabled=%t" .Values.keycloak.enabled | quote }}
+            {{- if .Values.keycloak.enabled }}
+            - {{ printf "--keycloak-url=%s" .Values.keycloak.url | quote }}
+            - {{ printf "--keycloak-realm=%s" .Values.keycloak.realm | quote }}
+            - {{ printf "--keycloak-credentials-secret=%s" .Values.keycloak.credentialsSecret | quote }}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8081}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8081}

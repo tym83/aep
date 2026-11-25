@@ -1,0 +1,64 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-outputs
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [secrets, services]
+      - apiGroups: [discovery.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [endpointslices]
+  matchConditions:
+    - name: bridge-identity
+      expression: "request.userInfo.username == 'system:serviceaccount:{{ .Values.bridgeNamespace }}:{{ .Values.bridgeServiceAccount }}'"
+  validations:
+    - expression: "request.namespace.startsWith('dp-')"
+      message: Bridge outputs must be in dp- namespaces.
+    - expression: "has(object.metadata.labels) && 'aep.aenix.io/managed-by' in object.metadata.labels && object.metadata.labels['aep.aenix.io/managed-by'] == 'bridge'"
+      message: New objects must carry the bridge management label.
+    - expression: "oldObject == null || (has(oldObject.metadata.labels) && 'aep.aenix.io/managed-by' in oldObject.metadata.labels && oldObject.metadata.labels['aep.aenix.io/managed-by'] == 'bridge')"
+      message: The bridge may not adopt an existing unmanaged object.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-outputs
+spec:
+  policyName: {{ .Release.Name }}-outputs
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-writers
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [aep.aenix.io]
+        apiVersions: [v1alpha1]
+        operations: [CREATE, UPDATE]
+        resources: [serviceclaims]
+  validations:
+    - expression: "request.namespace.startsWith('dp-')"
+      message: ServiceClaims must be in dp- namespaces.
+    # The bridge must update finalizers; only the agent may create or change spec.
+    - expression: >-
+        request.userInfo.username == 'system:serviceaccount:{{ .Values.agentNamespace }}:{{ .Values.agentServiceAccount }}' ||
+        (request.userInfo.username == 'system:serviceaccount:{{ .Values.bridgeNamespace }}:{{ .Values.bridgeServiceAccount }}' &&
+         request.operation == 'UPDATE' && object.spec == oldObject.spec)
+      message: Only the OpenChoreo agent may create or change a ServiceClaim spec.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-writers
+spec:
+  policyName: {{ .Release.Name }}-writers
+  validationActions: [Deny]

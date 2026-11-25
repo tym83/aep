@@ -1,0 +1,398 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-platform-protected
+  namespace: acme
+spec:
+  actions:
+  - environment:create
+  - environment:update
+  - environment:delete
+  - dataplane:create
+  - dataplane:update
+  - dataplane:delete
+  - deploymentpipeline:create
+  - deploymentpipeline:update
+  - deploymentpipeline:delete
+  - observabilityplane:create
+  - observabilityplane:update
+  - observabilityplane:delete
+  - componenttype:create
+  - componenttype:update
+  - componenttype:delete
+  - trait:create
+  - trait:update
+  - trait:delete
+  - resourcetype:create
+  - resourcetype:update
+  - resourcetype:delete
+  - workflow:create
+  - workflow:update
+  - workflow:delete
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-developer
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+  - project:create
+  - project:update
+  - component:create
+  - component:update
+  - resource:create
+  - resource:update
+  - releasebinding:create
+  - releasebinding:update
+  - releasebinding:delete
+  - resourcereleasebinding:create
+  - resourcereleasebinding:update
+  - resourcereleasebinding:delete
+  - projectreleasebinding:create
+  - projectreleasebinding:update
+  - projectreleasebinding:delete
+  - endpointreleasebinding:create
+  - endpointreleasebinding:update
+  - endpointreleasebinding:delete
+  - component:exec
+  - logs:view
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-developer
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: groups
+    value: aep-acme-developer
+  roleMappings:
+  - conditions:
+    - actions:
+      - releasebinding:create
+      - releasebinding:update
+      - releasebinding:delete
+      - resourcereleasebinding:create
+      - resourcereleasebinding:update
+      - resourcereleasebinding:delete
+      - projectreleasebinding:create
+      - projectreleasebinding:update
+      - projectreleasebinding:delete
+      - endpointreleasebinding:create
+      - endpointreleasebinding:update
+      - endpointreleasebinding:delete
+      - component:exec
+      - logs:view
+      expression: resource.environment in ["acme/dev"]
+    roleRef:
+      kind: AuthzRole
+      name: aep-developer
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-developer-deny-platform
+  namespace: acme
+spec:
+  effect: deny
+  entitlement:
+    claim: groups
+    value: aep-acme-developer
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-platform-protected
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-platform
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+  - project:create
+  - project:update
+  - component:create
+  - component:update
+  - resource:create
+  - resource:update
+  - releasebinding:create
+  - releasebinding:update
+  - releasebinding:delete
+  - resourcereleasebinding:create
+  - resourcereleasebinding:update
+  - resourcereleasebinding:delete
+  - projectreleasebinding:create
+  - projectreleasebinding:update
+  - projectreleasebinding:delete
+  - endpointreleasebinding:create
+  - endpointreleasebinding:update
+  - endpointreleasebinding:delete
+  - component:exec
+  - logs:view
+  - secretreference:create
+  - secretreference:update
+  - secretreference:delete
+  - workflowrun:create
+  - workflowrun:update
+  - workflowrun:delete
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-platform
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: groups
+    value: aep-acme-platform
+  roleMappings:
+  - conditions:
+    - actions:
+      - releasebinding:create
+      - releasebinding:update
+      - releasebinding:delete
+      - resourcereleasebinding:create
+      - resourcereleasebinding:update
+      - resourcereleasebinding:delete
+      - projectreleasebinding:create
+      - projectreleasebinding:update
+      - projectreleasebinding:delete
+      - endpointreleasebinding:create
+      - endpointreleasebinding:update
+      - endpointreleasebinding:delete
+      - component:exec
+      - logs:view
+      expression: resource.environment in ["acme/dev"]
+    roleRef:
+      kind: AuthzRole
+      name: aep-platform
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-platform-deny-platform
+  namespace: acme
+spec:
+  effect: deny
+  entitlement:
+    claim: groups
+    value: aep-acme-platform
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-platform-protected
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-approver
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-approver
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: groups
+    value: aep-acme-approver
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-approver
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-approver-deny-platform
+  namespace: acme
+spec:
+  effect: deny
+  entitlement:
+    claim: groups
+    value: aep-acme-approver
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-platform-protected
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-admin
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+  - authzrole:create
+  - authzrole:update
+  - authzrole:delete
+  - authzrolebinding:create
+  - authzrolebinding:update
+  - authzrolebinding:delete
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-admin
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: groups
+    value: aep-acme-admin
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-admin
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-admin-deny-platform
+  namespace: acme
+spec:
+  effect: deny
+  entitlement:
+    claim: groups
+    value: aep-acme-admin
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-platform-protected
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-auditor
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-auditor
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: groups
+    value: aep-acme-auditor
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-auditor
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-auditor-deny-platform
+  namespace: acme
+spec:
+  effect: deny
+  entitlement:
+    claim: groups
+    value: aep-acme-auditor
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-platform-protected
+---

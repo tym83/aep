@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.bridgeNamespace }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.bridgeServiceAccount }}
+  namespace: {{ .Values.bridgeNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Values.bridgeServiceAccount }}
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [serviceclaims, serviceclaims/status, serviceclaims/finalizers]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [""]
+    resources: [secrets, services]
+    verbs: [get, create, patch, update]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, create, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Values.bridgeServiceAccount }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Values.bridgeServiceAccount }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.bridgeServiceAccount }}
+    namespace: {{ .Values.bridgeNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-agent
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [serviceclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Name }}-agent
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.agentServiceAccount }}
+    namespace: {{ .Values.agentNamespace }}

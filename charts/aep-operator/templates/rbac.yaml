@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aep-operator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-operator
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [organizations, organizations/status, organizations/finalizers]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [apps.cozystack.io]
+    resources: [tenants, kuberneteses, kubernetesnodeses]
+    verbs: [get, list, create, update, patch, delete]
+  # These rights are also delegated to namespace-scoped bridge Roles.
+  - apiGroups: [apps.cozystack.io]
+    resources: [postgreses, redises]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [core.cozystack.io]
+    resources: [tenantsecrets]
+    verbs: [get, list, watch]
+  - apiGroups: [backups.cozystack.io]
+    resources: [backups]
+    verbs: [get, list]
+  - apiGroups: [kamaji.clastix.io]
+    resources: [tenantcontrolplanes]
+    verbs: [get]
+  - apiGroups: [helm.toolkit.fluxcd.io]
+    resources: [helmreleases]
+    verbs: [get, list, watch, create, patch, delete]
+  - apiGroups: [source.toolkit.fluxcd.io]
+    resources: [ocirepositories]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [cilium.io]
+    resources: [ciliumclusterwidenetworkpolicies]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets, configmaps, serviceaccounts]
+    verbs: [get, list, create, patch, delete]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-operator
+subjects:
+  - kind: ServiceAccount
+    name: aep-operator
+    namespace: {{ .Release.Namespace }}

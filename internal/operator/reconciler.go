@@ -1,0 +1,122 @@
+package operator
+
+import (
+	"context"
+	"fmt"
+	api "github.com/tym83/aep/api/v1alpha1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"slices"
+	"time"
+)
+
+type Options struct {
+	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
+	TenantEgressWorkaround, KeycloakEnabled                                               bool
+	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
+}
+type Reconciler struct {
+	client.Client
+	Management *Cluster
+	Options    Options
+	Recorder   record.EventRecorder
+}
+type session struct {
+	r       *Reconciler
+	o       *api.Organization
+	cp      *Cluster
+	tiers   map[string]*Cluster
+	gateway string
+}
+
+var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady"}
+
+func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(m).For(&api.Organization{}).Complete(r)
+}
+func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	o := &api.Organization{}
+	if e := r.Get(ctx, req.NamespacedName, o); e != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(e)
+	}
+	if !o.DeletionTimestamp.IsZero() {
+		return r.finalize(ctx, o)
+	}
+	s := &session{r: r, o: o, tiers: map[string]*Cluster{}}
+	if slices.Contains(o.Finalizers, finalizer) {
+		if e := s.renewCredentials(ctx); e != nil {
+			setCondition(o, "BridgesReady", false, "CredentialRenewalFailed", e.Error())
+			if err := r.Status().Update(ctx, o); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{}, e
+		}
+
+	}
+	if e := Validate(o); e != nil {
+		for _, t := range conditionTypes {
+			setCondition(o, t, false, "InvalidSpec", e.Error())
+		}
+		o.Status.Phase = "Rejected"
+		return ctrl.Result{}, r.Status().Update(ctx, o)
+	}
+	if !slices.Contains(o.Finalizers, finalizer) {
+		base := o.DeepCopy()
+		o.Finalizers = append(o.Finalizers, finalizer)
+		if e := r.Patch(ctx, o, client.MergeFrom(base)); e != nil {
+			return ctrl.Result{}, e
+		}
+	}
+	steps := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{"TenantsReady", s.tenants},
+		// Root etcd must be reachable before a control plane can become Ready.
+		{"NetworkPathsReady", s.workaround},
+		{"ClustersReady", s.clusters},
+		{"NetworkPathsReady", s.network},
+		{"DataPlanesConnected", s.delivery},
+		{"OpenChoreoNamespaceReady", s.openChoreo},
+		{"AccessReady", s.access},
+		{"DataPlanesConnected", s.connected},
+		{"BridgesReady", s.bridges},
+	}
+	o.Status.Phase = "Reconciling"
+	for _, t := range conditionTypes {
+		if c := meta.FindStatusCondition(o.Status.Conditions, t); c == nil || c.ObservedGeneration != o.Generation {
+			setCondition(o, t, false, "Pending", "Waiting for dependencies")
+		}
+	}
+	for index, step := range steps {
+		err := step.run(ctx)
+		if err != nil {
+			setCondition(o, step.name, false, "Retrying", err.Error())
+			for _, dependent := range steps[index+1:] {
+				if dependent.name != step.name {
+					setCondition(o, dependent.name, false, "DependencyPending", "Waiting for "+step.name)
+				}
+			}
+			o.Status.Phase = "Pending"
+			if e := r.Status().Update(ctx, o); e != nil {
+				return ctrl.Result{}, e
+			}
+			return ctrl.Result{}, fmt.Errorf("%s: %w", step.name, err)
+		}
+		if index != 1 && index != 4 {
+			setCondition(o, step.name, true, "Reconciled", "Desired state verified")
+		}
+	}
+	o.Status.Phase = "Ready"
+	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
+}
+func setCondition(o *api.Organization, t string, ok bool, reason, msg string) {
+	status := metav1.ConditionFalse
+	if ok {
+		status = metav1.ConditionTrue
+	}
+	meta.SetStatusCondition(&o.Status.Conditions, metav1.Condition{Type: t, Status: status, ObservedGeneration: o.Generation, Reason: reason, Message: msg})
+}

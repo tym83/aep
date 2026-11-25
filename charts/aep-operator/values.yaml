@@ -1,0 +1,12 @@
+image: ghcr.io/tym83/aep-operator:0.1.0
+bridgeImage: ghcr.io/tym83/aep-bridge:0.1.0
+aepcpKubeconfigSecret: ""
+aepcpTenantNamespace: tenant-aep-cp
+aepcpCluster: aepcp
+gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
+tenantEgressWorkaround: true
+keycloak:
+  enabled: false
+  url: ""
+  realm: ""
+  credentialsSecret: ""

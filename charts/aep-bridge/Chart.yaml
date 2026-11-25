@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aep-bridge
+description: AEP bridge for one organization and tier on the management cluster
+type: application
+version: 0.1.0
+appVersion: 0.1.0
