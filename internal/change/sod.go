@@ -33,6 +33,40 @@ func GroupCreators(org string) []string {
 	return []string{"aep-" + org + "-developer", "aep-" + org + "-platform", "aep-" + org + "-admin"}
 }
 
+// OrgNamespace maps an organization to its management namespace.
+func OrgNamespace(template, org string) string {
+	if template == "" {
+		template = "tenant-{org}"
+	}
+	return strings.ReplaceAll(template, "{org}", org)
+}
+
+// CanCreate reports whether the groups may request changes for the org.
+func CanCreate(org string, groups []string) bool {
+	for _, g := range GroupCreators(org) {
+		if HasGroup(groups, g) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsOrgMember reports whether the groups contain any role of the org.
+func IsOrgMember(org string, groups []string) bool {
+	for _, g := range groups {
+		if strings.HasPrefix(NormalizeGroup(g), "aep-"+org+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsPlatform reports membership in an installation-wide role that reads
+// every organization.
+func IsPlatform(groups []string) bool {
+	return HasGroup(groups, GroupPlatformTeam) || HasGroup(groups, GroupSecurity) || HasGroup(groups, GroupSecurityOnCall)
+}
+
 // NormalizeGroup maps a token group to its plain name: Keycloak emits full
 // paths like /aep-acme-developer, nested or not.
 func NormalizeGroup(g string) string {

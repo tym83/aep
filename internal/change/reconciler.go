@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
@@ -82,11 +81,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 func (r *Reconciler) orgNamespace(org string) string {
-	template := r.OrgNamespaceTemplate
-	if template == "" {
-		template = "tenant-{org}"
-	}
-	return strings.ReplaceAll(template, "{org}", org)
+	return OrgNamespace(r.OrgNamespaceTemplate, org)
 }
 
 func (r *Reconciler) validate(ctx context.Context, cr *api.ChangeRequest, now time.Time) (ctrl.Result, error) {
