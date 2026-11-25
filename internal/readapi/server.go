@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/authn"
@@ -29,6 +30,8 @@ import (
 )
 
 type Server struct {
+	complianceNamespace  string
+	now                  func() time.Time
 	client               client.Reader
 	apps                 dynamic.Interface
 	verifier             authn.Verifier
@@ -37,8 +40,12 @@ type Server struct {
 	mux                  *http.ServeMux
 }
 
-func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNamespaceTemplate, consoleURLTemplate string) (*Server, error) {
+func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNamespaceTemplate, consoleURLTemplate string, options ...func(*Server)) (*Server, error) {
 	s := &Server{client: c, apps: apps, verifier: verifier, orgNamespaceTemplate: orgNamespaceTemplate, mux: http.NewServeMux()}
+	s.complianceNamespace = "aep-system"
+	for _, option := range options {
+		option(s)
+	}
 	if consoleURLTemplate != "" {
 		var err error
 		s.console, err = template.New("console").Option("missingkey=error").Parse(consoleURLTemplate)
@@ -52,6 +59,7 @@ func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNa
 	s.mux.HandleFunc("GET /v1/me", s.withAuth(s.me))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/services", s.withAuth(s.organization(s.services, false)))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/changes", s.withAuth(s.organization(s.changes, true)))
+	s.mux.HandleFunc("GET /v1/organizations/{org}/compliance", s.withAuth(s.compliance))
 	return s, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }

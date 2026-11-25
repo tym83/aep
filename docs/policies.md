@@ -206,13 +206,12 @@ reports mean no observed results, not proof that policies ran. Admission-only
 rules may not produce background results. Deletion removes owned snapshots as
 part of the existing ordered organization cleanup.
 
-Build `Dockerfile.read-api` and enable `readApi` in the operator chart, supplying
-its image, OIDC issuer and required audience. Set portal `aep.readApiUrl` to
-`http://aep-read-api.aep-system.svc:8080`. The service supports `/v1/me` and
-`/v1/organizations/{org}/compliance`, with verified OIDC and organization-specific
-developer/platform/admin/auditor access. It has no tier kubeconfigs or Secret
-permissions. Existing services/changes read endpoints remain separate integration
-contracts; route them through an existing read gateway if already implemented.
+Build `Dockerfile.read-api` and deploy `charts/aep-read-api`, supplying its image,
+OIDC issuer and required audience. Set `complianceNamespace` to the operator's
+namespace and portal `aep.readApiUrl` to the read API Service URL. The same service
+supports `/v1/me`, organization services, changes and compliance. Compliance
+requires verified OIDC and organization-specific developer/platform/admin/auditor
+access. It reads operator snapshots without tier kubeconfigs or Secret permissions.
 See [portal API](portal-api.md) for the response contract.
 
 ## Validation

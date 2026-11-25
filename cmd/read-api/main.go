@@ -11,6 +11,7 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/authn"
 	"github.com/tym83/aep/internal/readapi"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -28,7 +29,7 @@ func main() {
 }
 
 func run() error {
-	var kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey, consoleURLTemplate string
+	var namespace, kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey, consoleURLTemplate string
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&listen, "listen", ":8080", "Listen address")
 	flag.StringVar(&issuer, "issuer", "", "OIDC issuer URL (required)")
@@ -40,6 +41,7 @@ func run() error {
 	flag.StringVar(&consoleURLTemplate, "console-url-template", "", "Console HTTP(S) URL template with Namespace, Kind and Name")
 	flag.StringVar(&tlsCert, "tls-cert", "", "TLS certificate file; serve plain HTTP when empty")
 	flag.StringVar(&tlsKey, "tls-key", "", "TLS key file")
+	flag.StringVar(&namespace, "namespace", "aep-system", "Management namespace containing compliance snapshots")
 	logOptions := zap.Options{}
 	logOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -61,6 +63,9 @@ func run() error {
 		return e
 	}
 	scheme := runtime.NewScheme()
+	if e := corev1.AddToScheme(scheme); e != nil {
+		return e
+	}
 	if e := api.AddToScheme(scheme); e != nil {
 		return e
 	}
@@ -78,7 +83,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	handler, e := readapi.New(direct, apps, verifier, orgNamespaceTemplate, consoleURLTemplate)
+	handler, e := readapi.New(direct, apps, verifier, orgNamespaceTemplate, consoleURLTemplate, readapi.WithComplianceNamespace(namespace))
 	if e != nil {
 		return e
 	}

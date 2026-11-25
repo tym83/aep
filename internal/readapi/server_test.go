@@ -20,6 +20,7 @@ import (
 	"github.com/tym83/aep/internal/authn"
 	"github.com/tym83/aep/internal/bridge"
 	"github.com/tym83/aep/internal/operator"
+	corev1 "k8s.io/api/core/v1"
 	ext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -63,6 +64,7 @@ func fixture(t *testing.T, objects ...runtime.Object) (*Server, *dynamicfake.Fak
 	}
 	scheme := runtime.NewScheme()
 	_ = api.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(&api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme", UID: "org-uid"}}).Build()
 	lists := map[schema.GroupVersionResource]string{}
 	for resource, kind := range map[string]string{"postgreses": "PostgresList", "redises": "RedisList", "kuberneteses": "KubernetesList"} {
@@ -93,7 +95,7 @@ func TestIdentityAndAuthorization(t *testing.T) {
 	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"username":"alice","organizations":[{"name":"acme","roles":["approver","developer"]}]}` {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	for _, path := range []string{"/v1/me", "/v1/organizations/acme/services", "/v1/organizations/acme/changes"} {
+	for _, path := range []string{"/v1/me", "/v1/organizations/acme/services", "/v1/organizations/acme/changes", "/v1/organizations/acme/compliance"} {
 		for _, token := range []string{"", "garbage", sign(nil, func(c map[string]any) { c["exp"] = time.Now().Add(-time.Hour).Unix() }), sign(nil, func(c map[string]any) { c["iss"] = "https://other.example" }), sign(nil, func(c map[string]any) { c["aud"] = "other" })} {
 			if w := call(s, path, token); w.Code != 401 {
 				t.Fatalf("%s: %d %s", path, w.Code, w.Body)
