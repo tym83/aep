@@ -62,7 +62,7 @@ spec:
         key: ca.crt
   resources:
     - id: claim
-      readyWhen: "${has(applied.claim.status.conditions) && applied.claim.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True' && c.observedGeneration == applied.claim.metadata.generation)}"
+      readyWhen: "${has(applied.claim.status.conditions) && applied.claim.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')}"
       template:
         apiVersion: aep.aenix.io/v1alpha1
         kind: ServiceClaim
