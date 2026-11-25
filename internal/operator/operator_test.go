@@ -322,3 +322,15 @@ func TestTenantResourceQuotasGPU(t *testing.T) {
 		t.Fatalf("gpu must map to nvidia.com/gpu: %v", got)
 	}
 }
+
+func TestReplaceOwnedSpecRemovesDroppedKeys(t *testing.T) {
+	dst := map[string]any{"spec": map[string]any{"resourceQuotas": map[string]any{"cpu": "8", "gpu": "0"}, "defaulted": true}}
+	replaceOwnedSpec(dst, map[string]any{"spec": map[string]any{"resourceQuotas": map[string]any{"cpu": "8"}}})
+	spec := dst["spec"].(map[string]any)
+	if _, ok := spec["resourceQuotas"].(map[string]any)["gpu"]; ok {
+		t.Fatal("dropped quota key must be removed")
+	}
+	if spec["defaulted"] != true {
+		t.Fatal("fields not set by the operator must be kept")
+	}
+}

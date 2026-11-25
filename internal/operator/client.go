@@ -83,6 +83,7 @@ func (c *Cluster) apply(ctx context.Context, o *api.Organization, r string, u *u
 	if u.GetAPIVersion() == appsAPI {
 		updated := old.DeepCopy()
 		mergeObject(updated.Object, u.Object)
+		replaceOwnedSpec(updated.Object, u.Object)
 		if reflect.DeepEqual(old.Object, updated.Object) {
 			return nil
 		}
@@ -160,5 +161,24 @@ func mergeObject(dst, src map[string]any) {
 		} else {
 			dst[k] = v
 		}
+	}
+}
+
+// replaceOwnedSpec replaces every top-level spec field the operator sets
+// instead of merging it, so keys removed from the desired state (for example
+// a quota) disappear from the object. Fields the operator does not set keep
+// the values Cozystack defaulted.
+func replaceOwnedSpec(dst, desired map[string]any) {
+	want, ok := desired["spec"].(map[string]any)
+	if !ok {
+		return
+	}
+	got, ok := dst["spec"].(map[string]any)
+	if !ok {
+		dst["spec"] = want
+		return
+	}
+	for k, v := range want {
+		got[k] = v
 	}
 }
