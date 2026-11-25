@@ -13,12 +13,12 @@ of membership. Decision authorization, separation of duties, protected
 environments and operation validation remain enforced by the change API and
 OpenChoreo. UI role checks are only presentation.
 
-## Read API (new integration contract)
+## Read API
 
-`aep.readApiUrl` is an origin/base path without `/v1`. These endpoints need an
-implementation backed by bridge/ServiceClaim and ChangeRequest state. They are
-not implemented by the current Go change API. The portal includes a development
-mock, not a production read service.
+`aep.readApiUrl` is an origin/base path without `/v1`. `cmd/read-api` implements these
+endpoints using management-cluster state. It verifies OIDC issuer, signature,
+expiry and audience; `--issuer` and `--audience` are required. The portal also
+includes a development mock.
 
 ### GET /v1/me
 
@@ -26,20 +26,33 @@ mock, not a production read service.
 {"username":"alice","organizations":[{"name":"acme","roles":["developer","approver"]}]}
 ```
 
-Return only accessible organizations, using their DNS-label names. The portal
+Return only existing cluster-scoped `aep.aenix.io/v1alpha1` Organizations,
+using their DNS-label names. Membership and roles come exclusively from verified
+token groups `aep-<org>-<role>` or `/aep-<org>-<role>`, with roles `developer`,
+`platform`, `approver`, `admin`, and `auditor`. Organizations and roles are sorted
+and deduplicated. Unknown roles and missing Organizations are not returned.
+Organization routes return 403 for non-members, or 404 for members of an
+Organization that no longer exists. The portal
 selects the first organization by default and offers a selector for others.
 Role `approver` enables the Changes page for that organization.
 
 ### GET /v1/organizations/{org}/services
 
 Return only applications created by the AEP bridge for this organization,
-including tenant-environment clusters and managed services. Do not enumerate
-arbitrary Cozystack applications or return credentials.
+including tenant-environment clusters and managed services. `Postgres` and
+`Redis` must have `aep.aenix.io/managed-by=bridge`; `Kubernetes` must be named
+`apps` and carry the operator ownership label `aep.aenix.io/organization` equal
+to the Organization UID. Only namespaces `tenant-<org>-nonprod` and
+`tenant-<org>-prod` are read. Do not enumerate arbitrary Cozystack applications
+or return credentials. Row names are `<namespace>/<Kind>/<application-name>`
+to avoid collisions across tiers and kinds. Only the AEP organization, tier,
+project, resource, environment and managed-by labels are exposed. The bridge
+already copies project/resource/environment identifiers into these labels.
 
 ```json
 {
   "items": [{
-    "name": "orders-db-prod",
+    "name": "tenant-acme-prod/Postgres/postgres-orders",
     "kind": "service",
     "labels": {
       "aep.aenix.io/project": "payments",
@@ -55,8 +68,9 @@ arbitrary Cozystack applications or return credentials.
       "name": "orders-db",
       "generation": 2,
       "conditions": [{
-        "type": "Ready", "status": "True", "observedGeneration": 2,
-        "reason": "Reconciled", "message": "Application is ready"
+        "type": "Ready", "status": "False",
+        "reason": "Updating",
+        "message": "Waiting for the applied spec and current HelmRelease generation"
       }]
     }
   }]
@@ -68,17 +82,44 @@ human-readable display names and resource/project/environment identifiers.
 Resource cards match `openchoreo.io/resource` and `openchoreo.io/project`
 annotations against these labels; aliases must be normalized by the read service
 if display names differ from identifiers. `application.consoleUrl` must be an
-HTTP(S) console link. Conditions come from ServiceClaim status, including
-`observedGeneration`. A current `Degraded=True` wins over `Ready=True`; a current
+HTTP(S) console link. It is omitted unless `--console-url-template` is set;
+this Go template receives `Namespace`, `Kind` (the Cozystack kind), and `Name`.
+Rendered links must be HTTP(S) without embedded credentials.
+
+In v0, application clusters and ServiceClaims are not read directly.
+`claim.name` is the name portion of the app annotation
+`aep.aenix.io/claim-ref` (`<namespace>/<name>`); it is empty when absent,
+including for operator clusters. `claim.generation` is the **application**
+generation, not an asserted ServiceClaim generation. Conditions are computed
+with `bridge.Readiness(app, nil, false)`: app `Ready` becomes `Provisioned`;
+`WorkloadsReady` is the source of `Ready`, but without HelmRelease and spec-match
+evidence it is conservatively overridden to `Ready=False`, reason `Updating`.
+The first false app `Ready` or `WorkloadsReady` condition becomes
+`Degraded=True`; otherwise `Degraded=False`. Missing source conditions are
+Unknown/Pending. Source `observedGeneration` values remain unchanged so stale
+observations cannot become current. No synthetic claim generation or successful
+HelmRelease observation is invented. Consequently a healthy app remains
+Updating in v0; confirming Ready requires a future extension with more evidence.
+
+For the portal, a current `Degraded=True` wins over `Ready=True`; a current
 `Ready=True` is Ready; everything else (including stale or absent conditions)
 is Updating. The message/reason is displayed without HTML interpretation.
 
 ### GET /v1/organizations/{org}/changes
 
-Requires organization `approver`. Returns `{"items": [ChangeRequest, ...]}`,
+Requires organization `approver` or `auditor`; `admin` alone does not grant
+this read. The current portal only enables its Changes page for `approver`.
+Returns `{"items": [ChangeRequest, ...]}`,
 using the existing `aep.aenix.io/v1alpha1` object shape. Include metadata `name`
 and `resourceVersion`, spec `organization`, `requester`, `operation`, `target`,
 `justification`, optional `window`, and status `phase` and `approvals`.
+Requests are read from `tenant-<org>`, matching the change service default;
+`--org-namespace-template` must match the change service if overridden. Results
+also require `spec.organization` to match. Only the documented spec/status
+fields (plus model), name, namespace and resourceVersion are projected; arbitrary
+annotations, desired payloads and before snapshots are excluded to avoid
+exposing credentials in application configuration. No Secret resources are read.
+
 No pagination in this minimal contract; the service must return the complete
 organization result. Large installations should extend both sides together.
 

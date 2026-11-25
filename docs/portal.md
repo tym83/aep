@@ -76,6 +76,43 @@ For local development, export the Keycloak/OpenChoreo variables and run
 point at the local mock; see [the API contract](portal-api.md) for its limitations.
 Use `app-config.local.yaml` for local overrides (ignored by git).
 
+## Deploy the read API
+
+Install in the management cluster, where the Organization, Cozystack application
+and ChangeRequest APIs are served:
+
+```sh
+helm upgrade --install aep-read-api charts/aep-read-api --namespace aep-system \
+  --set oidc.issuer=https://id.example.org/realms/aep \
+  --set oidc.audience=aep-portal
+```
+
+Set `image` to an immutable published image tag for production. The chart grants
+only get/list on Organizations, ChangeRequests, Postgres, Redis and Kubernetes
+applications; it grants no Secret access. Configure `oidc.jwksUrl` if the issuer
+uses a certs endpoint other than `<issuer>/protocol/openid-connect/certs`.
+Match `orgNamespaceTemplate` to the change service (default `tenant-{org}`).
+Optionally set `consoleUrlTemplate`, for example
+`https://console.example.org/{{.Namespace}}/{{.Kind}}/{{.Name}}`.
+
+Set the portal backend environment variable
+`AEP_READ_API_URL=http://aep-read-api.aep-system.svc:8080`, or the equivalent
+Backstage configuration:
+
+```yaml
+aep:
+  readApiUrl: http://aep-read-api.aep-system.svc:8080
+```
+
+Do not append `/v1`. The backend forwards the user's verified upstream access
+token; configure Keycloak to include the required audience and organization
+groups. For traffic outside the cluster, expose an HTTPS endpoint or use the
+binary's `--tls-cert` and `--tls-key` flags. For local access to a management
+cluster, run `go run ./cmd/read-api --kubeconfig=<path> --issuer=<issuer>
+--audience=<audience>` (on one line). Without `--kubeconfig`, it uses in-cluster
+credentials. See [the API contract](portal-api.md) for authorization rules and
+the conservative application-derived readiness mapping in v0.
+
 ## Branding without rebuilding
 
 Set `app.title`, `organization.name`, and `app.branding.name`, `iconLogo`,
@@ -126,9 +163,9 @@ values rather than copying names from another version.
   workflow packs are not installed; automated suggestion/FinOps integration is
   therefore not implemented. Suggestions can be submitted manually through the
   Request change dialog with reviewed operation JSON.
-- The production read service is a documented integration contract, with a
-  development mock supplied here. The Go change service has no list endpoint,
-  so the read service must also provide organization ChangeRequest lists.
+- The read service provides organization membership, managed application and
+  ChangeRequest lists. In v0, readiness is derived conservatively from management
+  application state; live ServiceClaim and HelmRelease readiness is unavailable.
 - Live Keycloak sign-in, chart deployment, backend policies and real Cozystack
   state require the corresponding running services. Mock tests do not verify
   these external integrations.
