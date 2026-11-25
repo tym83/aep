@@ -1,1 +1,7 @@
 cosignPublicKey: ""
+platformNamespaces: []
+platformImageTrust:
+  mode: audit
+  vendorPublicKeys: []
+  # Exact registry/repository@sha256:digest references; no tags or wildcards.
+  allowedImages: []

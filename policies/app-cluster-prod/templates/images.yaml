@@ -11,6 +11,11 @@ spec:
         any:
           - resources:
               kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+{{ include "aep.platformNamespaces" . | indent 16 }}
       validate:
         message: Production images must use an explicit sha256 digest.
         foreach:
@@ -26,6 +31,11 @@ spec:
         any:
           - resources:
               kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+{{ include "aep.platformNamespaces" . | indent 16 }}
       verifyImages:
         - imageReferences: ["*"]
           mutateDigest: false

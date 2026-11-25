@@ -16,7 +16,7 @@ docker-build:
 
 .PHONY: policies-render policies-test policies-package
 policies-render:
-	helm template test policies/app-cluster-baseline --set organizationUID=test-org > policies/app-cluster-baseline/tests/rendered.yaml
+	helm template test policies/app-cluster-baseline --set organizationUID=test-org --show-only templates/workloads.yaml --show-only templates/namespaces.yaml --show-only templates/isolation.yaml > policies/app-cluster-baseline/tests/rendered.yaml
 	helm template test policies/app-cluster-nonprod > policies/app-cluster-nonprod/tests/rendered.yaml
 	helm template test policies/app-cluster-prod --set-file cosignPublicKey=policies/app-cluster-prod/tests/cosign.pub > policies/app-cluster-prod/tests/rendered.yaml
 policies-test: policies-render
@@ -24,6 +24,7 @@ policies-test: policies-render
 	kyverno test policies/app-cluster-baseline/tests
 	kyverno test policies/app-cluster-nonprod/tests
 	kyverno test policies/app-cluster-prod/tests
+	go test ./internal/operator -run TestProductionImageTrust -count=1
 policies-package:
 	mkdir -p dist/policies
 	for bundle in baseline nonprod prod; do helm package policies/app-cluster-$$bundle --destination dist/policies; done

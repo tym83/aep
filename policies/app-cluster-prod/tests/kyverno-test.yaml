@@ -37,6 +37,132 @@
       ],
       "kind": "Pod",
       "result": "pass"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "kube-system-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "kube-system-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "cozy-cilium-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "cozy-cilium-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "openchoreo-data-plane-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "openchoreo-data-plane-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "kyverno-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "kyverno-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "aep-system-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "aep-system-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "cert-manager-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "cosign-signatures",
+      "resources": [
+        "cert-manager-tag"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "dp-cell-tag"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-prod-images",
+      "rule": "digest-only",
+      "resources": [
+        "user-apps-tag"
+      ],
+      "kind": "Pod",
+      "result": "fail"
     }
   ]
 }

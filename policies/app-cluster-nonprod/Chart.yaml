@@ -1,4 +1,4 @@
 apiVersion: v2
 name: app-cluster-nonprod
-version: 0.1.0
+version: 0.1.1
 description: Mandatory restricted Pod Security for nonproduction workloads
