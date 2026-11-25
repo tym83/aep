@@ -92,7 +92,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if exists {
 		current, _, _ = unstructured.NestedMap(app.Object, "spec")
 	}
-	changed := !exists || app.GetAnnotations()[Domain+"claim-spec-hash"] != hash || policy.Hash(current) != app.GetAnnotations()[Domain+"applied-spec-hash"]
+	changed := !exists || app.GetAnnotations()[Domain+"backup-policy"] != r.Policy.BackupPolicy || app.GetAnnotations()[Domain+"claim-spec-hash"] != hash || policy.Hash(current) != app.GetAnnotations()[Domain+"applied-spec-hash"]
 	if changed {
 		if _, e := r.report(ctx, c, "Updating", "Applying the requested specification"); e != nil {
 			return ctrl.Result{}, e
@@ -104,6 +104,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		a := app.GetAnnotations()
 		if a == nil {
 			a = map[string]string{}
+		}
+		if r.Policy.BackupPolicy != "" {
+			a[Domain+"backup-policy"] = r.Policy.BackupPolicy
+		} else {
+			delete(a, Domain+"backup-policy")
 		}
 		a[Domain+"claim-uid"] = string(c.UID)
 		a[Domain+"cluster-id"] = r.ClusterID

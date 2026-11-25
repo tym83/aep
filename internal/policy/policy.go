@@ -26,7 +26,9 @@ type Limits struct {
 	MaxReplicas       int64    `json:"maxReplicas"`
 }
 type Config struct {
-	Kinds map[string]Limits `json:"kinds"`
+	// BackupPolicy is a reference for backup-plan integration, not an execution guarantee.
+	BackupPolicy string            `json:"backupPolicy,omitempty"`
+	Kinds        map[string]Limits `json:"kinds"`
 }
 
 func Default() Config {
@@ -47,6 +49,9 @@ func Load(path string) (Config, error) {
 		if e = yaml.UnmarshalStrict(b, &c); e != nil {
 			return c, e
 		}
+	}
+	if c.BackupPolicy != "" && len(validation.IsDNS1123Subdomain(c.BackupPolicy)) > 0 {
+		return c, fmt.Errorf("invalid backupPolicy reference")
 	}
 	for k, l := range c.Kinds {
 		m, ok := kinds.Table[k]

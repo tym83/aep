@@ -264,3 +264,18 @@ func findValue(v any, s string) bool {
 	}
 	return false
 }
+
+func TestBackupPolicyReference(t *testing.T) {
+	c := testClaim()
+	r, _ := harness(t, c)
+	r.Policy.BackupPolicy = "prod-default"
+	c = reconcile(t, r, c)
+	if got := boundApp(t, r, c).GetAnnotations()[Domain+"backup-policy"]; got != "prod-default" {
+		t.Fatal(got)
+	}
+	r.Policy.BackupPolicy = ""
+	c = reconcile(t, r, c)
+	if _, ok := boundApp(t, r, c).GetAnnotations()[Domain+"backup-policy"]; ok {
+		t.Fatal("stale backup policy reference")
+	}
+}
