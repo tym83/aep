@@ -1,0 +1,9 @@
+**/node_modules
+**/.git
+**/.yarn
+**/dist
+**/dist-types
+**/coverage
+**/*.log
+**/*.local.yaml
+**/.env*
