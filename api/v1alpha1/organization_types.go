@@ -1,0 +1,77 @@
+package v1alpha1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+)
+
+type Quotas map[string]string
+type Environment struct {
+	Name        string `json:"name"`
+	Tier        string `json:"tier"`
+	ChangeModel string `json:"changeModel"`
+}
+type NodeGroup struct {
+	MinReplicas  int32  `json:"minReplicas"`
+	MaxReplicas  int32  `json:"maxReplicas"`
+	InstanceType string `json:"instanceType"`
+}
+type ClusterSpec struct {
+	Version    string               `json:"version"`
+	NodeGroups map[string]NodeGroup `json:"nodeGroups"`
+}
+type ServicesSpec struct {
+	AllowedKinds []string `json:"allowedKinds"`
+	MaxPreset    string   `json:"maxPreset,omitempty"`
+	BackupPolicy string   `json:"backupPolicy,omitempty"`
+}
+type TierSpec struct {
+	Cluster  ClusterSpec  `json:"cluster"`
+	Services ServicesSpec `json:"services"`
+}
+type OrganizationSpec struct {
+	DisplayName  string              `json:"displayName"`
+	Profile      string              `json:"profile"`
+	CostCenter   string              `json:"costCenter,omitempty"`
+	Quotas       Quotas              `json:"quotas"`
+	Environments []Environment       `json:"environments"`
+	Tiers        map[string]TierSpec `json:"tiers"`
+	Access       map[string][]string `json:"access,omitempty"`
+}
+type Remediation struct {
+	Time      metav1.Time `json:"time"`
+	Namespace string      `json:"namespace"`
+	Release   string      `json:"release"`
+	Reason    string      `json:"reason"`
+}
+type OrganizationStatus struct {
+	DeletionStarted        bool                   `json:"deletionStarted,omitempty"`
+	Phase                  string                 `json:"phase,omitempty"`
+	Conditions             []metav1.Condition     `json:"conditions,omitempty"`
+	ControlPlaneReadySince map[string]metav1.Time `json:"controlPlaneReadySince,omitempty"`
+	Remediations           []Remediation          `json:"remediations,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:subresource:status
+type Organization struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              OrganizationSpec   `json:"spec"`
+	Status            OrganizationStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+type OrganizationList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Organization `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(func(s *runtime.Scheme) error {
+		s.AddKnownTypes(GroupVersion, &Organization{}, &OrganizationList{})
+		return nil
+	})
+}
