@@ -40,6 +40,11 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 	}
 	values := map[string]M{
 		"kyverno": {"admissionController": M{"replicas": replicas}, "backgroundController": M{"replicas": replicas}, "cleanupController": M{"replicas": replicas}, "reportsController": M{"replicas": replicas},
+			// Keep namespace exclusions in policies, not in invisible engine defaults.
+			"config": M{"excludeKyvernoNamespace": false, "resourceFilters": []any{"[Event,*,*]"},
+				"webhooks": M{"namespaceSelector": M{"matchExpressions": []any{}}},
+				// A nonempty Helm list renders an explicit empty setting, resetting engine defaults.
+				"excludeGroups": []any{""}},
 			"features":    M{"policyExceptions": M{"enabled": true, "namespace": "aep-system"}},
 			"rbac":        M{"roles": M{"aggregate": M{"admin": false}}},
 			"openreports": M{"enabled": false, "installCrds": false}},

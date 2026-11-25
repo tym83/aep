@@ -21,6 +21,10 @@ func TestPolicyDeliveryContract(t *testing.T) {
 		if len(values) != 3 {
 			t.Fatal(values)
 		}
+		config := values["kyverno"]["config"].(M)
+		if config["excludeKyvernoNamespace"] != false || len(config["resourceFilters"].([]any)) != 1 || len(config["webhooks"].(M)["namespaceSelector"].(M)["matchExpressions"].([]any)) != 0 {
+			t.Fatal("engine defaults bypass namespace policies", config)
+		}
 		expected := int64(1)
 		if tier == "prod" {
 			expected = 3
