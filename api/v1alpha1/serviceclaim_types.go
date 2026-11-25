@@ -11,7 +11,7 @@ import (
 
 var GroupVersion = schema.GroupVersion{Group: "aep.aenix.io", Version: "v1alpha1"}
 var SchemeBuilder = runtime.NewSchemeBuilder(func(s *runtime.Scheme) error {
-	s.AddKnownTypes(GroupVersion, &ServiceClaim{}, &ServiceClaimList{})
+	s.AddKnownTypes(GroupVersion, &ServiceClaim{}, &ServiceClaimList{}, &ChangeRequest{}, &ChangeRequestList{})
 	metav1.AddToGroupVersion(s, GroupVersion)
 	return nil
 })
