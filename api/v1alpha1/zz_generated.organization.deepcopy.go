@@ -9,6 +9,9 @@ func (in *Organization) DeepCopyInto(out *Organization) {
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
 	out.Spec.Policy.Registries = append([]string(nil), in.Spec.Policy.Registries...)
+	out.Spec.Policy.PlatformNamespaces = append([]string(nil), in.Spec.Policy.PlatformNamespaces...)
+	out.Spec.Policy.PlatformImageTrust.VendorPublicKeys = append([]string(nil), in.Spec.Policy.PlatformImageTrust.VendorPublicKeys...)
+	out.Spec.Policy.PlatformImageTrust.AllowedImages = append([]string(nil), in.Spec.Policy.PlatformImageTrust.AllowedImages...)
 	out.Spec.Quotas = make(Quotas, len(in.Spec.Quotas))
 	for k, v := range in.Spec.Quotas {
 		out.Spec.Quotas[k] = v

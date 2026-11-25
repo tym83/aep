@@ -349,6 +349,52 @@
                           "type": "string",
                           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?$"
                         }
+                      },
+                      "platformNamespaces": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "x-kubernetes-list-type": "set",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 63,
+                          "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+                          "x-kubernetes-validations": [
+                            {
+                              "rule": "!self.startsWith('dp-')",
+                              "message": "Application cell namespaces cannot be platform namespaces"
+                            }
+                          ]
+                        }
+                      },
+                      "platformImageTrust": {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "audit",
+                              "enforce"
+                            ],
+                            "default": "audit"
+                          },
+                          "vendorPublicKeys": {
+                            "type": "array",
+                            "maxItems": 100,
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 16384
+                            }
+                          },
+                          "allowedImages": {
+                            "type": "array",
+                            "maxItems": 100,
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$"
+                            }
+                          }
+                        }
                       }
                     }
                   }

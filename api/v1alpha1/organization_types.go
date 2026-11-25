@@ -30,9 +30,19 @@ type TierSpec struct {
 	Services ServicesSpec `json:"services"`
 }
 
-// PolicySpec controls baseline reporting; production image and nonprod Pod Security rules always enforce.
+// PlatformImageTrust separates vendor image trust from organization signing keys.
+type PlatformImageTrust struct {
+	Mode             string   `json:"mode,omitempty"`
+	VendorPublicKeys []string `json:"vendorPublicKeys,omitempty"`
+	AllowedImages    []string `json:"allowedImages,omitempty"`
+}
+
+// PolicySpec controls baseline reporting and the platform image trust boundary.
 type PolicySpec struct {
-	Registries []string `json:"registries,omitempty"`
+	// PlatformNamespaces adds exact addon namespace names; dp-* cells cannot be excluded.
+	PlatformNamespaces []string           `json:"platformNamespaces,omitempty"`
+	PlatformImageTrust PlatformImageTrust `json:"platformImageTrust,omitempty"`
+	Registries         []string           `json:"registries,omitempty"`
 	// CosignPublicKey is an inline PEM public key, never a private signing key.
 	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
 	Mode            string `json:"mode,omitempty"`

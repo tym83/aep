@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"regexp"
 	"slices"
+	"strings"
 )
 
 var roles = []string{"developer", "platform", "approver", "admin", "auditor"}
@@ -25,6 +26,26 @@ func TenantNamespace(org, tier string) string {
 	return "tenant-" + org + "-" + tier
 }
 func Validate(o *api.Organization) error {
+	for _, ns := range o.Spec.Policy.PlatformNamespaces {
+		if len(validation.IsDNS1123Label(ns)) > 0 || strings.HasPrefix(ns, "dp-") {
+			return fmt.Errorf("platformNamespaces must contain exact namespace names outside dp-*")
+		}
+	}
+	trust := o.Spec.Policy.PlatformImageTrust
+	if trust.Mode != "" && trust.Mode != "audit" && trust.Mode != "enforce" {
+		return fmt.Errorf("platformImageTrust mode must be audit or enforce")
+	}
+	for _, key := range trust.VendorPublicKeys {
+		if strings.TrimSpace(key) == "" {
+			return fmt.Errorf("vendorPublicKeys must not be blank")
+		}
+	}
+	for _, image := range trust.AllowedImages {
+		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$`).MatchString(image) {
+			return fmt.Errorf("allowedImages must be exact registry/repository@sha256:digest references")
+		}
+	}
+
 	if o.Spec.Policy.Mode != "" && o.Spec.Policy.Mode != "audit" && o.Spec.Policy.Mode != "enforce" {
 		return fmt.Errorf("policy mode must be audit or enforce")
 	}
