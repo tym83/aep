@@ -1,0 +1,26 @@
+name: portal
+on:
+  pull_request:
+    paths: ['portal/**']
+  push:
+    branches: [main, feat/portal]
+    paths: ['portal/**']
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npx --yes @yarnpkg/cli-dist@4.13.0 install --immutable
+      - run: node scripts/pin-openchoreo.mjs && git diff --exit-code package.json
+      - run: npx --yes @yarnpkg/cli-dist@4.13.0 tsc
+      - run: npx --yes @yarnpkg/cli-dist@4.13.0 test:plugins
+      - run: npx --yes @yarnpkg/cli-dist@4.13.0 workspace app test --watch=false --runInBand
+      - run: node --test dev/mock.test.mjs

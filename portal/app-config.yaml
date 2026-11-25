@@ -1,0 +1,78 @@
+app:
+  title: Aenix Enterprise Platform
+  baseUrl: http://localhost:3000
+  packages: all
+  branding:
+    name: Aenix Enterprise Platform
+    iconLogo: /aep-icon.svg
+    fullLogo: /aep-logo.svg
+    theme:
+      light:
+        primaryColor: '#175B47'
+      dark:
+        primaryColor: '#6ED9B4'
+  extensions:
+    - theme:app/light: false
+    - theme:app/dark: false
+    - nav-item:search: false
+    - nav-item:user-settings: false
+    - nav-item:catalog: false
+    - nav-item:scaffolder: false
+    - page:catalog:
+        config:
+          path: /
+organization:
+  name: Aenix
+backend:
+  baseUrl: http://localhost:7007
+  listen:
+    port: 7007
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+    img-src: ["'self'", 'data:', 'https:']
+  cors:
+    origin: http://localhost:3000
+    methods: [GET, HEAD, POST]
+    credentials: true
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+auth:
+  environment: development
+  session:
+    secret: ${AUTH_SESSION_SECRET}
+  providers:
+    openchoreo-auth:
+      development:
+        metadataUrl: ${KEYCLOAK_ISSUER}/.well-known/openid-configuration
+        clientId: ${KEYCLOAK_CLIENT_ID}
+        clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+        scope: 'openid profile email'
+openchoreo:
+  baseUrl: ${OPENCHOREO_API_URL}
+  auth:
+    clientId: ${OPENCHOREO_CLIENT_ID}
+    clientSecret: ${OPENCHOREO_CLIENT_SECRET}
+    tokenUrl: ${KEYCLOAK_ISSUER}/protocol/openid-connect/token
+  features:
+    auth:
+      enabled: true
+    authz:
+      enabled: true
+  defaultOwner: openchoreo-users
+  schedule:
+    frequency: 30
+    timeout: 120
+permission:
+  enabled: true
+catalog:
+  rules:
+    - allow: [Component, System, Domain, API, Resource, Location, Group, User, Template, Environment, DataPlane, WorkflowPlane, ObservabilityPlane, DeploymentPipeline, Workflow, ClusterWorkflow]
+  locations: []
+aep:
+  readApiUrl: http://127.0.0.1:7100
+  changeApiUrl: http://127.0.0.1:7100
+techdocs:
+  builder: external
+  publisher:
+    type: local

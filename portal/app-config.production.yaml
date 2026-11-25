@@ -1,0 +1,26 @@
+app:
+  baseUrl: ${PORTAL_BASE_URL}
+backend:
+  baseUrl: ${PORTAL_BASE_URL}
+  listen: ':7007'
+  cors:
+    origin: ${PORTAL_BASE_URL}
+  database:
+    client: pg
+    connection:
+      host: ${POSTGRES_HOST}
+      port: ${POSTGRES_PORT}
+      user: ${POSTGRES_USER}
+      password: ${POSTGRES_PASSWORD}
+auth:
+  environment: production
+  providers:
+    openchoreo-auth:
+      production:
+        metadataUrl: ${KEYCLOAK_ISSUER}/.well-known/openid-configuration
+        clientId: ${KEYCLOAK_CLIENT_ID}
+        clientSecret: ${KEYCLOAK_CLIENT_SECRET}
+        scope: 'openid profile email'
+aep:
+  readApiUrl: ${AEP_READ_API_URL}
+  changeApiUrl: ${AEP_CHANGE_API_URL}

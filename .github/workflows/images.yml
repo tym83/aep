@@ -12,6 +12,8 @@ jobs:
     strategy:
       matrix:
         include:
+          - name: aep-portal
+            dockerfile: portal/Dockerfile
           - name: aep-bridge
             dockerfile: Dockerfile
           - name: aep-operator

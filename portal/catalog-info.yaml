@@ -1,0 +1,11 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: aep-portal
+  description: Organization infrastructure and reviewed changes in Aenix Enterprise Platform.
+  annotations:
+    github.com/project-slug: tym83/aep
+spec:
+  type: website
+  owner: group:default/aenix
+  lifecycle: experimental
