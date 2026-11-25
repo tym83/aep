@@ -1,0 +1,14 @@
+image: ghcr.io/tym83/aep-read-api:main
+replicas: 1
+oidc:
+  issuer: ""
+  jwksUrl: ""
+  audience: ""
+  usernameClaim: preferred_username
+  groupsClaim: groups
+orgNamespaceTemplate: tenant-{org}
+# Example: https://console.example.org/{{.Namespace}}/{{.Kind}}/{{.Name}}
+consoleUrlTemplate: ""
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name | quote }}}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: read-api
+          image: {{ .Values.image | quote }}
+          args:
+            - --listen=:8080
+            - {{ printf "--issuer=%s" (required "oidc.issuer is required" .Values.oidc.issuer) | quote }}
+            - {{ printf "--audience=%s" (required "oidc.audience is required" .Values.oidc.audience) | quote }}
+            - {{ printf "--jwks-url=%s" .Values.oidc.jwksUrl | quote }}
+            - {{ printf "--username-claim=%s" .Values.oidc.usernameClaim | quote }}
+            - {{ printf "--groups-claim=%s" .Values.oidc.groupsClaim | quote }}
+            - {{ printf "--org-namespace-template=%s" .Values.orgNamespaceTemplate | quote }}
+            - {{ printf "--console-url-template=%s" .Values.consoleUrlTemplate | quote }}
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            tcpSocket: {port: http}
+          livenessProbe:
+            tcpSocket: {port: http}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

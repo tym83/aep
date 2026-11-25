@@ -18,6 +18,8 @@ jobs:
             dockerfile: Dockerfile
           - name: aep-operator
             dockerfile: Dockerfile.operator
+          - name: aep-read-api
+            dockerfile: Dockerfile.read-api
           - name: aep-change-api
             dockerfile: Dockerfile.change-api
           - name: aep-change-controller
