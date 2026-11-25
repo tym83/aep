@@ -42,6 +42,7 @@ func run() error {
 	flag.StringVar(&o.KeycloakURL, "keycloak-url", "", "Keycloak HTTPS URL")
 	flag.StringVar(&o.KeycloakRealm, "keycloak-realm", "", "Existing isolated realm")
 	flag.StringVar(&o.KeycloakCredentialsSecret, "keycloak-credentials-secret", "", "namespace/name with username and password")
+	flag.BoolVar(&o.RestoreVerification, "restore-verification", false, "Enable monthly same-namespace prod restore checks")
 	logOpts := zap.Options{}
 	logOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -87,6 +88,11 @@ func run() error {
 	}
 	if e = mgr.AddReadyzCheck("readyz", healthz.Ping); e != nil {
 		return e
+	}
+	if o.RestoreVerification {
+		if e = mgr.Add(&operator.RestoreVerifier{Reconciler: r}); e != nil {
+			return e
+		}
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
 }

@@ -19,6 +19,7 @@ type Options struct {
 	PolicyBundleRepository, KyvernoChartURL                                               string
 	PruneBootstrapBindings                                                                bool
 	BootstrapBindingSystemClients                                                         string
+	RestoreVerification                                                                   bool
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
