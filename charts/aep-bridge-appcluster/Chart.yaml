@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aep-bridge-appcluster
+description: ServiceClaim CRD and application cluster access for the AEP bridge
+type: application
+version: 0.1.0
+appVersion: 0.1.0

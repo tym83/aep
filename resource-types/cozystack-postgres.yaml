@@ -1,0 +1,87 @@
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterResourceType
+metadata:
+  name: cozystack-postgres
+  annotations:
+    openchoreo.dev/local-dev-addresses: client=outputs.host:outputs.port
+spec:
+  parameters:
+    openAPIV3Schema:
+      type: object
+      additionalProperties: false
+      properties:
+        version:
+          type: string
+          enum: [v13, v14, v15, v16, v17, v18]
+          default: v17
+        database:
+          type: string
+          pattern: '^[a-z_][a-z0-9_]{0,53}$'
+          default: appdb
+        username:
+          type: string
+          pattern: '^[a-z_][a-z0-9_]{0,62}$'
+          default: app
+  environmentConfigs:
+    openAPIV3Schema:
+      type: object
+      additionalProperties: false
+      properties:
+        resourcesPreset:
+          type: string
+          enum: [t1.nano, t1.micro, t1.small, t1.medium, t1.large, t1.xlarge, t1.2xlarge, t1.4xlarge, c1.nano, c1.micro, c1.small, c1.medium, c1.large, c1.xlarge, c1.2xlarge, c1.4xlarge, s1.nano, s1.micro, s1.small, s1.medium, s1.large, s1.xlarge, s1.2xlarge, s1.4xlarge, u1.nano, u1.micro, u1.small, u1.medium, u1.large, u1.xlarge, u1.2xlarge, u1.4xlarge, m1.nano, m1.micro, m1.small, m1.medium, m1.large, m1.xlarge, m1.2xlarge, m1.4xlarge]
+          default: t1.small
+        size:
+          type: string
+          default: 2Gi
+        replicas:
+          type: integer
+          minimum: 1
+          default: 1
+        deletionPolicy:
+          type: string
+          enum: [Delete, Retain]
+          default: Delete
+  retainPolicy: Delete
+  outputs:
+    - name: host
+      value: ${applied.claim.status.connection.host}
+    - name: port
+      value: ${string(applied.claim.status.connection.port)}
+    - name: database
+      value: ${applied.claim.status.connection.database}
+    - name: username
+      value: ${applied.claim.status.connection.username}
+    - name: password
+      secretKeyRef:
+        name: ${metadata.name}-conn
+        key: password
+    - name: ca.crt
+      secretKeyRef:
+        name: ${metadata.name}-conn
+        key: ca.crt
+  resources:
+    - id: claim
+      readyWhen: "${has(applied.claim.status.conditions) && applied.claim.status.conditions.exists(c, c.type == 'Ready' && c.status == 'True' && c.observedGeneration == applied.claim.metadata.generation)}"
+      template:
+        apiVersion: aep.aenix.io/v1alpha1
+        kind: ServiceClaim
+        metadata:
+          name: ${metadata.name}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          kind: Postgres
+          resource:
+            name: ${metadata.resourceName}
+            project: ${metadata.projectName}
+            environment: ${metadata.environmentName}
+          parameters:
+            version: ${parameters.version}
+            users: '${{parameters.username: {}}}'
+            databases: '${{parameters.database: {"roles": {"admin": [parameters.username]}}}}'
+          environmentParameters:
+            resourcesPreset: ${environmentConfigs.resourcesPreset}
+            size: ${environmentConfigs.size}
+            replicas: ${environmentConfigs.replicas}
+          deletionPolicy: ${environmentConfigs.deletionPolicy}

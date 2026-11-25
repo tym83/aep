@@ -1,0 +1,28 @@
+# Draft: VAP may not apply to aggregated APIs. Verify on the stand (spike S12).
+# The controller independently retains all production applications.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: aep-bridge-prod-delete
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps.cozystack.io]
+        apiVersions: [v1alpha1]
+        operations: [DELETE]
+        resources: ["*"]
+  matchConditions:
+    - name: prod-bridge
+      expression: "request.userInfo.username == 'system:serviceaccount:tenant-aepdev-prod:aep-bridge'"
+  validations:
+    - expression: "has(oldObject.metadata.annotations) && 'aep.aenix.io/delete-approved' in oldObject.metadata.annotations"
+      message: Production deletion requires an approved change.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: aep-bridge-prod-delete
+spec:
+  policyName: aep-bridge-prod-delete
+  validationActions: [Deny]

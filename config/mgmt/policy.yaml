@@ -1,0 +1,11 @@
+kinds:
+  Postgres:
+    allowedParameters: [version, databases, users, resourcesPreset, size, replicas]
+    maxPreset: u1.large
+    maxSize: 100Gi
+    maxReplicas: 3
+  Redis:
+    allowedParameters: [version, resourcesPreset, size, replicas]
+    maxPreset: u1.large
+    maxSize: 100Gi
+    maxReplicas: 3

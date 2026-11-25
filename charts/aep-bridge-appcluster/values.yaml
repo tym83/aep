@@ -1,0 +1,4 @@
+bridgeNamespace: aep-system
+bridgeServiceAccount: aep-bridge
+agentNamespace: openchoreo-data-plane
+agentServiceAccount: cluster-agent-dataplane

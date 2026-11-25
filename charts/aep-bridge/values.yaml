@@ -1,0 +1,29 @@
+organization: ""
+tier: nonprod
+clusterID: ""
+# Install into the tier tenant namespace; all management permissions stay there.
+image:
+  repository: ghcr.io/tym83/aep-bridge
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+replicas: 1
+allowedKinds: [Postgres, Redis]
+tierDeletionPolicy: Retain
+# Existing Secret with keys kubeconfig and token. kubeconfig must reference tokenFile.
+appCredentialsSecret: aep-bridge-app-credentials
+prodAdmissionDraft: false
+policy:
+  kinds:
+    Postgres:
+      allowedParameters: [version, databases, users, resourcesPreset, size, replicas]
+      maxPreset: u1.large
+      maxSize: 100Gi
+      maxReplicas: 3
+    Redis:
+      allowedParameters: [version, resourcesPreset, size, replicas]
+      maxPreset: u1.large
+      maxSize: 100Gi
+      maxReplicas: 3
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}
