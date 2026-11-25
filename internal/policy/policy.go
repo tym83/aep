@@ -111,6 +111,79 @@ func preset(s string) (int, int, bool) {
 
 var identifier = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
+// ScaleKeys are the environment config keys a standard change may touch.
+var ScaleKeys = []string{"resourcesPreset", "size", "replicas"}
+
+// ScaleCeiling returns the most restrictive limits across all configured
+// kinds; the change service applies it to scale-only standard changes because
+// a ResourceReleaseBinding does not reveal its backend kind.
+func (c Config) ScaleCeiling() Limits {
+	out := Limits{MaxReplicas: -1}
+	for _, l := range c.Kinds {
+		if out.MaxReplicas < 0 || l.MaxReplicas < out.MaxReplicas {
+			out.MaxReplicas = l.MaxReplicas
+		}
+		if out.MaxPreset == "" || presetExceeds(out.MaxPreset, l.MaxPreset) {
+			out.MaxPreset = l.MaxPreset
+		}
+		if out.MaxSize == "" || quantityExceeds(out.MaxSize, l.MaxSize) {
+			out.MaxSize = l.MaxSize
+		}
+	}
+	return out
+}
+
+func presetExceeds(a, b string) bool {
+	ac, am, aok := preset(a)
+	bc, bm, bok := preset(b)
+	if !aok || !bok {
+		return false
+	}
+	return bc < ac || bm < am
+}
+
+func quantityExceeds(a, b string) bool {
+	qa, ea := resource.ParseQuantity(a)
+	qb, eb := resource.ParseQuantity(b)
+	if ea != nil || eb != nil {
+		return false
+	}
+	return qb.Cmp(qa) < 0
+}
+
+// ScaleWithinLimits verifies that environment configs only scale a service
+// and stay inside the given limits.
+func ScaleWithinLimits(l Limits, configs map[string]any) error {
+	for k := range configs {
+		if !slices.Contains(ScaleKeys, k) {
+			return fmt.Errorf("config %s is not a scaling parameter", k)
+		}
+	}
+	if v, ok := configs["resourcesPreset"]; ok {
+		p, ok := v.(string)
+		cpu, mem, valid := preset(p)
+		mc, mm, _ := preset(l.MaxPreset)
+		if !ok || !valid || cpu > mc || mem > mm {
+			return fmt.Errorf("resourcesPreset exceeds %s or is unknown", l.MaxPreset)
+		}
+	}
+	if v, ok := configs["size"]; ok {
+		s, ok := v.(string)
+		q, e := resource.ParseQuantity(s)
+		max, _ := resource.ParseQuantity(l.MaxSize)
+		if !ok || e != nil || q.Sign() <= 0 || q.Cmp(max) > 0 {
+			return fmt.Errorf("size must be positive and at most %s", l.MaxSize)
+		}
+	}
+	if v, ok := configs["replicas"]; ok {
+		n, ok := v.(float64)
+		if !ok || n < 1 || n > float64(l.MaxReplicas) || n != float64(int64(n)) {
+			return fmt.Errorf("replicas must be an integer between 1 and %d", l.MaxReplicas)
+		}
+	}
+	return nil
+}
+
 func Validate(c *api.ServiceClaim, cfg Config, allowed []string) (map[string]any, error) {
 	l, ok := cfg.Kinds[c.Spec.Kind]
 	if !ok || !slices.Contains(allowed, c.Spec.Kind) {
