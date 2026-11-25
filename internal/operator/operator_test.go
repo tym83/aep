@@ -311,3 +311,14 @@ func TestDeleteBlockedByComponent(t *testing.T) {
 		}
 	}
 }
+
+func TestTenantResourceQuotasGPU(t *testing.T) {
+	got := TenantResourceQuotas(api.Quotas{"cpu": "8", "gpu": "0"})
+	if _, ok := got["gpu"]; ok {
+		t.Fatalf("zero gpu quota must be omitted: %v", got)
+	}
+	got = TenantResourceQuotas(api.Quotas{"gpu": "2"})
+	if got["nvidia.com/gpu"] != "2" {
+		t.Fatalf("gpu must map to nvidia.com/gpu: %v", got)
+	}
+}
