@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	errors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +27,11 @@ func (r *Reconciler) finalize(ctx context.Context, o *api.Organization) (ctrl.Re
 		if e := r.Status().Update(ctx, o); e != nil {
 			return ctrl.Result{}, e
 		}
-		return ctrl.Result{RequeueAfter: time.Minute}, nil
+		var waiting *pendingError
+		if stderrors.As(err, &waiting) {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 	base := o.DeepCopy()
 	o.Finalizers = slices.DeleteFunc(o.Finalizers, func(v string) bool { return v == finalizer })
@@ -34,7 +39,7 @@ func (r *Reconciler) finalize(ctx context.Context, o *api.Organization) (ctrl.Re
 }
 func (s *session) delete(ctx context.Context) error {
 	if s.o.Annotations["aep.aenix.io/confirm-delete"] != s.o.Name {
-		return fmt.Errorf("set aep.aenix.io/confirm-delete=%s after removing all ServiceClaims and Components", s.o.Name)
+		return pending("set aep.aenix.io/confirm-delete=%s after removing all ServiceClaims and Components", s.o.Name)
 	}
 	if e := s.controlPlane(ctx); e != nil {
 		return e
@@ -45,7 +50,7 @@ func (s *session) delete(ctx context.Context) error {
 			return e
 		}
 		if len(components) > 0 {
-			return fmt.Errorf("Component %s/%s blocks deletion", s.o.Name, components[0].GetName())
+			return pending("Component %s/%s blocks deletion", s.o.Name, components[0].GetName())
 		}
 		for _, t := range Tiers(s.o) {
 			ns := TenantNamespace(s.o.Name, t)
@@ -73,7 +78,7 @@ func (s *session) delete(ctx context.Context) error {
 				return e
 			}
 			if len(claims) > 0 {
-				return fmt.Errorf("ServiceClaim %s/%s in %s blocks deletion", claims[0].GetNamespace(), claims[0].GetName(), t)
+				return pending("ServiceClaim %s/%s in %s blocks deletion", claims[0].GetNamespace(), claims[0].GetName(), t)
 			}
 			// Retained managed applications must never disappear with their tenant.
 			for _, kind := range []string{"postgreses", "redises"} {
@@ -82,7 +87,7 @@ func (s *session) delete(ctx context.Context) error {
 					return e
 				}
 				if len(items) > 0 {
-					return fmt.Errorf("managed service %s/%s blocks tenant deletion", ns, items[0].GetName())
+					return pending("managed service %s/%s blocks tenant deletion", ns, items[0].GetName())
 				}
 			}
 		}

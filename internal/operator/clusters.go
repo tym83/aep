@@ -4,6 +4,7 @@ import (
 	"context"
 	api "github.com/tym83/aep/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -50,6 +51,9 @@ func (s *session) clusters(ctx context.Context) error {
 			}
 		}
 		cp, e := s.r.Management.get(ctx, "kamaji.clastix.io/v1alpha1", "tenantcontrolplanes", ns, "kubernetes-apps")
+		if apierrors.IsNotFound(e) {
+			return pending("waiting for %s TenantControlPlane to be created", tier)
+		}
 		if e != nil {
 			return e
 		}
