@@ -74,10 +74,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, e
 		}
 	}
-	steps := []struct {
-		name string
-		run  func(context.Context) error
-	}{
+	steps := []reconcileStep{
 		{"TenantsReady", s.tenants},
 		// Root etcd must be reachable before a control plane can become Ready.
 		{"NetworkPathsReady", s.workaround},
@@ -90,12 +87,23 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		{"AccessReady", s.access},
 		{"BridgesReady", s.bridges},
 	}
+	return r.runSteps(ctx, o, steps)
+}
+
+type reconcileStep struct {
+	name string
+	run  func(context.Context) error
+}
+
+// Policy delivery is observable independently of organization access.
+func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []reconcileStep) (ctrl.Result, error) {
 	o.Status.Phase = "Reconciling"
 	for _, t := range conditionTypes {
 		if c := meta.FindStatusCondition(o.Status.Conditions, t); c == nil || c.ObservedGeneration != o.Generation {
 			setCondition(o, t, false, "Pending", "Waiting for dependencies")
 		}
 	}
+	var policyErr error
 	for index, step := range steps {
 		err := step.run(ctx)
 		if err != nil {
@@ -105,6 +113,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				reason = "Pending"
 			}
 			setCondition(o, step.name, false, reason, err.Error())
+			if step.name == "PoliciesReady" {
+				policyErr = err
+				if errors.Is(err, errCosignKeyMissing) {
+					setCondition(o, step.name, false, "CosignKeyMissing", err.Error())
+				}
+				continue
+			}
 			for _, dependent := range steps[index+1:] {
 				if dependent.name != step.name {
 					setCondition(o, dependent.name, false, "DependencyPending", "Waiting for "+step.name)
@@ -122,6 +137,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if index != 1 && index != 4 {
 			setCondition(o, step.name, true, "Reconciled", "Desired state verified")
 		}
+	}
+	if policyErr != nil {
+		o.Status.Phase = "Pending"
+		if err := r.Status().Update(ctx, o); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 	o.Status.Phase = "Ready"
 	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)

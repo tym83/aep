@@ -2,7 +2,7 @@ package operator
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	api "github.com/tym83/aep/api/v1alpha1"
@@ -11,7 +11,7 @@ import (
 )
 
 const KyvernoChartVersion = "3.9.2" // Kyverno 1.19.2; legacy ClusterPolicy rules remain supported.
-const PolicyBundleVersion = "0.1.0"
+const PolicyBundleVersion = "0.1.1"
 
 func policyRelease(o *api.Organization, tier, name string, values M) *unstructured.Unstructured {
 	spec := M{"interval": "5m", "timeout": "10m", "releaseName": name, "targetNamespace": "kyverno", "storageNamespace": "kyverno",
@@ -53,15 +53,18 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 	}
 	if tier == "prod" {
 		values["app-cluster-prod"]["cosignPublicKey"] = key
+		values["app-cluster-prod"]["platformNamespaces"] = stringsAny(o.Spec.Policy.PlatformNamespaces)
+		trust := o.Spec.Policy.PlatformImageTrust
+		values["app-cluster-prod"]["platformImageTrust"] = M{"mode": trust.Mode, "vendorPublicKeys": stringsAny(trust.VendorPublicKeys), "allowedImages": stringsAny(trust.AllowedImages)}
 	}
 	return values
 }
 
+var errCosignKeyMissing = errors.New("spec.policy.cosignPublicKey is required before delivering the production bundle")
+
 func (s *session) policies(ctx context.Context) error {
 	key := s.o.Spec.Policy.CosignPublicKey
-	if s.o.Spec.Profile != "small" && strings.TrimSpace(key) == "" {
-		return fmt.Errorf("spec.policy.cosignPublicKey is required for production")
-	}
+	missingKey := s.o.Spec.Profile != "small" && strings.TrimSpace(key) == ""
 	repository := s.r.Options.PolicyBundleRepository
 	if repository == "" {
 		repository = "oci://ghcr.io/tym83/aep/policies"
@@ -69,6 +72,9 @@ func (s *session) policies(ctx context.Context) error {
 	for _, tier := range Tiers(s.o) {
 		values := policyValues(s.o, tier, key)
 		for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-" + tier} {
+			if name == "app-cluster-prod" && missingKey {
+				continue
+			}
 			url, version := strings.TrimSuffix(repository, "/")+"/"+name, PolicyBundleVersion
 			if name == "kyverno" {
 				url, version = "oci://ghcr.io/kyverno/charts/kyverno", KyvernoChartVersion
@@ -84,6 +90,9 @@ func (s *session) policies(ctx context.Context) error {
 				return err
 			}
 		}
+	}
+	if missingKey {
+		return errCosignKeyMissing
 	}
 	// Apply all tiers before waiting so one slow release cannot starve another tier.
 	for _, tier := range Tiers(s.o) {
