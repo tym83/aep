@@ -11,7 +11,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"slices"
 	"time"
 )
@@ -39,11 +38,6 @@ var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsRead
 
 func retryLimiter() workqueue.TypedRateLimiter[ctrl.Request] {
 	return workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](5*time.Millisecond, 2*time.Minute)
-}
-
-func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(m).For(&api.Organization{}).
-		WithOptions(controller.Options{RateLimiter: retryLimiter()}).Complete(r)
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
