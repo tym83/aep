@@ -24,6 +24,8 @@ func main() {
 func run() error {
 	r := &operator.Reconciler{}
 	o := &r.Options
+	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")
+	flag.StringVar(&o.KyvernoChartURL, "kyverno-chart-url", "oci://ghcr.io/kyverno/charts/kyverno", "Kyverno OCI chart URL; override for air-gap mirror")
 	var mgmt string
 	flag.StringVar(&mgmt, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&o.Namespace, "namespace", "aep-system", "Operator namespace")

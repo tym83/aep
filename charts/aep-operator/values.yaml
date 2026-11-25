@@ -10,3 +10,12 @@ keycloak:
   url: ""
   realm: ""
   credentialsSecret: ""
+
+policyBundleRepository: oci://ghcr.io/tym83/aep/policies
+kyvernoChartURL: oci://ghcr.io/kyverno/charts/kyverno
+
+readApi:
+  enabled: false
+  image: ""
+  issuer: ""
+  audience: ""

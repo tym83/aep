@@ -25,6 +25,14 @@ func TenantNamespace(org, tier string) string {
 	return "tenant-" + org + "-" + tier
 }
 func Validate(o *api.Organization) error {
+	if o.Spec.Policy.Mode != "" && o.Spec.Policy.Mode != "audit" && o.Spec.Policy.Mode != "enforce" {
+		return fmt.Errorf("policy mode must be audit or enforce")
+	}
+	for _, registry := range o.Spec.Policy.Registries {
+		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?$`).MatchString(registry) {
+			return fmt.Errorf("registries must be exact registry hosts with optional ports")
+		}
+	}
 	if !regexp.MustCompile(`^[a-z0-9]{1,32}$`).MatchString(o.Name) || slices.Contains([]string{"aep", "root", "cozy", "system"}, o.Name) {
 		return fmt.Errorf("organization name must be 1-32 lowercase alphanumeric characters and not reserved")
 	}

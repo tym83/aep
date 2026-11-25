@@ -19,6 +19,8 @@ spec:
         - name: operator
           image: {{ .Values.image | quote }}
           args:
+            - {{ printf "--policy-bundle-repository=%s" .Values.policyBundleRepository | quote }}
+            - {{ printf "--kyverno-chart-url=%s" .Values.kyvernoChartURL | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
             - {{ printf "--bridge-image=%s" .Values.bridgeImage | quote }}
             - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}

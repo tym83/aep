@@ -29,7 +29,16 @@ type TierSpec struct {
 	Cluster  ClusterSpec  `json:"cluster"`
 	Services ServicesSpec `json:"services"`
 }
+
+// PolicySpec controls baseline reporting; production image and nonprod Pod Security rules always enforce.
+type PolicySpec struct {
+	Registries []string `json:"registries,omitempty"`
+	// CosignPublicKey is an inline PEM public key, never a private signing key.
+	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+}
 type OrganizationSpec struct {
+	Policy       PolicySpec          `json:"policy,omitempty"`
 	DisplayName  string              `json:"displayName"`
 	Profile      string              `json:"profile"`
 	CostCenter   string              `json:"costCenter,omitempty"`

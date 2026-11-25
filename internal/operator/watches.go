@@ -17,6 +17,9 @@ import (
 )
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
+	if err := m.Add(&policyMaintenance{r: r}); err != nil {
+		return err
+	}
 	b := ctrl.NewControllerManagedBy(m).
 		For(&api.Organization{}).
 		WithOptions(controller.Options{RateLimiter: retryLimiter()})

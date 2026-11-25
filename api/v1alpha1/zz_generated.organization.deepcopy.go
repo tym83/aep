@@ -8,6 +8,7 @@ import (
 func (in *Organization) DeepCopyInto(out *Organization) {
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	out.Spec.Policy.Registries = append([]string(nil), in.Spec.Policy.Registries...)
 	out.Spec.Quotas = make(Quotas, len(in.Spec.Quotas))
 	for k, v := range in.Spec.Quotas {
 		out.Spec.Quotas[k] = v

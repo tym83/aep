@@ -16,6 +16,7 @@ import (
 )
 
 type Options struct {
+	PolicyBundleRepository, KyvernoChartURL                                               string
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
@@ -34,7 +35,7 @@ type session struct {
 	gateway string
 }
 
-var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady"}
+var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "PoliciesReady", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady"}
 
 func retryLimiter() workqueue.TypedRateLimiter[ctrl.Request] {
 	return workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](5*time.Millisecond, 2*time.Minute)
@@ -84,8 +85,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		{"NetworkPathsReady", s.network},
 		{"DataPlanesConnected", s.delivery},
 		{"OpenChoreoNamespaceReady", s.openChoreo},
-		{"AccessReady", s.access},
 		{"DataPlanesConnected", s.connected},
+		{"PoliciesReady", s.policies},
+		{"AccessReady", s.access},
 		{"BridgesReady", s.bridges},
 	}
 	o.Status.Phase = "Reconciling"
