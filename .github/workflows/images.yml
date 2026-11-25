@@ -16,6 +16,10 @@ jobs:
             dockerfile: Dockerfile
           - name: aep-operator
             dockerfile: Dockerfile.operator
+          - name: aep-change-api
+            dockerfile: Dockerfile.change-api
+          - name: aep-change-controller
+            dockerfile: Dockerfile.change-controller
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

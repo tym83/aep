@@ -1,0 +1,364 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: changerequests.aep.aenix.io
+spec:
+  group: aep.aenix.io
+  names:
+    kind: ChangeRequest
+    listKind: ChangeRequestList
+    plural: changerequests
+    singular: changerequest
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.operation
+      name: Operation
+      type: string
+    - jsonPath: .spec.model
+      name: Model
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .spec.requester
+      name: Requester
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              desired:
+                description: |-
+                  Desired is the operation-specific payload, e.g. the releaseName to
+                  promote. The schema is validated per operation by the change service.
+                x-kubernetes-preserve-unknown-fields: true
+              externalRef:
+                description: ExternalRef is the ITSM identifier mirroring this change.
+                type: string
+              justification:
+                minLength: 1
+                type: string
+              model:
+                description: |-
+                  ChangeModel selects the approval path. Standard changes are pre-approved
+                  templates executed immediately with a record; normal changes need an
+                  eligible human approver; emergency changes need a second person from the
+                  security on-call group.
+                enum:
+                - standard
+                - normal
+                - emergency
+                type: string
+              operation:
+                description: |-
+                  ChangeOperation is the typed operation a ChangeRequest asks for. Every
+                  operation has its own desired-payload schema and handler.
+                enum:
+                - promote
+                - rollback
+                - resource-update
+                - resource-restore
+                - credential-rotate
+                - policy-exception
+                - breakglass
+                - organization-change
+                - cluster-attach
+                - machine-approve
+                - machine-decommission
+                - decommission
+                type: string
+              organization:
+                description: |-
+                  Organization owning the change; must match the tenant namespace of the
+                  object. The OpenChoreo namespace of the organization is derived from it.
+                maxLength: 63
+                minLength: 1
+                type: string
+              requester:
+                description: |-
+                  Requester is the authenticated identity that created the change. It is
+                  filled by the API from the caller's token, never from the request body.
+                minLength: 1
+                type: string
+              requesterGroups:
+                description: |-
+                  RequesterGroups records the token groups at creation time so the
+                  controller can enforce separation of duties without trusting the API.
+                items:
+                  type: string
+                type: array
+              target:
+                description: |-
+                  ChangeTarget is a typed reference to what the change acts on. For binding
+                  operations (promote, rollback, resource-update, decommission) the binding
+                  kind is derived from Kind: Component -> ReleaseBinding, Resource ->
+                  ResourceReleaseBinding, Project -> ProjectReleaseBinding.
+                properties:
+                  environment:
+                    maxLength: 63
+                    type: string
+                  kind:
+                    enum:
+                    - Component
+                    - Resource
+                    - Project
+                    - Organization
+                    - Cluster
+                    - Machine
+                    type: string
+                  name:
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  project:
+                    description: |-
+                      Project is required for Component and Resource targets and must be empty
+                      for Project targets (the name already carries the project).
+                    maxLength: 63
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              window:
+                description: |-
+                  ChangeWindow is the planned execution window. An approval is valid until
+                  the window end; requests without a window expire after a fixed TTL.
+                properties:
+                  end:
+                    format: date-time
+                    type: string
+                  start:
+                    format: date-time
+                    type: string
+                required:
+                - end
+                - start
+                type: object
+            required:
+            - justification
+            - model
+            - operation
+            - organization
+            - requester
+            - target
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
+          status:
+            properties:
+              approvals:
+                items:
+                  description: |-
+                    ChangeApproval is one human (or system, for standard changes) decision.
+                    Decisions are only accepted from the approver's own token; adapters cannot
+                    approve on behalf of a person.
+                  properties:
+                    decision:
+                      type: string
+                    evidence:
+                      description: |-
+                        Evidence links the decision to an external record, e.g. a ServiceNow
+                        approval sys_id.
+                      type: string
+                    groups:
+                      items:
+                        type: string
+                      type: array
+                    role:
+                      description: |-
+                        Role the decision counts under: approver, platform, security,
+                        security-oncall or standard.
+                      type: string
+                    source:
+                      enum:
+                      - portal
+                      - itsm
+                      - system
+                      type: string
+                    time:
+                      format: date-time
+                      type: string
+                    user:
+                      type: string
+                  required:
+                  - decision
+                  - role
+                  - source
+                  - time
+                  - user
+                  type: object
+                type: array
+              attempts:
+                description: Attempts counts apply attempts; the controller backs
+                  off between them.
+                format: int32
+                type: integer
+              before:
+                items:
+                  description: |-
+                    BindingSnapshot is the "before" state of one OpenChoreo binding. The
+                    controller compares the live binding against it before every apply attempt
+                    and fails the change as Stale when they differ.
+                  properties:
+                    bindingKind:
+                      type: string
+                    capturedAt:
+                      format: date-time
+                      type: string
+                    exists:
+                      type: boolean
+                    hash:
+                      type: string
+                    name:
+                      type: string
+                    spec:
+                      x-kubernetes-preserve-unknown-fields: true
+                  required:
+                  - bindingKind
+                  - capturedAt
+                  - exists
+                  - name
+                  type: object
+                type: array
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              notes:
+                items:
+                  description: ChangeNote is a free-form comment recorded on the change.
+                  properties:
+                    source:
+                      type: string
+                    text:
+                      type: string
+                    time:
+                      format: date-time
+                      type: string
+                    user:
+                      type: string
+                  required:
+                  - source
+                  - text
+                  - time
+                  - user
+                  type: object
+                type: array
+              phase:
+                description: ChangePhase is the state machine position of a ChangeRequest.
+                type: string
+              rollbackPlan:
+                description: RollbackPlan tells how to undo the change once applied.
+                properties:
+                  action:
+                    enum:
+                    - restore-release
+                    - restore-spec
+                    - recreate-binding
+                    - undeploy
+                    - revoke-grant
+                    - none
+                    type: string
+                  description:
+                    type: string
+                  releaseName:
+                    type: string
+                required:
+                - action
+                type: object
+              targetKey:
+                description: |-
+                  TargetKey is the deterministic key serializing changes: one active
+                  ChangeRequest per target binding, newer requests supersede older ones.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

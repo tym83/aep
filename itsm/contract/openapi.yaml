@@ -1,0 +1,386 @@
+openapi: 3.1.0
+info:
+  title: AEP Change Service API
+  version: 1.0.0
+  description: |
+    Contract of the AEP change service (`aep-change-api`) for humans and ITSM
+    adapters. The service records change requests and human decisions;
+    execution is asynchronous and owned by the change controller.
+
+    Rules that hold for every endpoint:
+
+    - Callers authenticate with an OIDC bearer token (Keycloak). The
+      requester of a change and the author of a decision are taken from the
+      token, never from the request body.
+    - Service accounts (client-credentials tokens) cannot create changes and
+      cannot decide; decisions require the human approver's own token — there
+      is no on-behalf-of. Adapters may create notes.
+    - A change is identified by its composite id `<organization>/<name>`
+      returned at creation.
+    - The change spec is immutable after creation; its lifecycle is visible
+      in `status.phase`:
+      `Draft → Pending → Approved | Rejected → Scheduled → Applying →
+      Applied | Failed`, plus `Expired` and `Superseded`.
+  contact:
+    name: Aenix
+  license:
+    name: Apache-2.0
+servers:
+  - url: /
+
+tags:
+  - name: changes
+
+paths:
+  /v1/changes:
+    post:
+      operationId: createChange
+      summary: Request a change
+      description: |
+        Creates a change request. Requires an `Idempotency-Key` header: a
+        retried request with the same key, requester and body returns the
+        already-created change with `200 OK`; the same key with a different
+        body is rejected with `409`.
+      tags: [changes]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 255 }
+          description: Client-chosen key making the request idempotent; scoped per requester and organization.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateChangeRequest' }
+      responses:
+        '201':
+          description: Change created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
+        '200':
+          description: Idempotent replay of an already-created change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/changes/{org}/{name}:
+    get:
+      operationId: getChange
+      summary: Read a change
+      description: Returns the change with its current phase, approvals, notes, before snapshot and conditions.
+      tags: [changes]
+      parameters:
+        - $ref: '#/components/parameters/OrgParam'
+        - $ref: '#/components/parameters/NameParam'
+      responses:
+        '200':
+          description: The change.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/changes/{org}/{name}/decision:
+    post:
+      operationId: decideChange
+      summary: Approve or reject a change
+      description: |
+        Records the caller's decision. Accepted only while the change is
+        `Pending`, only from a human token, and only when the caller's groups
+        grant a decision right for this change (separation of duties is
+        re-evaluated by the controller). `If-Match` must carry the
+        `resourceVersion` of the change the caller reviewed; a stale or
+        missing precondition is rejected, so a decision never lands on a view
+        the approver did not see.
+      tags: [changes]
+      parameters:
+        - $ref: '#/components/parameters/OrgParam'
+        - $ref: '#/components/parameters/NameParam'
+        - name: If-Match
+          in: header
+          required: true
+          schema: { type: string }
+          description: resourceVersion of the reviewed change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Decision' }
+      responses:
+        '200':
+          description: Decision recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The change is not pending, or the caller already decided.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '428': { $ref: '#/components/responses/PreconditionRequired' }
+
+  /v1/changes/{org}/{name}/notes:
+    post:
+      operationId: addChangeNote
+      summary: Add a note
+      description: Appends a note to the change. Service accounts (ITSM adapters) may add notes; their notes are marked with source `itsm`.
+      tags: [changes]
+      parameters:
+        - $ref: '#/components/parameters/OrgParam'
+        - $ref: '#/components/parameters/NameParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Note' }
+      responses:
+        '201':
+          description: Note recorded.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: OIDC token of the caller; requester and decision author are taken from it.
+
+  parameters:
+    OrgParam:
+      name: org
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$', maxLength: 63 }
+      description: Organization that owns the change.
+    NameParam:
+      name: name
+      in: path
+      required: true
+      schema: { type: string, maxLength: 253 }
+      description: Name part of the composite change id.
+
+  responses:
+    BadRequest:
+      description: The request is malformed or fails validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The caller's identity or groups do not allow this action.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: The change does not exist.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The request conflicts with the current state of the change.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PreconditionFailed:
+      description: If-Match did not match; re-read the change and decide again.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PreconditionRequired:
+      description: The If-Match header is required.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Operation:
+      type: string
+      enum: [promote, rollback, resource-update, resource-restore, credential-rotate, policy-exception, breakglass, organization-change, cluster-attach, machine-approve, machine-decommission, decommission]
+    ChangeModel:
+      type: string
+      enum: [standard, normal, emergency]
+      description: |
+        `standard` changes match a pre-approved template and run immediately
+        with a record; `normal` changes need an eligible human approver;
+        `emergency` changes need a second person from security on-call.
+    ChangePhase:
+      type: string
+      enum: [Draft, Pending, Approved, Rejected, Scheduled, Applying, Applied, Failed, Expired, Superseded]
+    ChangeTarget:
+      type: object
+      required: [kind, name]
+      properties:
+        kind: { type: string, enum: [Component, Resource, Project, Organization, Cluster, Machine] }
+        name: { type: string, minLength: 1, maxLength: 63 }
+        project: { type: string, maxLength: 63, description: Required for Component and Resource targets. }
+        environment: { type: string, maxLength: 63, description: Required for binding operations. }
+    ChangeWindow:
+      type: object
+      required: [start, end]
+      properties:
+        start: { type: string, format: date-time }
+        end: { type: string, format: date-time }
+      description: Planned window; an approval is valid until the window end, requests without a window expire 72h after creation.
+
+    CreateChangeRequest:
+      type: object
+      required: [organization, operation, model, target, justification]
+      properties:
+        organization: { type: string, minLength: 1, maxLength: 63 }
+        operation: { $ref: '#/components/schemas/Operation' }
+        model: { $ref: '#/components/schemas/ChangeModel' }
+        target: { $ref: '#/components/schemas/ChangeTarget' }
+        desired:
+          type: object
+          description: |
+            Operation-specific payload. Examples: `{"releaseName": "api-1.4.0"}`
+            for promote/rollback; `{"resourceTypeEnvironmentConfigs": {...},
+            "resourceRelease": "...", "retainPolicy": "Retain"}` for
+            resource-update; `{"duration": "4h"}` for breakglass.
+          additionalProperties: true
+        justification: { type: string, minLength: 1 }
+        window: { $ref: '#/components/schemas/ChangeWindow' }
+        externalRef: { type: string, description: ITSM identifier mirroring this change, e.g. a ServiceNow change number. }
+
+    ChangeApproval:
+      type: object
+      required: [user, role, decision, time, source]
+      properties:
+        user: { type: string }
+        groups: { type: array, items: { type: string }, description: Token groups at decision time. }
+        role: { type: string, enum: [approver, platform, security, security-oncall, standard] }
+        decision: { type: string, enum: [approve, reject] }
+        time: { type: string, format: date-time }
+        source: { type: string, enum: [portal, itsm, system], description: '`system` marks the recorded auto-approval of a standard change.' }
+        evidence: { type: string, description: External reference, e.g. a ServiceNow approval sys_id. }
+
+    ChangeNote:
+      type: object
+      required: [user, time, text, source]
+      properties:
+        user: { type: string }
+        time: { type: string, format: date-time }
+        text: { type: string, maxLength: 4000 }
+        source: { type: string, enum: [portal, itsm] }
+
+    BindingSnapshot:
+      type: object
+      required: [bindingKind, name, exists, capturedAt]
+      properties:
+        bindingKind: { type: string, enum: [ReleaseBinding, ResourceReleaseBinding, ProjectReleaseBinding] }
+        name: { type: string }
+        exists: { type: boolean }
+        spec: { type: object, additionalProperties: true, description: Binding spec before the change; absent when the binding does not exist. }
+        hash: { type: string }
+        capturedAt: { type: string, format: date-time }
+
+    RollbackPlan:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, enum: [restore-release, restore-spec, recreate-binding, undeploy, revoke-grant, none] }
+        releaseName: { type: string }
+        description: { type: string }
+
+    Condition:
+      type: object
+      required: [type, status, reason, lastTransitionTime]
+      properties:
+        type: { type: string, description: 'Validated, Approved or Applied.' }
+        status: { type: string, enum: ['True', 'False', Unknown] }
+        reason: { type: string }
+        message: { type: string }
+        observedGeneration: { type: integer, format: int64 }
+        lastTransitionTime: { type: string, format: date-time }
+
+    ChangeRequest:
+      type: object
+      required: [metadata, spec]
+      properties:
+        metadata:
+          type: object
+          required: [name, namespace, resourceVersion]
+          properties:
+            name: { type: string }
+            namespace: { type: string }
+            resourceVersion: { type: string, description: Send it back as If-Match when deciding. }
+            creationTimestamp: { type: string, format: date-time }
+        spec:
+          type: object
+          required: [organization, operation, model, target, justification, requester]
+          properties:
+            organization: { type: string }
+            operation: { $ref: '#/components/schemas/Operation' }
+            model: { $ref: '#/components/schemas/ChangeModel' }
+            target: { $ref: '#/components/schemas/ChangeTarget' }
+            desired: { type: object, additionalProperties: true }
+            justification: { type: string }
+            window: { $ref: '#/components/schemas/ChangeWindow' }
+            requester: { type: string, description: Filled from the creator's token; immutable. }
+            requesterGroups: { type: array, items: { type: string } }
+            externalRef: { type: string }
+        status:
+          type: object
+          properties:
+            phase: { $ref: '#/components/schemas/ChangePhase' }
+            approvals: { type: array, items: { $ref: '#/components/schemas/ChangeApproval' } }
+            notes: { type: array, items: { $ref: '#/components/schemas/ChangeNote' } }
+            before: { type: array, items: { $ref: '#/components/schemas/BindingSnapshot' } }
+            rollbackPlan: { $ref: '#/components/schemas/RollbackPlan' }
+            attempts: { type: integer, format: int32 }
+            conditions: { type: array, items: { $ref: '#/components/schemas/Condition' } }
+
+    ChangeView:
+      type: object
+      required: [id, request]
+      properties:
+        id: { type: string, description: 'Composite change id: `<organization>/<name>`.' }
+        request: { $ref: '#/components/schemas/ChangeRequest' }
+
+    Decision:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approve, reject] }
+        evidence: { type: string, description: Link to the external approval record, e.g. a ServiceNow sys_id. }
+
+    Note:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 4000 }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+security:
+  - bearerAuth: []

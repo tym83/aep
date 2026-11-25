@@ -10,6 +10,15 @@ planes, bridges and access on an existing Cozystack/OpenChoreo installation.
 See [the operator guide](docs/operator.md) for installation, flags, prerequisites
 and the explicit limitations of this stage.
 
+## Change service
+
+The change service (`cmd/change-api`, `cmd/change-controller`) governs writes
+into protected OpenChoreo environments: users and ITSM request a
+`ChangeRequest`, separation-of-duties rules decide who may approve it, and
+the controller executes approved changes through the OpenChoreo API with
+stale detection, per-binding leases and idempotent retries. See
+`docs/change-service.md` and the ITSM contract in `itsm/contract/openapi.yaml`.
+
 ## Bridge
 
 The bridge runs on the **management cluster**, one instance per organization and
