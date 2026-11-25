@@ -107,7 +107,7 @@ func Validate(o *api.Organization) error {
 		}
 	}
 	for k := range o.Spec.Access {
-		if !slices.Contains(roles, k) {
+		if k != "finance" && !slices.Contains(roles, k) {
 			return fmt.Errorf("unknown access role %s", k)
 		}
 	}

@@ -60,7 +60,7 @@ func (s *session) keycloak(ctx context.Context) error {
 	if resp.StatusCode != 200 || e != nil || token.AccessToken == "" {
 		return fmt.Errorf("Keycloak authentication failed (HTTP %d)", resp.StatusCode)
 	}
-	for _, role := range roles {
+	for _, role := range append(append([]string{}, roles...), "finance") {
 		body, _ := json.Marshal(M{"name": "aep-" + s.o.Name + "-" + role})
 		req, e = http.NewRequestWithContext(ctx, "POST", base+"/admin/realms/"+url.PathEscape(opt.KeycloakRealm)+"/groups", strings.NewReader(string(body)))
 		if e != nil {

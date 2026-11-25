@@ -18,6 +18,7 @@ import (
 	"github.com/tym83/aep/internal/authn"
 	"github.com/tym83/aep/internal/bridge"
 	"github.com/tym83/aep/internal/change"
+	"github.com/tym83/aep/internal/cost"
 	"github.com/tym83/aep/internal/kinds"
 	"github.com/tym83/aep/internal/operator"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,6 +33,7 @@ import (
 type Server struct {
 	complianceNamespace  string
 	now                  func() time.Time
+	Costs                cost.Reader
 	client               client.Reader
 	apps                 dynamic.Interface
 	verifier             authn.Verifier
@@ -56,6 +58,7 @@ func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNa
 			return nil, err
 		}
 	}
+	s.mux.HandleFunc("GET /v1/organizations/{org}/costs", s.withAuth(s.costAccess))
 	s.mux.HandleFunc("GET /v1/me", s.withAuth(s.me))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/services", s.withAuth(s.organization(s.services, false)))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/changes", s.withAuth(s.organization(s.changes, true)))
@@ -83,7 +86,7 @@ func (s *Server) withAuth(next authenticated) http.HandlerFunc {
 	}
 }
 
-var roles = []string{"developer", "platform", "approver", "admin", "auditor"}
+var roles = []string{"developer", "platform", "approver", "admin", "auditor", "finance"}
 
 func memberships(groups []string) map[string][]string {
 	result := map[string][]string{}
