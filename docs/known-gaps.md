@@ -1,3 +1,21 @@
 # Known gaps
 
 - **Bridge reads Secrets cluster-wide in the application cluster.** Before writing its connection Secret the bridge reads the object by name to refuse adopting foreign objects, so its ClusterRole carries `get` on all Secrets. The admission policy restricts writes only. Fix options: per-`dp-*` namespace Roles rendered by the operator, or a pure server-side apply flow with ownership checks done through field managers instead of a read. Found on the stand on 2026-11-25.
+
+- **Admin kubeconfig withholding is an upstream dependency.** Cozystack must expose
+  `withholdAdminKubeconfig` to trusted organization provisioning. The operator
+  uses super-admin only for the initial app-cluster bootstrap, then scoped SA
+  tokens. Flux remote HelmReleases still use `super-admin.svc` as required by the
+  current Cozystack delivery contract; hiding it from tenant users remains pending.
+- **Agent CA private key resides in the application cluster.** The verified
+  cert-manager CA issuer requires both certificate and key in `aep-agent-ca`.
+  Each tier has its own CA, also stored on management. A later CSR signing flow
+  must remove this residual risk; CA rollover is currently manual.
+- **Backup policy execution is not part of the current bridge.** Organization
+  accepts `services.backupPolicy`, but no Backups Plan is created. Federation
+  mapping, default SecretStore provisioning, and tenant user OIDC RBAC also remain
+  manual. See `docs/operator.md` before deploying.
+- **Deletion requires a maintenance window.** Cross-cluster preflight cannot
+  atomically freeze new Components/ServiceClaims. Stop writers before confirmation;
+  an operator-reviewed decommission workflow is still needed. User cascading
+  deletion is blocked by admission until that workflow exists.

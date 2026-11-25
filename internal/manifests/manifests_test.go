@@ -81,3 +81,43 @@ func TestCharts(t *testing.T) {
 		}
 	}
 }
+
+func TestOperatorChart(t *testing.T) {
+	if _, e := exec.LookPath("helm"); e != nil {
+		t.Skip("helm unavailable")
+	}
+	b, e := exec.Command("helm", "template", "operator", "../../charts/aep-operator", "--namespace", "aep-system", "--include-crds", "--set", "aepcpKubeconfigSecret=tenant-aep-cp/kubernetes-aepcp-admin-kubeconfig").CombinedOutput()
+	if e != nil {
+		t.Fatalf("%v: %s", e, b)
+	}
+	docs := decode(t, b)
+	if len(docs) != 5 {
+		t.Fatalf("expected CRD, SA, RBAC and Deployment, got %d", len(docs))
+	}
+	for _, d := range docs {
+		if d["kind"] != "ClusterRole" {
+			continue
+		}
+		for _, r := range d["rules"].([]any) {
+			rule := r.(map[string]any)
+			for _, k := range []string{"apiGroups", "resources", "verbs"} {
+				for _, v := range rule[k].([]any) {
+					if v == "*" {
+						t.Fatalf("wildcard operator privilege in %s", k)
+					}
+				}
+			}
+		}
+	}
+	source, e := os.ReadFile("../../config/crd/aep.aenix.io_organizations.yaml")
+	if e != nil {
+		t.Fatal(e)
+	}
+	packaged, e := os.ReadFile("../../charts/aep-operator/crds/aep.aenix.io_organizations.yaml")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if string(source) != string(packaged) {
+		t.Fatal("operator chart CRD drift")
+	}
+}
