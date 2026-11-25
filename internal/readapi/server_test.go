@@ -175,7 +175,8 @@ func TestServicesScopeAndProjection(t *testing.T) {
 		t.Fatal(w.Body)
 	}
 	for _, action := range d.Actions() {
-		if action.GetVerb() != "list" || !strings.HasPrefix(action.GetNamespace(), "tenant-acme-") {
+		get := action.GetVerb() == "get" && action.GetResource().Resource == "helmreleases"
+		if (action.GetVerb() != "list" && !get) || !strings.HasPrefix(action.GetNamespace(), "tenant-acme-") {
 			t.Fatalf("unexpected action: %+v", action)
 		}
 	}
@@ -191,7 +192,7 @@ func TestReadinessPreservesStaleObservations(t *testing.T) {
 	s, _, _, _ := fixture(t)
 	u := app("Postgres", "tenant-acme-prod", "db", nil)
 	u.SetGeneration(4)
-	item, err := s.service(u, "Postgres")
+	item, err := s.service(context.Background(), u, "Postgres")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +200,7 @@ func TestReadinessPreservesStaleObservations(t *testing.T) {
 		t.Fatal(item)
 	}
 	delete(u.Object, "status")
-	item, _ = s.service(u, "Postgres")
+	item, _ = s.service(context.Background(), u, "Postgres")
 	if item.Claim.Conditions[1].Status == metav1.ConditionTrue || item.Claim.Conditions[2].Status == metav1.ConditionTrue {
 		t.Fatal(item)
 	}

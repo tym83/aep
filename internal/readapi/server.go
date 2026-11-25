@@ -3,8 +3,10 @@ package readapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/tym83/aep/internal/policy"
 	"net/http"
 	"net/url"
 	"sort"
@@ -205,7 +207,7 @@ func (s *Server) services(w http.ResponseWriter, r *http.Request, org *api.Organ
 				if resource.kind != "Kubernetes" && app.GetLabels()[bridge.Domain+"managed-by"] != "bridge" {
 					continue
 				}
-				item, err := s.service(app, resource.kind)
+				item, err := s.service(r.Context(), app, resource.kind)
 				if err != nil {
 					fail(w, 500, "cannot build console URL")
 					return
@@ -219,7 +221,7 @@ func (s *Server) services(w http.ResponseWriter, r *http.Request, org *api.Organ
 		Items []serviceView `json:"items"`
 	}{items})
 }
-func (s *Server) service(app *unstructured.Unstructured, kind string) (serviceView, error) {
+func (s *Server) service(ctx context.Context, app *unstructured.Unstructured, kind string) (serviceView, error) {
 	console, err := s.consoleURL(app.GetNamespace(), kind, app.GetName())
 	item := serviceView{Name: app.GetNamespace() + "/" + kind + "/" + app.GetName(), Kind: "service", Labels: map[string]string{}, Application: applicationView{app.GetName(), app.GetNamespace(), console}}
 	if kind == "Kubernetes" {
@@ -234,12 +236,28 @@ func (s *Server) service(app *unstructured.Unstructured, kind string) (serviceVi
 	if len(ref) == 2 {
 		item.Claim.Name = ref[1]
 	}
-	// Claim generations and HelmRelease state are unavailable in v0. Keep app
-	// condition generations intact; do not turn stale observations into current ones.
+	// Evaluate readiness like the bridge: the HelmRelease generation must be
+	// observed and the live spec must match the spec the bridge applied.
+	release := "kubernetes-" + app.GetName()
+	if m, ok := kinds.Table[kind]; ok {
+		release = m.Release(app.GetName())
+	}
+	hr, hrErr := s.apps.Resource(helmReleases).Namespace(app.GetNamespace()).Get(ctx, release, metav1.GetOptions{})
+	if hrErr != nil {
+		hr = nil
+	}
+	matches := true
+	if kind != "Kubernetes" {
+		spec, _, _ := unstructured.NestedMap(app.Object, "spec")
+		matches = app.GetAnnotations()[bridge.Domain+"applied-spec-hash"] == policy.Hash(spec)
+	}
 	item.Claim.Generation = app.GetGeneration()
-	item.Claim.Conditions = bridge.Readiness(app, nil, false)
+	item.Claim.Conditions = bridge.Readiness(app, hr, matches)
 	return item, err
 }
+
+var helmReleases = schema.GroupVersionResource{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}
+
 func (s *Server) consoleURL(namespace, kind, name string) (string, error) {
 	if s.console == nil {
 		return "", nil
