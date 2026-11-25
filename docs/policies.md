@@ -24,9 +24,11 @@ explicitly present in the policy bundles apply.
 Pod rules include init/ephemeral containers and Kyverno-generated controller
 rules. Ephemeral containers cannot declare resource limits; the baseline limits
 rule therefore prevents adding them in enforce mode. Production image rules have
-no namespace exclusions: mirrored infrastructure images must also be signed by
-the trusted organization key and referenced by digest before subsequent upgrades.
-The existing tier bootstrap happens before these policies are installed.
+explicit platform namespace exclusions: `kube-system`, `cozy-*`,
+`openchoreo-*`, `kyverno`, `aep-system`, `cert-manager*`, plus
+`spec.policy.platformNamespaces`. Both digest and organization signature rules
+use the same list. All other namespaces, including OpenChoreo `dp-*` application
+cells and arbitrary user namespaces, remain subject to both rules.
 Background reporting does not evict existing noncompliant Pods.
 
 The `small` profile has one physical nonprod cluster, including logical prod
@@ -50,8 +52,14 @@ spec:
 
 `cosignPublicKey` is an inline PEM **public** key. Never put the private signing
 key in Organization. It is required before the production policies can become
-Ready. Missing keys fail closed at `PoliciesReady`; they do not omit the image
-policy. Public key rotation changes the production HelmRelease values. Sign
+Ready. Without a key, `PoliciesReady=False` with reason `CosignKeyMissing`;
+the operator does not deliver the prod bundle, but still delivers Kyverno,
+baseline bundles in both tiers and the nonprod bundle. `AccessReady` is independent
+of `PoliciesReady`: a missing key or pending policy release does not prevent
+OpenChoreo access. The organization remains Pending until policies are ready.
+Adding the key delivers the prod bundle on reconciliation. Removing a key after
+installation does not uninstall the existing bundle or weaken existing enforcement.
+Public key rotation changes the production HelmRelease values. Sign
 existing required images with the new key before switching. `mode` only changes
 the configurable baseline rules; it cannot disable nonprod restricted security,
 OpenChoreo isolation, or production signature/digest enforcement.
@@ -68,18 +76,66 @@ organization/account/index from the sending cluster's certificate (design 5.12).
 The route policy complements Gateway `allowedRoutes`; it does not configure the
 separate Argo CD Gateway or replace network isolation.
 
+## Platform trust boundary
+
+Platform components use vendor images, not the organization's signing key.
+The separate `aep-platform-images` policy in the prod bundle matches exactly the
+platform namespaces excluded from organization image rules. It defaults to Audit,
+with webhook failure policy Ignore. An empty trust configuration stays Audit even
+if its mode is set to enforce, so an unconfigured allow-list cannot block restarts.
+
+Configure additional addon namespaces **before** their pods are created, including
+namespaces created by the tier `aep-operator` service account or Cozystack outside
+the built-in patterns. Namespace creator identity does not exempt future pods.
+Additional entries are exact DNS namespace names, not wildcard patterns;
+`dp-*` cell names are rejected by the CRD, operator and chart.
+
+```yaml
+spec:
+  policy:
+    platformNamespaces: [addon-monitoring, addon-csi]
+    platformImageTrust:
+      mode: audit
+      vendorPublicKeys:
+        - |
+          -----BEGIN PUBLIC KEY-----
+          <vendor cosign public key>
+          -----END PUBLIC KEY-----
+      allowedImages:
+        - registry.vendor.example/agent@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+```
+
+An image is trusted if it matches an exact `allowedImages` reference, or has a
+signature from at least one configured vendor key. Allowed references bind the
+registry host (and optional port), repository and SHA-256 digest together; tags
+and wildcards are rejected. With vendor keys, other images undergo signature and
+digest verification without tag mutation or a transparency-log dependency.
+Without vendor keys, every image must be in the digest allow-list.
+These are separate trust roots from `cosignPublicKey`; neither trust list exempts
+application namespaces. See the upstream
+[image verification contract](https://release-1-19-0.kyverno.io/docs/policy-types/cluster-policy/verify-images/overview/).
+
+Review Audit reports, inventory addon images and configure registry credentials
+before explicitly setting `platformImageTrust.mode: enforce`. Enforce with a
+nonempty trust configuration rejects untrusted platform images and fails closed
+on verification errors. This mode is independent of baseline `policy.mode`.
+Platform namespace creation and writes to Organization policy configuration must
+remain platform-admin privileges: placing user workloads in an excluded namespace
+would move them across this trust boundary. Baseline policies still apply
+according to their own rules and mode.
+
 ## Versioned delivery and air gaps
 
 Pinned upstream: [Kyverno chart 3.9.2 / Kyverno 1.19.2](https://github.com/kyverno/kyverno/blob/release-1.19/charts/kyverno/Chart.yaml).
 It supports the requested `kyverno.io` ClusterPolicy rules. Do not upgrade to a
 version that removes legacy policy execution without migrating and testing them.
-The bundle chart version is `0.1.0`.
+The bundle chart version is `0.1.1`.
 
 ```sh
 make policies-package
 # Publication is a release-engineering action; development does not push artifacts.
 for bundle in baseline nonprod prod; do
-  helm push dist/policies/app-cluster-$bundle-0.1.0.tgz oci://REGISTRY/aep/policies
+  helm push dist/policies/app-cluster-$bundle-0.1.1.tgz oci://REGISTRY/aep/policies
 done
 ```
 
@@ -174,8 +230,12 @@ npx --yes @yarnpkg/cli-dist@4.13.0 test --watch=false --runInBand plugins/aep pl
 The npm package `yarn@4` is not published; `@yarnpkg/cli-dist` is the official
 Yarn 4 distribution. Policy test resources and expected results live under each
 bundle's `tests/`; `make policies-render` creates ignored rendered policy files.
-The offline prod tests cover digest validation; signature verification requires
-a reachable test registry with signed, unsigned and wrong-key digest images.
+The prod scenarios cover platform tag exclusions and application digest checks.
+`make policies-test` also runs a local OCI registry fixture: tagged platform pods
+are admitted in Audit, unsigned digest images in `dp-*` and user namespaces fail
+the signature rule, and platform allow-list/vendor-key enforcement is checked.
+The fixture needs permission to bind localhost; it makes no external registry calls.
+Go runs skip that integration test when the policy CLI is absent.
 Before rollout, run live admission tests for agent identity, reserved routes,
 PolicyException guard/expiry, signature failures, Flux remote installation and
 cross-organization access. Helm rendering and Go unit tests cannot prove webhook
