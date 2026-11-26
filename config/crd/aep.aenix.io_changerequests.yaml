@@ -311,6 +311,8 @@ spec:
                 items:
                   description: ChangeNote is a free-form comment recorded on the change.
                   properties:
+                    id:
+                      type: string
                     source:
                       type: string
                     text:
