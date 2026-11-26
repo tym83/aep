@@ -133,7 +133,8 @@
                           }
                         }
                       }
-                    }
+                    },
+                    "maxItems": 64
                   },
                   "tiers": {
                     "type": "object",

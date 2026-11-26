@@ -105,12 +105,16 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	}
 	// Prevent concurrent, approved assignments from racing over one Environment.
 	var list api.ExternalClusterList
-	if e := f.List(ctx, &list); e != nil {
+	if e := f.List(ctx, &list, client.InNamespace(ec.Namespace)); e != nil {
 		return e
 	}
 	for _, other := range list.Items {
-		if other.UID != ec.UID && other.Spec.Organization == o.Name && other.Spec.Environment == ec.Spec.Environment {
-			return fmt.Errorf("environment already assigned to %s", other.Name)
+		if other.Name != ec.Name && other.Spec.Organization == o.Name && other.Spec.Environment == ec.Spec.Environment {
+			reason := fmt.Sprintf("environment already assigned to %s", other.Name)
+			if err := f.quarantine(ctx, ec, reason); err != nil {
+				return err
+			}
+			return fmt.Errorf("%s", reason)
 		}
 	}
 	id := FleetID(ec)

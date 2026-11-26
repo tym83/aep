@@ -6,7 +6,8 @@ import (
 )
 
 // ExternalCluster is namespaced with its organization's ChangeRequests. Its
-// immutable spec is an assignment, not a discovery record or an approval flag.
+// assignment fields are immutable; suspension and the profile API-version hint
+// may change without granting a new assignment.
 type ExternalClusterSpec struct {
 	Suspended         bool                    `json:"suspended,omitempty"`
 	GatewayHost       string                  `json:"gatewayHost"`

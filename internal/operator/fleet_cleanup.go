@@ -93,6 +93,11 @@ func (f *FleetReconciler) finalizeFleet(ctx context.Context, ec *api.ExternalClu
 		return ctrl.Result{}, err
 	}
 	s := &session{r: f.Reconciler, o: o}
+	return f.cleanupFleetObjects(ctx, ec, s)
+}
+
+func (f *FleetReconciler) cleanupFleetObjects(ctx context.Context, ec *api.ExternalCluster, s *session) (ctrl.Result, error) {
+	o := s.o
 	id := FleetID(ec)
 	// Orphan preserves customer workloads; no workload deletion is implied by detach.
 	works, err := f.Hub.resource("work.open-cluster-management.io/v1", "manifestworks", id).List(ctx, metav1.ListOptions{LabelSelector: OwnerLabel + "=" + string(o.UID)})
