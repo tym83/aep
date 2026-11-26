@@ -12,6 +12,10 @@ jobs:
     strategy:
       matrix:
         include:
+          - name: aep-audit-forwarder
+            dockerfile: Dockerfile.audit-forwarder
+          - name: aep-cp-backup
+            dockerfile: Dockerfile.cp-backup
           - name: aep-portal
             dockerfile: portal/Dockerfile
           - name: aep-bridge

@@ -1,0 +1,20 @@
+# Build and publish first, then replace this non-deployable digest placeholder.
+image: ghcr.io/tym83/aep-audit-forwarder@sha256:0000000000000000000000000000000000000000000000000000000000000000
+stream: management
+tlsSecret: aep-audit-tls
+tokenSecret: aep-audit-token
+sinkCredentialsSecret: aep-audit-sinks
+spoolBytes: 67108864
+storage: 1Gi
+storageClassName: ""
+opensearchURL: ""
+opensearchIndex: aep-audit
+syslogAddress: ""
+s3Endpoint: ""
+s3Bucket: ""
+s3Prefix: audit
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 1Gi}
+nodeSelector: {}
+tolerations: []

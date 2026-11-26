@@ -1,0 +1,110 @@
+{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" .Values.image) }}{{ fail "image must be pinned by digest" }}{{ end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-{{ .Release.Name }}
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests, organizations]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-{{ .Release.Name }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ .Release.Name }}}
+subjects:
+  - {kind: ServiceAccount, name: {{ .Release.Name }}, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-spool
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests: {storage: {{ .Values.storage }}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        policy.cozystack.io/allow-to-apiserver: "true"
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      nodeSelector: {{ .Values.nodeSelector | toJson }}
+      tolerations: {{ .Values.tolerations | toJson }}
+      containers:
+        - name: forwarder
+          image: {{ .Values.image | quote }}
+          args:
+            - --spool=/var/lib/audit
+            - --spool-bytes={{ .Values.spoolBytes | int }}
+            - --stream={{ .Values.stream }}
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            - --token-file=/token/token
+            - --opensearch-url={{ .Values.opensearchURL }}
+            - --opensearch-index={{ .Values.opensearchIndex }}
+            - --syslog-address={{ .Values.syslogAddress }}
+            - --s3-endpoint={{ .Values.s3Endpoint }}
+            - --s3-bucket={{ .Values.s3Bucket }}
+            - --s3-prefix={{ .Values.s3Prefix }}
+          envFrom:
+            - secretRef: {name: {{ .Values.sinkCredentialsSecret }}}
+          ports:
+            - {name: https, containerPort: 8443}
+          readinessProbe:
+            httpGet: {path: /healthz, port: https, scheme: HTTPS}
+          livenessProbe:
+            httpGet: {path: /healthz, port: https, scheme: HTTPS}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ .Values.resources | toJson }}
+          volumeMounts:
+            - {name: spool, mountPath: /var/lib/audit}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: token, mountPath: /token, readOnly: true}
+      volumes:
+        - name: spool
+          persistentVolumeClaim: {claimName: {{ .Release.Name }}-spool}
+        - name: tls
+          secret: {secretName: {{ .Values.tlsSecret }}, defaultMode: 288}
+        - name: token
+          secret: {secretName: {{ .Values.tokenSecret }}, defaultMode: 288}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  ports:
+    - {name: https, port: 443, targetPort: https}

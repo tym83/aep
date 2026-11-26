@@ -1,0 +1,16 @@
+# Replace after publishing; this digest intentionally cannot be deployed.
+image: ghcr.io/tym83/aep-cp-backup@sha256:0000000000000000000000000000000000000000000000000000000000000000
+schedule: "*/10 * * * *"
+suspend: false
+aepcpKubeconfigSecret: aep-cp-backup-kubeconfig
+s3CredentialsSecret: aep-cp-backup-s3
+s3Endpoint: ""
+s3Bucket: ""
+s3Prefix: aep-cp
+# Empty = discover management Organizations. Explicit list supports isolated tests.
+organizations: []
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {memory: 1Gi}
+nodeSelector: {}
+tolerations: []
