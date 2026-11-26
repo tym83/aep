@@ -149,7 +149,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !change.CanCreate(req.Organization, id.Groups) {
-		writeError(w, http.StatusForbidden, "your groups do not allow requesting changes in "+req.Organization)
+		writeError(w, http.StatusForbidden, "organization access denied")
 		return
 	}
 	spec := api.ChangeRequestSpec{
@@ -237,7 +237,7 @@ func (s *Server) getChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.canRead(identity(r), cr) {
-		writeError(w, http.StatusForbidden, "you have no access to changes of "+cr.Spec.Organization)
+		writeError(w, http.StatusForbidden, "organization access denied")
 		return
 	}
 	writeJSON(w, http.StatusOK, view(cr))
@@ -272,6 +272,10 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 	}
 	cr, ok := s.readChange(w, r)
 	if !ok {
+		return
+	}
+	if !s.canRead(id, cr) {
+		writeError(w, http.StatusForbidden, "organization access denied")
 		return
 	}
 	if cr.ResourceVersion != ifMatch {
@@ -344,7 +348,7 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.canRead(id, cr) {
-			writeError(w, http.StatusForbidden, "you have no access to changes of "+cr.Spec.Organization)
+			writeError(w, http.StatusForbidden, "organization access denied")
 			return
 		}
 		if len(cr.Status.Notes) >= maxNotesPerChange {

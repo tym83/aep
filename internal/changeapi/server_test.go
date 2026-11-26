@@ -322,3 +322,19 @@ func TestNotes(t *testing.T) {
 		t.Fatalf("empty notes must fail, got %d", rec.Code)
 	}
 }
+
+func TestForeignOrganizationDenialsDoNotDiscloseNames(t *testing.T) {
+	srv, _ := testServer(t)
+	name, _ := mustCreate(t, srv)
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/v1/changes/acme/" + name, ""},
+		{"POST", "/v1/changes/acme/" + name + "/notes", `{"text":"foreign note"}`},
+		{"POST", "/v1/changes/acme/" + name + "/decision", `{"decision":"approve"}`},
+		{"POST", "/v1/changes", `{"organization":"acme","operation":"promote","model":"normal","target":{"kind":"Resource","name":"db","project":"p","environment":"prod"},"desired":{"releaseName":"r"},"justification":"isolation"}`},
+	} {
+		rec := call(t, srv, tc.method, tc.path, "mallory", tc.body, map[string]string{"Idempotency-Key": "isolation", "If-Match": "deliberately-stale"})
+		if rec.Code != 403 || strings.Contains(rec.Body.String(), "acme") || strings.Contains(rec.Body.String(), name) {
+			t.Fatalf("foreign denial disclosed target or returned %d", rec.Code)
+		}
+	}
+}

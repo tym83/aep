@@ -17,7 +17,7 @@ func (s *Server) costAccess(w http.ResponseWriter, r *http.Request, id *authn.Id
 		fail(w, 403, "organization cost access denied")
 		return
 	}
-	s.organization(s.costs, false)(w, r, id)
+	s.organization(s.costs, nil)(w, r, id)
 }
 func (s *Server) costs(w http.ResponseWriter, r *http.Request, org *api.Organization) {
 	from, e := time.Parse(time.DateOnly, r.URL.Query().Get("from"))

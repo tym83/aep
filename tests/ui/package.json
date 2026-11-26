@@ -1,0 +1,7 @@
+{
+  "name": "aep-acceptance-ui",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {"test": "playwright test", "typecheck": "tsc --noEmit"},
+  "devDependencies": {"@playwright/test": "1.56.1", "@types/node": "22.18.10", "typescript": "5.9.3"}
+}
