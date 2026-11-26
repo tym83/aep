@@ -43,7 +43,6 @@ func (f *FleetReconciler) quarantine(ctx context.Context, ec *api.ExternalCluste
 	if err := f.revokeHub(ctx, ec); err != nil {
 		return err
 	}
-	id := fleetDataPlaneName(ec)
 	var err error
 	o := &api.Organization{}
 	if err = f.Get(ctx, client.ObjectKey{Name: ec.Spec.Organization}, o); err != nil {
@@ -54,7 +53,8 @@ func (f *FleetReconciler) quarantine(ctx context.Context, ec *api.ExternalCluste
 		return err
 	}
 	// Removing the DataPlane removes the accepted client CA, even while a spoke is offline.
-	return client.IgnoreNotFound(s.cp.resource(ocAPI, "dataplanes", o.Name).Delete(ctx, id, metav1.DeleteOptions{}))
+	_, err = fleetCleanupResult(s.deleteFleetDataPlane(ctx, ec))
+	return err
 }
 
 func (f *FleetReconciler) cleanupBootstrap(ctx context.Context, ec *api.ExternalCluster) error {
@@ -118,7 +118,7 @@ func (f *FleetReconciler) cleanupFleetObjects(ctx context.Context, ec *api.Exter
 	if err = s.controlPlane(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err = s.deleteNamed(ctx, s.cp, ocAPI, "dataplanes", o.Name, fleetDataPlaneName(ec)); err != nil {
+	if err = s.deleteFleetDataPlane(ctx, ec); err != nil {
 		return fleetCleanupResult(err)
 	}
 	for _, name := range []string{shortName("agent-ca-" + o.Name + "-" + id), "agent-leaf-" + id} {
@@ -178,7 +178,7 @@ func (f *FleetReconciler) revokeHub(ctx context.Context, ec *api.ExternalCluster
 // management assignment UID, is the identity; its labels confer no authority.
 func (f *FleetReconciler) applyManagedCluster(ctx context.Context, o *api.Organization, want *unstructured.Unstructured) error {
 	ri := f.Hub.resource(want.GetAPIVersion(), "managedclusters", "")
-	old, err := ri.Get(ctx, want.GetName(), metav1.GetOptions{})
+	_, err := ri.Get(ctx, want.GetName(), metav1.GetOptions{})
 	labels := want.GetLabels()
 	labels[OwnerLabel] = string(o.UID)
 	want.SetLabels(labels)
@@ -190,7 +190,6 @@ func (f *FleetReconciler) applyManagedCluster(ctx context.Context, o *api.Organi
 		return err
 	}
 
-	_ = old
 	spec := M{}
 	for _, key := range []string{"hubAcceptsClient", "leaseDurationSeconds"} {
 		if value, found, _ := unstructured.NestedFieldCopy(want.Object, "spec", key); found {
@@ -203,4 +202,29 @@ func (f *FleetReconciler) applyManagedCluster(ctx context.Context, o *api.Organi
 	}
 	_, err = ri.Patch(ctx, want.GetName(), types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
+}
+
+// A stable name may already belong to another assignment. Cleanup must only
+// revoke this assignment's identity, including when an obsolete contender exits.
+func (s *session) deleteFleetDataPlane(ctx context.Context, ec *api.ExternalCluster) error {
+	u, err := s.cp.get(ctx, ocAPI, "dataplanes", s.o.Name, fleetDataPlaneName(ec))
+	if errors.IsNotFound(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	id, _, _ := unstructured.NestedString(u.Object, "spec", "planeID")
+	if id != FleetID(ec) {
+		return nil
+	}
+	if u.GetLabels()[OwnerLabel] != string(s.o.UID) {
+		return fmt.Errorf("refusing to delete unowned DataPlane")
+	}
+	uid, version := u.GetUID(), u.GetResourceVersion()
+	err = s.cp.resource(ocAPI, "dataplanes", s.o.Name).Delete(ctx, u.GetName(), metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid, ResourceVersion: &version}})
+	if client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	return pending("waiting for DataPlane deletion")
 }

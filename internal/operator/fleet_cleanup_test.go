@@ -28,7 +28,7 @@ func TestFleetCleanupWaitsBetweenDependencyLayers(t *testing.T) {
 	profile := owned(obj("multicluster.x-k8s.io/v1alpha1", "ClusterProfile", "aep-acme", "west", M{}))
 	mc := obj("cluster.open-cluster-management.io/v1", "ManagedCluster", "", id, M{}) // deliberately untrusted labels
 	hub := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr(work.GetAPIVersion(), "manifestworks"): "ManifestWorkList"}, work, profile, mc)
-	dp := owned(obj(ocAPI, "DataPlane", o.Name, fleetDataPlaneName(ec), M{}))
+	dp := owned(obj(ocAPI, "DataPlane", o.Name, fleetDataPlaneName(ec), M{"planeID": id}))
 	cp := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), dp)
 	ca := owned(secretObject("aep-system", shortName("agent-ca-"+o.Name+"-"+id), nil))
 	leaf := owned(secretObject("aep-system", "agent-leaf-"+id, nil))
@@ -132,5 +132,24 @@ func TestDetachReattachKeepsImmutableEnvironmentReference(t *testing.T) {
 	id, _, _ := unstructured.NestedString(live.Object, "spec", "planeID")
 	if id != FleetID(ec) {
 		t.Fatal("assignment identity not rotated")
+	}
+}
+
+func TestObsoleteAssignmentCannotDeleteReplacementPlane(t *testing.T) {
+	o := organization()
+	old := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge", UID: "old"}, Spec: api.ExternalClusterSpec{Organization: o.Name, Environment: "dev"}}
+	replacement := old.DeepCopy()
+	replacement.UID = "new"
+	dp := fleetDataPlane(o, replacement, []byte("new-ca"))
+	dp.SetLabels(map[string]string{OwnerLabel: string(o.UID)})
+	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), dp)
+	s := &session{o: o, cp: &Cluster{Dynamic: d}}
+	if err := s.deleteFleetDataPlane(context.Background(), old); err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range d.Actions() {
+		if a.GetVerb() == "delete" {
+			t.Fatal("obsolete assignment deleted replacement")
+		}
 	}
 }
