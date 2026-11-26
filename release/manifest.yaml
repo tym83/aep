@@ -132,7 +132,7 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-read-api
   version: 0.1.2
-- digest: sha256:3dd10f80549304f9b3711e8fede47f1edabe50d624ab4f1000f9de138eba78cc
+- digest: sha256:41e7c4d2d6120d71dd896014b80e2e2e9f4920693f04876d6164c3edd33aaddb
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-sre-agent
@@ -176,5 +176,5 @@ artifacts:
   kind: image
   ref: reg.kyverno.io/kyverno/reports-controller
   version: v1.19.2
-inputs: c2719ff88548d56f9e66c6343ac1fa18871bb60f98555f9b499c7d394038a648
+inputs: 0a6878d90fa505c8526940d5a21722e8c96f5dbe035186e6add8d0e5a7c00813
 schema: 1
