@@ -69,8 +69,8 @@ func TestFleetDeletesStaleBatchesAsOrphans(t *testing.T) {
 func TestManagedClusterLabelsNeverAuthorizeAssignment(t *testing.T) {
 	ctx := context.Background()
 	o := organization()
-	mc := obj("cluster.open-cluster-management.io/v1", "ManagedCluster", "", "unique", M{"hubAcceptsClient": false})
-	mc.SetLabels(map[string]string{OwnerLabel: "forged", "aep.aenix.io/trust": "regulated"})
+	mc := obj("cluster.open-cluster-management.io/v1", "ManagedCluster", "", "unique", M{"hubAcceptsClient": false, "taints": []any{M{"key": "maintenance", "effect": "NoSelect"}}, "managedClusterClientConfigs": []any{M{"url": "https://spoke"}}})
+	mc.SetLabels(map[string]string{"vendor": "retained", "feature.open-cluster-management.io/addon": "true", OwnerLabel: "forged", "aep.aenix.io/trust": "regulated"})
 	f := &FleetReconciler{Hub: &Cluster{Dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), mc)}}
 	want := mc.DeepCopy()
 	want.Object["spec"] = M{"hubAcceptsClient": true}
@@ -84,6 +84,20 @@ func TestManagedClusterLabelsNeverAuthorizeAssignment(t *testing.T) {
 	}
 	if live.GetLabels()[OwnerLabel] != string(o.UID) || live.GetLabels()["aep.aenix.io/trust"] != "untrusted" {
 		t.Fatal("spoke labels trusted")
+	}
+
+	for _, key := range []string{"taints", "managedClusterClientConfigs"} {
+		if _, found, _ := unstructured.NestedFieldCopy(live.Object, "spec", key); !found {
+			t.Fatal("lost field", key)
+		}
+	}
+	if live.GetLabels()["vendor"] != "retained" || live.GetLabels()["feature.open-cluster-management.io/addon"] != "true" {
+		t.Fatal("lost foreign labels")
+	}
+	for _, a := range f.Hub.Dynamic.(*dynamicfake.FakeDynamicClient).Actions() {
+		if a.GetVerb() == "update" {
+			t.Fatal("full update used")
+		}
 	}
 	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "x", UID: "y"}}
 	if err = f.revokeHub(ctx, ec); err != nil {

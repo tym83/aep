@@ -2,13 +2,13 @@ package operator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
-	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"slices"
@@ -189,12 +189,18 @@ func (f *FleetReconciler) applyManagedCluster(ctx context.Context, o *api.Organi
 	if err != nil {
 		return err
 	}
-	next := old.DeepCopy()
-	next.SetLabels(labels)
-	next.Object["spec"] = want.Object["spec"]
-	if reflect.DeepEqual(old.Object, next.Object) {
-		return nil
+
+	_ = old
+	spec := M{}
+	for _, key := range []string{"hubAcceptsClient", "leaseDurationSeconds"} {
+		if value, found, _ := unstructured.NestedFieldCopy(want.Object, "spec", key); found {
+			spec[key] = value
+		}
 	}
-	_, err = ri.Update(ctx, next, metav1.UpdateOptions{})
+	patch, err := json.Marshal(M{"metadata": M{"labels": labels}, "spec": spec})
+	if err != nil {
+		return err
+	}
+	_, err = ri.Patch(ctx, want.GetName(), types.MergePatchType, patch, metav1.PatchOptions{})
 	return err
 }
