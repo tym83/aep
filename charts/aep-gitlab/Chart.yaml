@@ -3,8 +3,8 @@ name: aep-gitlab
 description: Optional installation-wide GitLab with external Cozystack services
 type: application
 version: 0.1.0
-appVersion: '18.6.0'
+appVersion: '19.6.2'
 dependencies:
   - name: gitlab
-    version: '9.6.0'
+    version: '10.6.2'
     repository: https://charts.gitlab.io

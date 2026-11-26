@@ -146,10 +146,10 @@ Provider references: [GitLab authentication](https://docs.gitlab.com/api/rest/au
 ## Optional installation profile
 
 `charts/aep-gitlab` is a small operator-independent wrapper around the official
-[GitLab chart](https://docs.gitlab.com/charts/), pinned to **9.6.0 / GitLab 18.6.0**.
-It is an explicit compatibility baseline, not a claim of the latest patched
-release. Before production, review security advisories and advance the pin through
-GitLab's required upgrade stops with a restore rehearsal. There is **one instance
+[GitLab chart](https://docs.gitlab.com/charts/), pinned to **10.6.2 / GitLab 19.6.2**, verified against the official chart repository and
+[patch announcement](https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-6-2-released/)
+on 2026-11-25. Review later security releases before deployment and follow required
+upgrade stops with a restore rehearsal. There is **one instance
 per installation**, in `tenant-aep` on management or a dedicated tenant cluster.
 Do not install this chart per Organization. An individual tenant's own GitLab is
 an ordinary marketplace application, outside this profile.
@@ -230,8 +230,9 @@ Prepare and inspect without deploying:
 
 ```sh
 helm dependency build charts/aep-gitlab
-helm lint charts/aep-gitlab
-helm template gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml
+helm lint charts/aep-gitlab --set gitlab.global.ingress.class=nginx
+helm template gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml \
+  --post-renderer charts/aep-gitlab/post-render.sh
 ```
 
 Retain Chart.lock; upstream packages are not committed. Validate all rendered
@@ -257,3 +258,43 @@ Follow [required upgrade stops](https://docs.gitlab.com/update/upgrade_paths/),
 wait for background migrations at each stop and take verified backups. A Helm
 rollback alone is not a database downgrade strategy. This change performs no
 installation and no live GitLab integration test.
+
+## Cozystack service contract
+
+Provision PostgreSQL **16 or newer**; `postgresMajorVersion` is a required deployment
+assertion checked by the wrapper (it cannot inspect a remote server during Helm
+rendering). For a Cozystack Postgres application named `gitlab`, the chart release
+is `postgres-gitlab` and the writable endpoint is
+`postgres-gitlab-rw.tenant-aep.svc`. Use the CNPG writable service, not the cluster
+name. The wrapper requires `sslMode: verify-full`; a narrow template override adds
+hostname verification to upstream's verify-ca configuration. Supply
+`gitlab-postgres-tls` containing `ca.crt`, `tls.crt`, `tls.key` for the dedicated
+GitLab database role. The server certificate must cover the configured host.
+
+For Redis application `gitlab`, the release is `redis-gitlab`, Sentinel service is
+`rfs-redis-gitlab.tenant-aep.svc:26379`, and the monitored master set is `mymaster`.
+`global.redis.host` is that master-set name when Sentinels are configured; do not
+use a single Redis Pod or service as a master-discovery substitute. Enable TLS when
+creating the Cozystack Redis service, use `rediss` and TLS on each Sentinel, and
+provide `gitlab-redis-ca` to the GitLab trusted certificate bundle. Redis auth uses
+`gitlab-redis/password`; Sentinel auth is disabled in the Cozystack default and must
+match the installed service if changed. For a separate GitLab cluster, provide
+routable Sentinel and Redis advertised addresses, not inaccessible `.svc` names.
+
+These names and CA contracts were checked in Cozystack `upstream/main` under
+`packages/apps/redis/templates/{redisfailover,certmanager,tenant-projection}.yaml`
+and `packages/apps/postgres/templates/{db,tenant-projection}.yaml`.
+`global.ingress.class` is mandatory. The bundled ingress/Gateway controllers remain
+disabled. All rendered GitLab images, including hooks and init containers, enter
+the release inventory; use its exact digests when mirroring the installation.
+Upgrades must follow the official [upgrade paths](https://docs.gitlab.com/update/upgrade_paths/),
+including all required stops and completed background migrations, rather than
+jumping directly from the old 18.6.0 baseline to 19.6.2.
+
+Always use `--post-renderer charts/aep-gitlab/post-render.sh` for Helm template,
+install and upgrade. Set `AEP_REGISTRY_MIRROR` for disconnected installations.
+The renderer pins every container/init image to the reviewed release digest,
+rewrites its registry and rejects images absent from the inventory. It uses the
+installed `aep-release` binary, with a source-checkout fallback for development.
+This is necessary because upstream GitLab subcharts use different image-value
+contracts. Keep the post-renderer and release inventory version with the chart.

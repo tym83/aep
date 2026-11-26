@@ -1,0 +1,7 @@
+{{- $_ := required "gitlab.global.ingress.class is required" .Values.gitlab.global.ingress.class -}}
+{{- if lt (int .Values.postgresMajorVersion) 16 -}}
+{{- fail "GitLab requires Cozystack PostgreSQL >=16" -}}
+{{- end -}}
+{{- if ne .Values.gitlab.global.psql.sslMode "verify-full" -}}
+{{- fail "GitLab PostgreSQL requires sslMode verify-full" -}}
+{{- end -}}

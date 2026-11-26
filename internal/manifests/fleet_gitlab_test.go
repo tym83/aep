@@ -8,10 +8,10 @@ import (
 )
 
 func TestGitLabRestrictedProfile(t *testing.T) {
-	if _, e := os.Stat("../../charts/aep-gitlab/charts/gitlab-9.6.0.tgz"); e != nil {
+	if _, e := os.Stat("../../charts/aep-gitlab/charts/gitlab-10.6.2.tgz"); e != nil {
 		t.Skip("run helm dependency build charts/aep-gitlab")
 	}
-	b, e := exec.Command("helm", "template", "gitlab", "../../charts/aep-gitlab", "--namespace", "tenant-aep").CombinedOutput()
+	b, e := exec.Command("helm", "template", "gitlab", "../../charts/aep-gitlab", "--namespace", "tenant-aep", "--set", "gitlab.global.ingress.class=nginx").CombinedOutput()
 	if e != nil {
 		t.Fatalf("%v %s", e, b)
 	}
@@ -67,5 +67,23 @@ func TestGitLabRestrictedProfile(t *testing.T) {
 	}
 	if count == 0 {
 		t.Fatal("no pods checked")
+	}
+}
+
+func TestGitLabExternalServiceContract(t *testing.T) {
+	args := []string{"template", "gitlab", "../../charts/aep-gitlab", "--set", "gitlab.global.ingress.class=nginx"}
+	b, err := exec.Command("helm", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v %s", err, b)
+	}
+	for _, want := range []string{"postgres-gitlab-rw.tenant-aep.svc", "rfs-redis-gitlab.tenant-aep.svc", "rediss://", "sslmode: verify-full", "port: 26379"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("missing service contract %s", want)
+		}
+	}
+	for _, extra := range [][]string{{"--set", "gitlab.global.ingress.class="}, {"--set", "postgresMajorVersion=15"}, {"--set", "gitlab.global.psql.sslMode=disable"}} {
+		if out, err := exec.Command("helm", append(append([]string{}, args...), extra...)...).CombinedOutput(); err == nil {
+			t.Fatalf("unsafe values accepted: %v %s", extra, out)
+		}
 	}
 }

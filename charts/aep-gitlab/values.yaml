@@ -1,17 +1,37 @@
+global:
+  imageRegistry: ""
+  # Nested dependency conditions read the wrapper's global scope.
+  gatewayApi: {enabled: false, installEnvoy: false, configureCertmanager: false}
+postgresMajorVersion: 16
 # One release per installation, in tenant-aep or a dedicated tenant cluster.
 # Replace endpoints and create referenced Secrets before installation.
 gitlab:
   global:
+    gatewayApi:
+      enabled: false
+      installEnvoy: false
+      configureCertmanager: false
     edition: ce
+    certificates:
+      customCAs:
+        - secret: gitlab-redis-ca
     hosts:
       domain: example.invalid
       https: true
     ingress:
+      enabled: true
+      class: "" # required: site ingress controller class
       configureCertmanager: false
       tls:
         secretName: gitlab-ingress-tls
     psql:
-      host: postgres-gitlab.tenant-aep.svc
+      host: postgres-gitlab-rw.tenant-aep.svc
+      sslMode: verify-full
+      ssl:
+        secret: gitlab-postgres-tls
+        serverCA: ca.crt
+        clientCertificate: tls.crt
+        clientKey: tls.key
       port: 5432
       database: gitlabhq_production
       username: gitlab
@@ -19,7 +39,12 @@ gitlab:
         secret: gitlab-postgres
         key: password
     redis:
-      host: redis-gitlab.tenant-aep.svc
+      host: mymaster # Sentinel master set, not a DNS hostname
+      scheme: rediss
+      sentinels:
+        - host: rfs-redis-gitlab.tenant-aep.svc
+          port: 26379
+          ssl: true
       port: 6379
       auth:
         enabled: true
@@ -47,6 +72,11 @@ gitlab:
         providers:
           - secret: gitlab-keycloak
             key: provider
+  traefik: {install: false}
+  haproxy: {install: false}
+  openbao: {install: false}
+  gitlab-zoekt: {install: false}
+  ai-gateway: {install: false}
   certmanager:
     install: false
   installCertmanager: false
