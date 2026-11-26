@@ -39,9 +39,11 @@ tokenProxy:
   port: 8081
   image:
     repository: ghcr.io/tym83/aep-token-proxy
-    tag: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
-    digest: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
+    tag: ""
+    digest: ""
 
 # Mirror prefix; upstream registry hosts are retained as path components.
 global:
+  aepVersion: ""
+  aepDigests: {}
   imageRegistry: ""

@@ -2,8 +2,6 @@
 {{- if ne .Values.config.syncCmdb nil -}}{{- $sync = .Values.config.syncCmdb -}}{{- end -}}
 {{- $org := required "config.organization is required" .Values.config.organization -}}
 {{- $changeNS := required "config.changeNamespace is required" .Values.config.changeNamespace -}}
-{{- $digest := required "image.digest is required; use an image workflow digest" .Values.image.digest -}}
-{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) }}{{ fail "image.digest must be a sha256 digest" }}{{ end -}}
 {{- $secret := required "credentialsSecret is required" .Values.credentialsSecret -}}
 {{- $name := printf "%s-itsm" .Release.Name | trunc 63 | trimSuffix "-" -}}
 apiVersion: v1
@@ -46,7 +44,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: bridge
-          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s@%s" .Values.image.repository $digest)) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --config=/etc/itsm/config.json

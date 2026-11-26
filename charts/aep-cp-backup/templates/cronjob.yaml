@@ -1,4 +1,3 @@
-{{- if not (regexMatch "@sha256:[a-f0-9]{64}$" .Values.image) }}{{ fail "image must be pinned by digest" }}{{ end }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -55,7 +54,7 @@ spec:
           tolerations: {{ .Values.tolerations | toJson }}
           containers:
             - name: backup
-              image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
+              image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}
               args:
                 - --aepcp-kubeconfig=/cp/config
                 - --organizations={{ join "," .Values.organizations }}

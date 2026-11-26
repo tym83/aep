@@ -16,3 +16,19 @@
 {{- end -}}
 {{- if $oci -}}oci://{{- end -}}{{- $ref -}}
 {{- end -}}
+
+{{/* Own image tags follow the operator build unless explicitly overridden. */}}
+{{- define "aep.ownImage" -}}
+{{- if kindIs "string" .image -}}
+{{- .image -}}
+{{- else -}}
+{{- $tag := .image.tag | default .root.Values.global.aepVersion | default .root.Chart.AppVersion -}}
+{{- $digest := .image.digest | default "" -}}
+{{- if and (not $digest) (eq $tag (.root.Values.global.aepVersion | default "")) -}}
+{{- $digest = index (.root.Values.global.aepDigests | default dict) .image.repository | default "" -}}
+{{- end -}}
+{{- if and $digest (not (regexMatch "^sha256:[a-f0-9]{64}$" $digest)) -}}{{ fail "own image digest must be sha256" }}{{- end -}}
+{{- printf "%s:%s" .image.repository $tag -}}
+{{- if $digest -}}@{{ $digest }}{{- end -}}
+{{- end -}}
+{{- end -}}

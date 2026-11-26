@@ -17,7 +17,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: operator
-          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}
           args:
             {{- if .Values.global.imageRegistry }}
             - {{ printf "--argocd-chart-url=%s" (include "aep.mirror" (dict "root" . "ref" "oci://argoproj.github.io/argo-helm/argo-cd")) | quote }}
@@ -35,7 +35,7 @@ spec:
             - {{ printf "--kyverno-chart-url=%s" (include "aep.mirror" (dict "root" . "ref" .Values.kyvernoChartURL)) | quote }}
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
-            - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" .Values.bridgeImage)) | quote }}
+            - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.bridgeImage)))) | quote }}
             - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}
             - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
             - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}

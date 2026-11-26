@@ -1,14 +1,13 @@
 package charts
 
 import (
-	"strings"
 	"testing"
 )
 
 func TestAuditDRRestrictedPods(t *testing.T) {
 	for _, chart := range []string{"aep-audit-forwarder", "aep-cp-backup"} {
 		t.Run(chart, func(t *testing.T) {
-			out, err := render(t, chart)
+			out, err := render(t, chart, "global.aepVersion=sha-1234567")
 			if err != nil {
 				t.Fatal(out, err)
 			}
@@ -37,7 +36,7 @@ func TestAuditDRRestrictedPods(t *testing.T) {
 				if sc["readOnlyRootFilesystem"] != true || sc["allowPrivilegeEscalation"] != false || sc["capabilities"].(map[string]any)["drop"].([]any)[0] != "ALL" {
 					t.Fatal(sc)
 				}
-				if !strings.Contains(c["image"].(string), "@sha256:") {
+				if c["image"] != "ghcr.io/tym83/"+chart+":sha-1234567" {
 					t.Fatal("mutable image")
 				}
 			}
@@ -48,9 +47,6 @@ func TestAuditDRRestrictedPods(t *testing.T) {
 						t.Fatal("excessive RBAC")
 					}
 				}
-			}
-			if _, err = render(t, chart, "image=example:latest"); err == nil {
-				t.Fatal("mutable image accepted")
 			}
 		})
 	}
