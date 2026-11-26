@@ -65,6 +65,7 @@ type PolicySpec struct {
 	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
 	Mode            string `json:"mode,omitempty"`
 }
+
 type OrganizationSpec struct {
 	VCS          *VCSSpec            `json:"vcs,omitempty"`
 	Policy       PolicySpec          `json:"policy,omitempty"`
