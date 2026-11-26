@@ -1,0 +1,11 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: Metadata
+    resources:
+      - group: aep.aenix.io
+        resources: ["*"]
+      - group: apps.cozystack.io
+        resources: ["*"]
+  - level: None
