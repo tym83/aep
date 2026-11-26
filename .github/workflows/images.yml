@@ -26,6 +26,12 @@ jobs:
             dockerfile: Dockerfile.change-api
           - name: aep-change-controller
             dockerfile: Dockerfile.change-controller
+          - name: aep-cozystack-mcp
+            dockerfile: Dockerfile.cozystack-mcp
+          - name: aep-alert-router
+            dockerfile: Dockerfile.alert-router
+          - name: aep-rca-eval
+            dockerfile: Dockerfile.rca-eval
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
