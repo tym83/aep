@@ -74,6 +74,15 @@ spec:
             - --s3-endpoint={{ .Values.s3Endpoint }}
             - --s3-bucket={{ .Values.s3Bucket }}
             - --s3-prefix={{ .Values.s3Prefix }}
+            {{- with .Values.openchoreoAudit }}
+            {{- if .kubeconfigSecret }}
+            - --openchoreo-audit-kubeconfig=/openchoreo-audit/kubeconfig
+            - --openchoreo-audit-namespace={{ .namespace }}
+            - --openchoreo-audit-selector={{ .selector }}
+            - --openchoreo-audit-container={{ .container }}
+            - --openchoreo-audit-source={{ .source }}
+            {{- end }}
+            {{- end }}
           envFrom:
             - secretRef: {name: {{ .Values.sinkCredentialsSecret }}}
           ports:
@@ -91,6 +100,9 @@ spec:
             - {name: spool, mountPath: /var/lib/audit}
             - {name: tls, mountPath: /tls, readOnly: true}
             - {name: token, mountPath: /token, readOnly: true}
+            {{- if .Values.openchoreoAudit.kubeconfigSecret }}
+            - {name: openchoreo-audit, mountPath: /openchoreo-audit, readOnly: true}
+            {{- end }}
       volumes:
         - name: spool
           persistentVolumeClaim: {claimName: {{ .Release.Name }}-spool}
@@ -98,6 +110,10 @@ spec:
           secret: {secretName: {{ .Values.tlsSecret }}, defaultMode: 288}
         - name: token
           secret: {secretName: {{ .Values.tokenSecret }}, defaultMode: 288}
+        {{- with .Values.openchoreoAudit.kubeconfigSecret }}
+        - name: openchoreo-audit
+          secret: {secretName: {{ . }}, defaultMode: 288}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

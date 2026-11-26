@@ -15,6 +15,17 @@ syslogAddress: ""
 s3Endpoint: ""
 s3Bucket: ""
 s3Prefix: audit
+# Collect OpenChoreo API audit records (msg "AUDIT-LOG", enabled with the
+# OpenChoreo control-plane value openchoreoApi.config.audit.enabled) from the
+# API pod logs. kubeconfigSecret holds key "kubeconfig" for an identity on the
+# OpenChoreo control-plane cluster limited to get/list pods and get pods/log in
+# namespace. Empty disables collection.
+openchoreoAudit:
+  kubeconfigSecret: ""
+  namespace: openchoreo-control-plane
+  selector: app.kubernetes.io/component=api-server
+  container: api-server
+  source: openchoreo
 resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {memory: 1Gi}
