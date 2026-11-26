@@ -125,3 +125,36 @@ func TestOperatorCanFinalizeFleetResources(t *testing.T) {
 		}
 	}
 }
+
+// Only the umbrella Jobs that write Secrets may reach the Kubernetes API in a
+// Cozystack tenant; long-running GitLab pods must not carry the access label.
+func TestGitLabAPIAccessLabelIsScoped(t *testing.T) {
+	if _, e := os.Stat("../../charts/aep-gitlab/charts/gitlab-10.6.2.tgz"); e != nil {
+		t.Skip("run helm dependency build charts/aep-gitlab")
+	}
+	b, e := exec.Command("helm", "template", "gitlab", "../../charts/aep-gitlab", "--namespace", "tenant-aep", "--set", "gitlab.global.ingress.class=nginx").CombinedOutput()
+	if e != nil {
+		t.Fatalf("%v %s", e, b)
+	}
+	labelled := map[string]bool{}
+	for _, d := range decode(t, b) {
+		spec, _ := d["spec"].(map[string]any)
+		template, _ := spec["template"].(map[string]any)
+		meta, _ := template["metadata"].(map[string]any)
+		labels, _ := meta["labels"].(map[string]any)
+		if labels["policy.cozystack.io/allow-to-apiserver"] == "true" {
+			m, _ := d["metadata"].(map[string]any)
+			labelled[d["kind"].(string)+"/"+m["name"].(string)] = true
+		}
+	}
+	shared := false
+	for name := range labelled {
+		if !strings.HasPrefix(name, "Job/") {
+			t.Errorf("%s may reach the Kubernetes API", name)
+		}
+		shared = shared || strings.Contains(name, "shared-secrets")
+	}
+	if !shared {
+		t.Fatal("shared-secrets Job cannot reach the Kubernetes API in a Cozystack tenant")
+	}
+}
