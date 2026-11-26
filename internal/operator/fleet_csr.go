@@ -77,7 +77,11 @@ func (f *FleetReconciler) approveFleetCSR(ctx context.Context, ec *api.ExternalC
 		return a.CreationTimestamp.Before(&b.CreationTimestamp)
 	})
 
-	message := fmt.Sprintf("%d valid bootstrap CSRs", len(candidates))
+	names := make([]string, 0, len(candidates))
+	for _, c := range candidates {
+		names = append(names, c.Name+"/"+string(c.UID))
+	}
+	message := fmt.Sprintf("%d valid bootstrap CSRs: %s", len(candidates), strings.Join(names, ", "))
 	previous := meta.FindStatusCondition(ec.Status.Conditions, "DuplicateBootstrapCSR")
 	if len(candidates) > 1 && f.Recorder != nil && (previous == nil || previous.Message != message || previous.Status != metav1.ConditionTrue) {
 		f.Recorder.Event(ec, "Warning", "DuplicateBootstrapCSR", message)

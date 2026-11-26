@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"errors"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -12,6 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"testing"
 )
@@ -127,7 +129,7 @@ func TestApprovalCacheMissDoesNotRevokeHub(t *testing.T) {
 	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge", Namespace: "tenant-acme", UID: "one"}, Spec: api.ExternalClusterSpec{Organization: "acme", ChangeRequestRef: "missing"}}
 	scheme := runtime.NewScheme()
 	_ = api.AddToScheme(scheme)
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(organization()).Build()
 	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
 	f := &FleetReconciler{Reconciler: &Reconciler{Client: c}, Hub: &Cluster{Dynamic: d}}
 	if err := f.reconcileFleet(ctx, ec); err == nil {
@@ -140,5 +142,46 @@ func TestApprovalCacheMissDoesNotRevokeHub(t *testing.T) {
 		if condition.Reason == "Quarantined" {
 			t.Fatal("cache miss quarantined assignment")
 		}
+	}
+}
+
+func TestApprovalReadFailureDoesNotQuarantine(t *testing.T) {
+	ctx := context.Background()
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge", Namespace: "tenant-acme", UID: "one"}, Spec: api.ExternalClusterSpec{Organization: "acme", ChangeRequestRef: "approval"}}
+	scheme := runtime.NewScheme()
+	_ = api.AddToScheme(scheme)
+	unavailable := errors.New("approval API unavailable")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(organization()).WithInterceptorFuncs(interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*api.ChangeRequest); ok {
+				return unavailable
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	}).Build()
+	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	f := &FleetReconciler{Reconciler: &Reconciler{Client: c}, Hub: &Cluster{Dynamic: d}}
+	if err := f.reconcileFleet(ctx, ec); !errors.Is(err, unavailable) {
+		t.Fatal(err)
+	}
+	if len(d.Actions()) != 0 {
+		t.Fatal("transient approval read touched hub")
+	}
+	for _, condition := range ec.Status.Conditions {
+		if condition.Reason == "Quarantined" {
+			t.Fatal(condition)
+		}
+	}
+}
+func TestAssignmentOrderBreaksTimestampTies(t *testing.T) {
+	a := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "a", CreationTimestamp: metav1.Now()}}
+	b := a.DeepCopy()
+	b.Name = "b"
+	if !assignmentBefore(a, b) || assignmentBefore(b, a) {
+		t.Fatal("tie is not deterministic")
+	}
+	b.CreationTimestamp.Time = b.CreationTimestamp.Add(-1)
+	if !assignmentBefore(b, a) || assignmentBefore(a, b) {
+		t.Fatal("oldest did not win")
 	}
 }

@@ -67,6 +67,40 @@ func TestFleetOnlyOldestCSRAndBootstrapCleanup(t *testing.T) {
 	if len(other.Status.Conditions) != 1 || !meta.IsStatusConditionTrue(ec.Status.Conditions, "BootstrapRejected") {
 		t.Fatal("denied bootstrap prevented recovery")
 	}
+
+	// Failed signing is terminal too, and invalid requests must not count as duplicates.
+	other.Status.Conditions = []certv1.CertificateSigningRequestCondition{{Type: certv1.CertificateFailed, Status: corev1.ConditionTrue}}
+	if _, err := k.CertificatesV1().CertificateSigningRequests().UpdateStatus(ctx, other, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	retry := old.DeepCopy()
+	retry.Name = "retry"
+	retry.CreationTimestamp = metav1.Now()
+	if _, err := k.CertificatesV1().CertificateSigningRequests().Create(ctx, retry, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.approveFleetCSR(ctx, ec, id); err != nil {
+		t.Fatal(err)
+	}
+	retry, _ = k.CertificatesV1().CertificateSigningRequests().Get(ctx, "retry", metav1.GetOptions{})
+	if len(retry.Status.Conditions) != 1 {
+		t.Fatal("failed signing blocked new bootstrap")
+	}
+	for _, name := range []string{"old", "new"} {
+		_ = k.CertificatesV1().CertificateSigningRequests().Delete(ctx, name, metav1.DeleteOptions{})
+	}
+	invalid := old.DeepCopy()
+	invalid.Name = "invalid"
+	invalid.Spec.Username = "attacker"
+	if _, err := k.CertificatesV1().CertificateSigningRequests().Create(ctx, invalid, metav1.CreateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.approveFleetCSR(ctx, ec, id); err != nil {
+		t.Fatal(err)
+	}
+	if meta.IsStatusConditionTrue(ec.Status.Conditions, "DuplicateBootstrapCSR") {
+		t.Fatal("invalid CSR counted as candidate")
+	}
 	if err := f.cleanupBootstrap(ctx, ec); err != nil {
 		t.Fatal(err)
 	}
