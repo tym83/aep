@@ -60,7 +60,7 @@ func (RecordOnlyGranter) Grant(context.Context, *api.ChangeRequest) (bool, error
 
 func Implemented(op api.ChangeOperation) bool {
 	switch op {
-	case api.OperationPromote, api.OperationRollback, api.OperationResourceUpdate, api.OperationDecommission, api.OperationBreakglass:
+	case api.OperationClusterAttach, api.OperationPromote, api.OperationRollback, api.OperationResourceUpdate, api.OperationDecommission, api.OperationBreakglass:
 		return true
 	}
 	return false

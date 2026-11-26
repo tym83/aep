@@ -54,7 +54,7 @@ var opRules = map[api.ChangeOperation]opRule{
 	api.OperationBreakglass:          {kinds: []string{"Organization"}, self: true, validateExtra: validateBreakglass},
 	api.OperationOrganizationChange:  {kinds: []string{"Organization"}, self: true, desired: true, validateExtra: requireOrgChange},
 	api.OperationPolicyException:     {kinds: []string{"Organization"}, self: true, desired: true, validateExtra: requirePolicyException},
-	api.OperationClusterAttach:       {kinds: []string{"Cluster"}, desired: true},
+	api.OperationClusterAttach:       {kinds: []string{"Cluster"}, environment: true, desired: true, validateExtra: requireClusterAttach},
 	api.OperationMachineApprove:      {kinds: []string{"Machine"}},
 	api.OperationMachineDecommission: {kinds: []string{"Machine"}},
 }

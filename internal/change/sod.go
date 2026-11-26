@@ -127,6 +127,15 @@ func RequirementFor(spec api.ChangeRequestSpec) DecisionRequirement {
 // EligibleRole returns the role a decider with these groups acts under for
 // this change, or false when the groups grant no decision right.
 func EligibleRole(spec api.ChangeRequestSpec, groups []string) (string, bool) {
+	if spec.Operation == api.OperationClusterAttach {
+		if HasGroup(groups, GroupPlatformTeam) {
+			return RolePlatform, true
+		}
+		if HasGroup(groups, GroupSecurity) {
+			return RoleSecurity, true
+		}
+		return "", false
+	}
 	switch RequirementFor(spec) {
 	case RequireSecurityOnCall:
 		if HasGroup(groups, GroupSecurityOnCall) {
@@ -160,6 +169,9 @@ func ValidateRequester(spec api.ChangeRequestSpec) error {
 // account, and only groups matching the required role. The earliest eligible
 // decision wins so a race between approvers resolves deterministically.
 func EvaluateApprovals(spec api.ChangeRequestSpec, approvals []api.ChangeApproval) (api.ChangePhase, string, string) {
+	if spec.Operation == api.OperationClusterAttach {
+		return EvaluateFleetApprovals(spec, approvals)
+	}
 	type eligible struct {
 		a    api.ChangeApproval
 		role string

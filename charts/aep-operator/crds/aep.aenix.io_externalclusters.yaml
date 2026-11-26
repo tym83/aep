@@ -1,0 +1,67 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: externalclusters.aep.aenix.io
+spec:
+  group: aep.aenix.io
+  scope: Namespaced
+  names:
+    plural: externalclusters
+    singular: externalcluster
+    kind: ExternalCluster
+    shortNames: [aec]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            apiVersion: {type: string}
+            kind: {type: string}
+            metadata: {type: object}
+            spec:
+              type: object
+              required: [organization, tier, environment, trustLevel, provider, distro, changeRequestRef, clusterProfileRef]
+              x-kubernetes-validations:
+                - rule: self == oldSelf
+                  message: Assignment is immutable; use an approved change
+                - rule: self.tier != 'prod' || self.trustLevel != 'untrusted'
+                  message: Untrusted clusters cannot host prod
+              properties:
+                organization: {type: string, minLength: 1, maxLength: 63}
+                tier: {type: string, enum: [nonprod, prod]}
+                environment: {type: string, minLength: 1, maxLength: 63}
+                trustLevel: {type: string, enum: [untrusted, standard, regulated]}
+                provider: {type: string, minLength: 1, maxLength: 128}
+                distro: {type: string, minLength: 1, maxLength: 128}
+                changeRequestRef: {type: string, minLength: 1}
+                clusterProfileRef:
+                  type: object
+                  required: [apiVersion, namespace, name]
+                  properties:
+                    apiVersion: {type: string, enum: [multicluster.x-k8s.io/v1alpha1]}
+                    namespace: {type: string, minLength: 1}
+                    name: {type: string, minLength: 1}
+            status:
+              type: object
+              properties:
+                planeID: {type: string}
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, reason, message, lastTransitionTime]
+                    properties:
+                      type: {type: string}
+                      status: {type: string, enum: ['True', 'False', Unknown]}
+                      reason: {type: string}
+                      message: {type: string}
+                      observedGeneration: {type: integer, format: int64}
+                      lastTransitionTime: {type: string, format: date-time}

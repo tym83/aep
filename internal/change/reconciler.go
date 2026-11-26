@@ -169,7 +169,7 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 	if Expired(cr, now, r.ttl()) {
 		return r.expire(ctx, cr)
 	}
-	handler := HandlerFor(cr.Spec.Operation, r.Granter)
+	handler := r.handler(cr.Spec.Operation)
 	var oc *ocapi.Client
 	if IsBindingOp(cr.Spec.Operation) {
 		var e error
@@ -197,6 +197,15 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 			r.setCondition(cr, "Applied", metav1.ConditionFalse, "Stale", "the target binding changed after this change was approved; request a new approval")
 			return r.transition(ctx, cr, api.PhaseFailed, "Stale", "target binding changed after approval")
 		}
+		locked, e := r.acquireLease(ctx, cr)
+		if e != nil {
+			return r.retry(ctx, cr, "LeaseUnavailable", e, now)
+		}
+		if !locked {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+	}
+	if cr.Spec.Operation == api.OperationClusterAttach {
 		locked, e := r.acquireLease(ctx, cr)
 		if e != nil {
 			return r.retry(ctx, cr, "LeaseUnavailable", e, now)
@@ -257,7 +266,7 @@ func (r *Reconciler) captureBefore(ctx context.Context, cr *api.ChangeRequest, n
 	if cr.Status.Before != nil {
 		return nil
 	}
-	handler := HandlerFor(cr.Spec.Operation, r.Granter)
+	handler := r.handler(cr.Spec.Operation)
 	var oc *ocapi.Client
 	if IsBindingOp(cr.Spec.Operation) {
 		var e error
