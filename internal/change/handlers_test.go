@@ -295,3 +295,22 @@ func TestRollbackPlanFromBefore(t *testing.T) {
 		t.Fatalf("unexpected plan %+v", plan)
 	}
 }
+
+func TestPromoteAddsRetainToExistingProdResourceBinding(t *testing.T) {
+	s := octest.New(t)
+	owner := map[string]any{"projectName": "shop", "resourceName": "orders-db"}
+	s.Seed("acme", "ResourceReleaseBinding", "orders-db-prod", map[string]any{"owner": owner, "environment": "prod", "resourceRelease": "db-17"})
+	s.Seed("acme", "ResourceReleaseBinding", "cache-prod", map[string]any{"owner": map[string]any{"projectName": "shop", "resourceName": "cache"}, "environment": "prod", "resourceRelease": "c-1", "retainPolicy": "Delete"})
+	h := HandlerFor(api.OperationPromote, nil)
+	for _, tc := range []struct{ name, release, want string }{{"orders-db", "db-17", "Retain"}, {"cache", "c-1", "Delete"}} {
+		spec := promoteSpec(api.ModelNormal, "")
+		spec.Target = api.ChangeTarget{Kind: "Resource", Project: "shop", Name: tc.name, Environment: "prod"}
+		spec.Desired = rawJSON(`{"releaseName":"` + tc.release + `"}`)
+		if res, e := h.Apply(context.Background(), ocClient(s), crFor(spec)); e != nil || !res.Executed {
+			t.Fatalf("%s: apply failed: %v %v", tc.name, res, e)
+		}
+		if got := s.Binding("acme", "ResourceReleaseBinding", tc.name+"-prod"); got["retainPolicy"] != tc.want {
+			t.Fatalf("%s: retainPolicy %v, want %s", tc.name, got["retainPolicy"], tc.want)
+		}
+	}
+}
