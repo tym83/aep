@@ -74,3 +74,21 @@ func TestGenericWebhookSigning(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestOutboundChangeIsSummaryAndDirectionKeyed(t *testing.T) {
+	secret := []byte("outbound-secret-012345678901234567")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if bytes.Contains(body, []byte(`"request"`)) || bytes.Contains(body, []byte(`"spec"`)) {
+			t.Error("raw change leaked")
+		}
+		if r.Header.Get("X-AEP-Key-ID") != "out-v2" || r.Header.Get("X-AEP-Signature") != Signature(secret, r.Header.Get("X-AEP-Timestamp"), body) {
+			t.Error("rotation key/signature")
+		}
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+	if _, err := (&Webhook{URL: srv.URL, Secret: secret, KeyID: "out-v2"}).Deliver(context.Background(), changeEvent("Failed"), ""); err != nil {
+		t.Fatal(err)
+	}
+}

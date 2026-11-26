@@ -25,10 +25,18 @@ func Signature(secret []byte, timestamp string, body []byte) string {
 type Webhook struct {
 	URL    string
 	Secret []byte
+	KeyID  string
 	Client *http.Client
 }
 
 func (g *Webhook) Deliver(ctx context.Context, e Event, ref string) (string, error) {
+	if e.Type == "change.created" || e.Type == "change.updated" {
+		var c Change
+		if err := json.Unmarshal(e.Data, &c); err != nil {
+			return ref, err
+		}
+		e.Data, _ = json.Marshal(map[string]string{"id": bounded(c.ID, 512), "text": ShortText(c)})
+	}
 	raw, err := json.Marshal(e)
 	if err != nil {
 		return ref, err
@@ -38,6 +46,7 @@ func (g *Webhook) Deliver(ctx context.Context, e Event, ref string) (string, err
 		return ref, err
 	}
 	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	req.Header.Set("X-AEP-Key-ID", g.KeyID)
 	req.Header.Set("X-AEP-Timestamp", ts)
 	req.Header.Set("X-AEP-Signature", Signature(g.Secret, ts, raw))
 	req.Header.Set("Idempotency-Key", e.ID)
@@ -57,11 +66,13 @@ func (g *Webhook) Deliver(ctx context.Context, e Event, ref string) (string, err
 	return ref, nil
 }
 
-// Receiver accepts only organization-scoped notes/evidence, graphs and alerts.
+// Receiver accepts only organization-scoped notes/evidence and trusted-sender alerts.
 // It cannot accept an approval command or a caller-supplied human token.
 type Receiver struct {
 	Engine       *Engine
+	NoteEngine   *Engine
 	Secret       []byte
+	Keys         map[string][]byte
 	Organization string
 	Now          func() time.Time
 }
@@ -83,8 +94,12 @@ func (s *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ts := r.Header.Get("X-AEP-Timestamp")
 	unix, err := strconv.ParseInt(ts, 10, 64)
 	sig, decodeErr := hex.DecodeString(r.Header.Get("X-AEP-Signature"))
-	expected, _ := hex.DecodeString(Signature(s.Secret, ts, body))
-	if len(s.Secret) < 32 || err != nil || decodeErr != nil || now.Sub(time.Unix(unix, 0)) > 5*time.Minute || time.Unix(unix, 0).Sub(now) > 5*time.Minute || !hmac.Equal(sig, expected) {
+	secret := s.Secret
+	if s.Keys != nil {
+		secret = s.Keys[r.Header.Get("X-AEP-Key-ID")]
+	}
+	expected, _ := hex.DecodeString(Signature(secret, ts, body))
+	if len(secret) < 32 || err != nil || decodeErr != nil || now.Sub(time.Unix(unix, 0)) > 5*time.Minute || time.Unix(unix, 0).Sub(now) > 5*time.Minute || !hmac.Equal(sig, expected) {
 		http.Error(w, "invalid signature", http.StatusUnauthorized)
 		return
 	}
@@ -96,36 +111,34 @@ func (s *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch event.Type {
 	case "change.note":
 		var n Note
-		if json.Unmarshal(event.Data, &n) != nil || n.Organization != s.Organization || !validID(n.Change) || len(n.Text) > 3000 || n.Text == "" || (n.Decision != "" && n.Decision != "approve" && n.Decision != "reject") {
+		if json.Unmarshal(event.Data, &n) != nil || n.Organization != s.Organization || !validID(n.Change) || validateNote(n) != nil || (n.Decision != "" && n.Decision != "approve" && n.Decision != "reject") {
 			http.Error(w, "invalid note", 400)
 			return
 		}
 		event.Subject = "note/" + s.Organization + "/" + event.ID
 	case "alert.raised", "alert.resolved":
 		var a Alert
-		if json.Unmarshal(event.Data, &a) != nil || a.Key == "" || len(a.Key) > 400 || a.Summary == "" || (a.Severity != "" && (a.Severity < "0" || a.Severity > "5" || len(a.Severity) != 1)) {
+		if json.Unmarshal(event.Data, &a) != nil || a.Key == "" || len(a.Key) > 400 || a.Summary == "" || len(a.Summary) > 3000 || len(a.Node) > 255 || (a.Severity != "" && (a.Severity < "0" || a.Severity > "5" || len(a.Severity) != 1)) {
 			http.Error(w, "invalid alert", 400)
 			return
 		}
 		a.Key = s.Organization + "/" + a.Key
 		event.Data, _ = json.Marshal(a)
 		event.Subject = "alert/" + a.Key
-	case "cmdb.sync", "ci.upserted", "ci.retired":
-		var g Graph
-		if json.Unmarshal(event.Data, &g) != nil || g.Organization != s.Organization {
-			http.Error(w, "invalid graph", 400)
-			return
-		}
-		if err := ValidateGraph(g); err != nil {
-			http.Error(w, err.Error(), 400)
-			return
-		}
-		event.Subject = "cmdb/" + s.Organization
+
 	default:
 		http.Error(w, "this event type is not accepted inbound", 400)
 		return
 	}
-	if err := s.Engine.Submit(r.Context(), event); err != nil {
+	engine := s.Engine
+	if event.Type == "change.note" && s.NoteEngine != nil {
+		engine = s.NoteEngine
+	}
+	if err := engine.Submit(r.Context(), event); err != nil {
+		if status := permanent(err); status != 0 {
+			http.Error(w, "delivery permanently rejected", status)
+			return
+		}
 		http.Error(w, "delivery pending; retry with the same event ID", 503)
 		return
 	}
@@ -151,13 +164,24 @@ func (s *Router) Deliver(ctx context.Context, e Event, ref string) (string, erro
 	if n.Organization != s.Organization || !validID(n.Change) {
 		return ref, errors.New("note outside organization scope")
 	}
-	text := n.Text
-	if n.ExternalID != "" || n.Decision != "" {
-		evidence, _ := json.Marshal(map[string]string{"externalId": n.ExternalID, "approverId": n.ApproverID, "decision": n.Decision})
-		text += "\nITSM evidence (human confirmation required): " + string(evidence)
+	if err := validateNote(n); err != nil {
+		return ref, &HTTPError{400}
 	}
-	if len(text) > 4000 {
-		return ref, errors.New("note too long")
-	}
+	text := noteText(n)
 	return ref, s.AEP.Do(ctx, "POST", "/v1/changes/"+s.Organization+"/"+n.Change+"/notes", e.ID, map[string]string{"text": strings.TrimSpace(text)}, nil)
+}
+
+func noteText(n Note) string {
+	text := n.Text
+	if n.ExternalID != "" || n.Decision != "" || n.ApproverID != "" {
+		evidence, _ := json.Marshal(map[string]string{"externalId": n.ExternalID, "approverId": n.ApproverID, "decision": n.Decision})
+		text += "\nITSM evidence reference (not confirmation): " + string(evidence)
+	}
+	return text
+}
+func validateNote(n Note) error {
+	if strings.TrimSpace(n.Text) == "" || len(n.Text) > 3000 || len(n.ExternalID) > 255 || len(n.ApproverID) > 255 || len(n.Decision) > 16 || len(noteText(n)) > 4000 {
+		return errors.New("invalid note length")
+	}
+	return nil
 }

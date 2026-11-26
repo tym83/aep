@@ -21,8 +21,9 @@ func (e *HTTPError) Error() string { return fmt.Sprintf("remote API returned HTT
 
 // HTTP deliberately omits remote response bodies from errors (they may contain secrets).
 type HTTP struct {
-	BaseURL string
-	Client  *http.Client
+	BasicUser, BasicToken string
+	BaseURL               string
+	Client                *http.Client
 }
 
 func OAuthClient(ctx context.Context, tokenURL, id, secret string) *http.Client {
@@ -46,6 +47,9 @@ func (h HTTP) Do(ctx context.Context, method, path, key string, body, out any) e
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(h.BaseURL, "/")+path, bytes.NewReader(raw))
 	if err != nil {
 		return err
+	}
+	if h.BasicUser != "" {
+		req.SetBasicAuth(h.BasicUser, h.BasicToken)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")

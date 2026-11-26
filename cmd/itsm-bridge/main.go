@@ -9,6 +9,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
@@ -20,28 +22,30 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type config struct {
-	Organization    string                    `json:"organization"`
-	ChangeNamespace string                    `json:"changeNamespace"`
-	StateNamespace  string                    `json:"stateNamespace"`
-	Adapter         string                    `json:"adapter"`
-	VendorURL       string                    `json:"vendorUrl"`
-	TokenURL        string                    `json:"tokenUrl"`
-	ClientID        string                    `json:"clientId"`
-	AEPURL          string                    `json:"aepUrl"`
-	AEPTokenURL     string                    `json:"aepTokenUrl"`
-	AEPClientID     string                    `json:"aepClientId"`
-	ConfirmationURL string                    `json:"confirmationUrl"`
-	SyncCMDB        bool                      `json:"syncCmdb"`
-	Services        []itsm.ApplicationService `json:"services"`
-	JiraProject     string                    `json:"jiraProject"`
-	JiraServiceDesk string                    `json:"jiraServiceDesk"`
-	JiraRequestType string                    `json:"jiraRequestType"`
-	JiraTransitions map[string]string         `json:"jiraTransitions"`
+	CompanyID        string                    `json:"companySysId"`
+	StandardTemplate string                    `json:"standardTemplate"`
+	JiraEmail        string                    `json:"jiraEmail"`
+	Organization     string                    `json:"organization"`
+	ChangeNamespace  string                    `json:"changeNamespace"`
+	StateNamespace   string                    `json:"stateNamespace"`
+	Adapter          string                    `json:"adapter"`
+	VendorURL        string                    `json:"vendorUrl"`
+	TokenURL         string                    `json:"tokenUrl"`
+	ClientID         string                    `json:"clientId"`
+	AEPURL           string                    `json:"aepUrl"`
+	AEPTokenURL      string                    `json:"aepTokenUrl"`
+	AEPClientID      string                    `json:"aepClientId"`
+	ConfirmationURL  string                    `json:"confirmationUrl"`
+	SyncCMDB         bool                      `json:"syncCmdb"`
+	Services         []itsm.ApplicationService `json:"services"`
+	JiraProject      string                    `json:"jiraProject"`
+	JiraServiceDesk  string                    `json:"jiraServiceDesk"`
+	JiraRequestType  string                    `json:"jiraRequestType"`
+	JiraTransitions  map[string]string         `json:"jiraTransitions"`
 }
 
 func main() {
@@ -83,14 +87,16 @@ func run() error {
 			return err
 		}
 	}
-	secret := []byte(os.Getenv("ITSM_HMAC_SECRET"))
-	if len(secret) < 32 {
-		return errors.New("ITSM_HMAC_SECRET must contain at least 32 bytes")
+	secret := []byte(os.Getenv("ITSM_INBOUND_HMAC_SECRET"))
+	keyID := os.Getenv("ITSM_INBOUND_HMAC_KEY_ID")
+	if len(secret) < 32 || keyID == "" {
+		return errors.New("ITSM_INBOUND_HMAC_SECRET (32 bytes) and ITSM_INBOUND_HMAC_KEY_ID required")
 	}
 	if os.Getenv("AEP_CLIENT_SECRET") == "" || cfg.AEPClientID == "" {
 		return errors.New("AEP client credentials required")
 	}
-	ctx := ctrl.SetupSignalHandler()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	var vendor itsm.Adapter
 	switch cfg.Adapter {
 	case "servicenow":
@@ -100,7 +106,7 @@ func run() error {
 		if cfg.ClientID == "" || os.Getenv("ITSM_CLIENT_SECRET") == "" {
 			return errors.New("ServiceNow client credentials required")
 		}
-		vendor = &itsm.ServiceNow{HTTP: itsm.HTTP{BaseURL: cfg.VendorURL, Client: itsm.OAuthClient(ctx, cfg.TokenURL, cfg.ClientID, os.Getenv("ITSM_CLIENT_SECRET"))}}
+		vendor = &itsm.ServiceNow{StandardTemplate: cfg.StandardTemplate, HTTP: itsm.HTTP{BaseURL: cfg.VendorURL, Client: itsm.OAuthClient(ctx, cfg.TokenURL, cfg.ClientID, os.Getenv("ITSM_CLIENT_SECRET"))}}
 	case "jira":
 		if cfg.SyncCMDB {
 			return errors.New("Jira Assets sync is not implemented; disable syncCmdb")
@@ -109,9 +115,20 @@ func run() error {
 			return errors.New("Jira project, service desk, request type and ITSM_TOKEN required")
 		}
 		hc := &http.Client{Timeout: 30 * time.Second, Transport: &oauth2.Transport{Source: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: os.Getenv("ITSM_TOKEN")})}, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-		vendor = &itsm.Jira{HTTP: itsm.HTTP{BaseURL: cfg.VendorURL, Client: hc}, Project: cfg.JiraProject, ServiceDesk: cfg.JiraServiceDesk, RequestType: cfg.JiraRequestType, Transitions: cfg.JiraTransitions}
+		vendorHTTP := itsm.HTTP{BaseURL: cfg.VendorURL, Client: hc}
+		if cfg.JiraEmail != "" {
+			vendorHTTP.BasicUser = cfg.JiraEmail
+			vendorHTTP.BasicToken = os.Getenv("ITSM_TOKEN")
+			vendorHTTP.Client = &http.Client{Timeout: 30 * time.Second, CheckRedirect: hc.CheckRedirect}
+		}
+		vendor = &itsm.Jira{HTTP: vendorHTTP, Project: cfg.JiraProject, ServiceDesk: cfg.JiraServiceDesk, RequestType: cfg.JiraRequestType, Transitions: cfg.JiraTransitions}
 	case "webhook":
-		vendor = &itsm.Webhook{URL: cfg.VendorURL, Secret: secret}
+		outSecret := []byte(os.Getenv("ITSM_OUTBOUND_HMAC_SECRET"))
+		outID := os.Getenv("ITSM_OUTBOUND_HMAC_KEY_ID")
+		if len(outSecret) < 32 || outID == "" || (string(outSecret) == string(secret) || string(outSecret) == os.Getenv("ITSM_INBOUND_HMAC_PREVIOUS_SECRET")) {
+			return errors.New("distinct ITSM_OUTBOUND_HMAC_SECRET (32 bytes) and ITSM_OUTBOUND_HMAC_KEY_ID required")
+		}
+		vendor = &itsm.Webhook{URL: cfg.VendorURL, Secret: outSecret, KeyID: outID}
 	default:
 		return errors.New("adapter must be servicenow, jira or webhook")
 	}
@@ -139,12 +156,40 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	engine := &itsm.Engine{Store: itsm.Store{Client: cl, Namespace: cfg.StateNamespace, Scope: cfg.Organization}, Adapter: &itsm.Router{Vendor: vendor, Organization: cfg.Organization, AEP: itsm.HTTP{BaseURL: cfg.AEPURL, Client: itsm.OAuthClient(ctx, cfg.AEPTokenURL, cfg.AEPClientID, os.Getenv("AEP_CLIENT_SECRET"))}}}
-	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB}
+	vendorStore := itsm.Store{Client: cl, Namespace: cfg.StateNamespace, Scope: cfg.Organization}
+	engine := &itsm.Engine{Store: vendorStore, Adapter: vendor}
+	noteStore := vendorStore
+	noteStore.Scope += "/aep"
+	notes := &itsm.Engine{Store: noteStore, Adapter: &itsm.Router{Organization: cfg.Organization, AEP: itsm.HTTP{BaseURL: cfg.AEPURL, Client: itsm.OAuthClient(ctx, cfg.AEPTokenURL, cfg.AEPClientID, os.Getenv("AEP_CLIENT_SECRET"))}}}
+	keys := map[string][]byte{keyID: secret}
+	if previous := os.Getenv("ITSM_INBOUND_HMAC_PREVIOUS_SECRET"); previous != "" {
+		id := os.Getenv("ITSM_INBOUND_HMAC_PREVIOUS_KEY_ID")
+		if len(previous) < 32 || id == "" || id == keyID {
+			return errors.New("invalid previous inbound HMAC key")
+		}
+		keys[id] = []byte(previous)
+	}
+
+	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB, CompanyID: cfg.CompanyID}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/events", &itsm.Receiver{Engine: engine, Secret: secret, Organization: cfg.Organization})
+	mux.Handle("/v1/events", &itsm.Receiver{Engine: engine, NoteEngine: notes, Keys: keys, Organization: cfg.Organization})
+	mux.Handle("GET /metrics", itsm.MetricsHandler(engine, notes))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	server := &http.Server{Addr: listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 60 * time.Second, IdleTimeout: 60 * time.Second}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			if err := notes.Retry(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("ITSM note reconciliation: %v", err)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
