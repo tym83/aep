@@ -225,7 +225,9 @@ func ready(v map[string]any) bool {
 	for _, r := range rows {
 		m, _ := r.(map[string]any)
 		if m["type"] == "Ready" {
-			return m["observedGeneration"] != nil && m["observedGeneration"] == field(v, "metadata.generation")
+			// The OpenChoreo API omits metadata.generation; compare only when it is served.
+			generation := field(v, "metadata.generation")
+			return generation == nil || m["observedGeneration"] == generation
 		}
 	}
 	return false
