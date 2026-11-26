@@ -17,15 +17,21 @@ import {
   Settings as SidebarSettings,
 } from '@backstage/plugin-user-settings';
 import { NotificationsSidebarItem } from '@backstage/plugin-notifications';
+import { useCanCreate } from '@internal/plugin-aep';
 
 export const SidebarContent = NavContentBlueprint.make({
   params: {
     component: ({ navItems }) => {
+      // Creation entry points are hidden from read-only roles; the APIs deny
+      // the writes either way, but offering them misleads approvers and auditors.
+      const canCreate = useCanCreate();
       const nav = navItems.withComponent(item => (
         <SidebarItem icon={() => item.icon} to={item.href} text={item.title} />
       ));
       // Skipped items
       nav.take('page:search');
+      const create = nav.take('page:scaffolder');
+      const register = nav.take('page:catalog-import');
       return compatWrapper(
         <Sidebar>
           <SidebarLogo />
@@ -35,7 +41,8 @@ export const SidebarContent = NavContentBlueprint.make({
           <SidebarDivider />
           <SidebarGroup label="Menu" icon={<MenuIcon />}>
             {nav.take('page:catalog')}
-            {nav.take('page:scaffolder')}
+            {canCreate && create}
+            {canCreate && register}
             <SidebarDivider />
             <SidebarScrollWrapper>
               {nav.rest({ sortBy: 'title' })}

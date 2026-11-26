@@ -125,3 +125,4 @@ export const aepChangeModule = createFrontendModule({
     }),
   ],
 });
+export { useCanCreate } from './canCreate';
