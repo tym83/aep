@@ -41,7 +41,7 @@ managedFields, status, ownerReferences and finalizers are stripped. Namespace
 labels/annotations and desired object fields remain. Old owner UIDs/finalizers
 are deliberately not replayed; verify controller reconstruction during drills.
 
-The S3 object is a single JSON archive (`aep.cpbackup/v1`), with a `payload`
+The S3 object is an age-encrypted envelope around a single JSON archive (`aep.cpbackup/v1`), with a `payload`
 containing created time, organization names and sorted `entries`. Each entry
 contains a GVR, sanitized Kubernetes object and SHA-256 of its Go JSON encoding.
 The envelope SHA-256 covers the complete payload, including scope and timestamp.
@@ -86,10 +86,12 @@ whole directory to permit rotation between jobs.
 go build -o bin/aep-cp-backup ./cmd/aep-cp-backup
 helm upgrade --install aep-cp-backup charts/aep-cp-backup -n aep-system \
   --set image="$BACKUP_IMAGE_DIGEST" \
-  --set s3Endpoint=https://s3.example --set s3Bucket=aep-dr
+  --set s3Endpoint=https://s3.example --set s3Bucket=aep-dr \
+  --set ageRecipient="$AGE_RECIPIENT"
 
 bin/aep-cp-backup --mgmt-kubeconfig=mgmt-readonly.conf \
   --aepcp-kubeconfig=cp-readonly.conf \
+  --age-recipient="$AGE_RECIPIENT" \
   --s3-endpoint=https://s3.example --s3-bucket=aep-dr backup
 ```
 
@@ -129,7 +131,7 @@ explicit `--object` key for unrelated backups. Retention comes from the bucket.
    ```sh
    bin/aep-cp-backup --aepcp-kubeconfig=cp-recovery.conf \
      --s3-endpoint=https://s3.example --s3-bucket=aep-dr \
-     --object="$ARCHIVE_KEY" --dry-run --diff restore
+     --identity-file=recovery.agekey --object="$ARCHIVE_KEY" --dry-run --diff restore
    ```
 
    Dry-run/diff only GETs and LISTs target objects; it prints create/update/unchanged,
@@ -143,7 +145,7 @@ explicit `--object` key for unrelated backups. Retention comes from the bucket.
    ```sh
    bin/aep-cp-backup --aepcp-kubeconfig=cp-recovery.conf \
      --s3-endpoint=https://s3.example --s3-bucket=aep-dr \
-     --object="$ARCHIVE_KEY" --acknowledge-new-uids restore
+     --identity-file=recovery.agekey --object="$ARCHIVE_KEY" --acknowledge-new-uids restore
    ```
 
    Ordering is namespaces, Secrets, planes, environments, pipelines, types/
@@ -208,3 +210,25 @@ is a target allocation, not measured evidence of meeting it.
 
 S3 signing uses `AWS_REGION` (default `us-east-1`); set it to the bucket region.
 The configured region avoids requiring bucket-location discovery permissions.
+
+## Encryption, retention and purge
+
+Backup requires `--age-recipient=age1...` (chart value `ageRecipient`).
+Generate the X25519 key with `age-keygen`, escrow the identity offline and give
+only its public recipient to the CronJob. A fresh symmetric file key encrypts
+each archive; age wraps that key for the recipient **before any S3 Put**.
+Restore requires `--identity-file`; it authenticates/decrypts the complete
+envelope and validates archive checksums before API writes. Plaintext legacy
+archives are not accepted by the restore CLI. Keep historical identities through
+their archives' recovery windows and test recovery after key rotation.
+
+Recommend Object Lock **GOVERNANCE** for DR archives with a finite recovery
+window. Keep bypass permission away from backup/restore identities and reserve
+it for an independently approved purge role. Immutable retention preserves
+recoverability but also retains deleted organization Secrets until expiry.
+COMPLIANCE retention prevents early purge even by administrators and can conflict
+with deletion obligations. Governance permits a controlled purge when required;
+audit that action separately. Lifecycle rules must cover noncurrent versions.
+Key destruction can make ciphertext unrecoverable, but a shared recipient affects
+every archive encrypted to it, and copies of the private key defeat crypto-erasure.
+Plan retention, key custody and emergency purge together.

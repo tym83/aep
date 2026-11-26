@@ -24,6 +24,8 @@ func main() {
 	}
 }
 func run() error {
+	recipient := flag.String("age-recipient", "", "age X25519 public recipient; required for backup")
+	identity := flag.String("identity-file", "", "age identity file; required for restore")
 	mgmt := flag.String("mgmt-kubeconfig", "", "management kubeconfig for Organization discovery")
 	cp := flag.String("aepcp-kubeconfig", "", "control-plane kubeconfig (empty = in cluster)")
 	orgs := flag.String("organizations", "", "comma-separated AEP organization namespaces; empty = discover from management")
@@ -40,6 +42,12 @@ func run() error {
 	flag.Parse()
 	if flag.NArg() != 1 || (flag.Arg(0) != "backup" && flag.Arg(0) != "restore") {
 		return fmt.Errorf("usage: aep-cp-backup [flags] backup|restore")
+	}
+	if flag.Arg(0) == "backup" && *recipient == "" {
+		return fmt.Errorf("backup requires --age-recipient")
+	}
+	if flag.Arg(0) == "restore" && *identity == "" {
+		return fmt.Errorf("restore requires --identity-file")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -77,7 +85,12 @@ func run() error {
 		if e != nil {
 			return e
 		}
-		a, e := cpbackup.Decode(b)
+		f, e := os.Open(*identity)
+		if e != nil {
+			return e
+		}
+		defer f.Close()
+		a, e := cpbackup.DecryptArchive(b, f)
 		if e != nil {
 			return e
 		}
@@ -116,14 +129,10 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	b, e := cpbackup.Encode(a)
-	if e != nil {
-		return e
-	}
 	if *key == "" {
-		*key = time.Now().UTC().Format("2006-01-02/150405.000000000") + "-" + a.SHA256 + ".json"
+		*key = time.Now().UTC().Format("2006-01-02/150405.000000000") + "-" + a.SHA256 + ".json.age"
 	}
-	if e = store.Put(ctx, *key, b, "application/json"); e != nil {
+	if e = cpbackup.PutEncrypted(ctx, store, *key, a, *recipient); e != nil {
 		return e
 	}
 	fmt.Printf("object=%s sha256=%s objects=%d\n", *key, a.SHA256, len(a.Payload.Entries))

@@ -14,3 +14,6 @@ resources:
   limits: {memory: 1Gi}
 nodeSelector: {}
 tolerations: []
+
+# Required public age X25519 recipient. Keep the private identity offline.
+ageRecipient: ""
