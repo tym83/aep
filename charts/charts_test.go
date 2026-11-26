@@ -22,10 +22,25 @@ func render(t *testing.T, chart string, values ...string) (string, error) {
 	}
 	cmd := exec.Command("helm", args...)
 	if chart == "aep-gitlab" {
-		cmd.Args = append(cmd.Args, "--post-renderer", "./aep-gitlab/post-render.sh")
+		version, _ := exec.Command("helm", "version", "--short").Output()
+		cmd.Env = os.Environ()
+		if strings.HasPrefix(string(version), "v4.") {
+			plugins := t.TempDir()
+			source, err := filepath.Abs("aep-gitlab/postrenderer")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = os.Symlink(source, filepath.Join(plugins, "aep-images")); err != nil {
+				t.Fatal(err)
+			}
+			cmd.Env = append(cmd.Env, "HELM_PLUGINS="+plugins)
+			cmd.Args = append(cmd.Args, "--post-renderer", "aep-images")
+		} else {
+			cmd.Args = append(cmd.Args, "--post-renderer", "./aep-gitlab/post-render.sh")
+		}
 		for _, v := range values {
 			if strings.HasPrefix(v, "global.imageRegistry=") {
-				cmd.Env = append(os.Environ(), "AEP_REGISTRY_MIRROR="+strings.TrimPrefix(v, "global.imageRegistry="))
+				cmd.Env = append(cmd.Env, "AEP_REGISTRY_MIRROR="+strings.TrimPrefix(v, "global.imageRegistry="))
 			}
 		}
 	}
@@ -221,6 +236,42 @@ func TestDockerHubAliases(t *testing.T) {
 		out, err := render(t, "aep-llm", "model=test", "apiKeySecret=key", "image.repository="+host+"/ubuntu", "image.tag=v24", "image.digest=", "dev=true", "global.imageRegistry=mirror.local/cache")
 		if err != nil || !strings.Contains(out, "mirror.local/cache/docker.io/library/ubuntu:v24") {
 			t.Fatalf("%s: %v\n%s", host, err, out)
+		}
+	}
+}
+
+func TestHelm4PostrendererPlugin(t *testing.T) {
+	version, err := exec.Command("helm", "version", "--short").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(version), "v4.") {
+		t.Skip("Helm 4 plugin contract")
+	}
+	plugins := t.TempDir()
+	source, err := filepath.Abs("aep-gitlab/postrenderer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(source, filepath.Join(plugins, "aep-images")); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("helm", "template", "operator", "./aep-operator", "--set", "aepcpKubeconfigSecret=cp/access", "--post-renderer", "aep-images")
+	cmd.Env = append(os.Environ(), "HELM_PLUGINS="+plugins, "AEP_REGISTRY_MIRROR=mirror.local/cache")
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v %s", err, b)
+	}
+	images, err := release.Images(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(images) == 0 {
+		t.Fatal("no image rendered")
+	}
+	for _, image := range images {
+		if !strings.HasPrefix(image, "mirror.local/cache/") || !strings.Contains(image, "@sha256:") {
+			t.Fatal(image)
 		}
 	}
 }

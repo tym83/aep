@@ -226,13 +226,17 @@ audited breakglass admin path for identity outages; restrict initial-root Secret
 access and rotate it after setup. See [GitLab OmniAuth](https://docs.gitlab.com/charts/charts/globals/#omniauth)
 and [external services](https://docs.gitlab.com/charts/advanced/external-db/).
 
-Prepare and inspect without deploying:
+Prepare and inspect without deploying (Helm 4):
+install the local renderer plugin with
+`helm plugin install ./charts/aep-gitlab/postrenderer` and put the reviewed
+`aep-release` binary on PATH. Helm 3 accepts
+`--post-renderer charts/aep-gitlab/post-render.sh` directly.
 
 ```sh
 helm dependency build charts/aep-gitlab
 helm lint charts/aep-gitlab --set gitlab.global.ingress.class=nginx
 helm template gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml \
-  --post-renderer charts/aep-gitlab/post-render.sh
+  --post-renderer aep-images
 ```
 
 Retain Chart.lock; upstream packages are not committed. Validate all rendered
@@ -291,10 +295,14 @@ Upgrades must follow the official [upgrade paths](https://docs.gitlab.com/update
 including all required stops and completed background migrations, rather than
 jumping directly from the old 18.6.0 baseline to 19.6.2.
 
-Always use `--post-renderer charts/aep-gitlab/post-render.sh` for Helm template,
+Always use `--post-renderer aep-images` for Helm template,
 install and upgrade. Set `AEP_REGISTRY_MIRROR` for disconnected installations.
 The renderer pins every container/init image to the reviewed release digest,
 rewrites its registry and rejects images absent from the inventory. It uses the
 installed `aep-release` binary, with a source-checkout fallback for development.
 This is necessary because upstream GitLab subcharts use different image-value
 contracts. Keep the post-renderer and release inventory version with the chart.
+
+Helm 4 requires the `postrenderer/v1` plugin name (`aep-images`), whereas Helm 3
+accepts an executable path. CI tests both invocation contracts according to the
+installed Helm version; plugin installation is isolated from the user's plugins.
