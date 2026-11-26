@@ -128,6 +128,9 @@ func Check(root, path string) error {
 			return e
 		}
 	}
+	if err := CheckCharts(root, m); err != nil {
+		return err
+	}
 	return CheckImages(context.Background(), root, m)
 }
 
@@ -230,6 +233,26 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 		return nil
 	}
 	for _, c := range operator.DeliveryCharts() {
+		if c.Name == "argo-cd" {
+			a, path, cleanup, err := packageArgoChart(ctx, root)
+			if err != nil {
+				return m, err
+			}
+			defer cleanup()
+			artifacts[a.Ref] = a
+			b, err := render(ctx, path, "", operator.ReleaseValues(c.Name))
+			if err != nil {
+				return m, err
+			}
+			list, err := Images(b)
+			if err != nil {
+				return m, err
+			}
+			for _, image := range list {
+				images[image] = true
+			}
+			continue
+		}
 		values := operator.ReleaseValues(c.Name)
 		if e = addChart(c.URL, c.Version, c.URL, values); e != nil {
 			return m, e
@@ -313,7 +336,7 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 	return m, nil
 }
 func LocalValues(chart string) map[string]any {
-	return map[string]any{"dev": true, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
+	return map[string]any{"dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
 }
 func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifact, error) {
 	raw := strings.TrimPrefix(ref, "oci://")
@@ -450,4 +473,46 @@ var immutableTag = regexp.MustCompile(`^(sha-[a-f0-9]{7,40}|v?[0-9]+\.[0-9]+\.[0
 
 func immutableVersion(version string) bool {
 	return version == "" || immutableTag.MatchString(version)
+}
+
+// Fingerprints detect source drift; inventory completeness must also reject
+// accidentally removed chart entries in an otherwise current manifest.
+func CheckCharts(root string, m Manifest) error {
+	expected := map[string]string{}
+	for _, c := range operator.DeliveryCharts() {
+		expected[c.URL] = c.Version
+	}
+	for _, base := range []string{"charts", "policies"} {
+		paths, err := filepath.Glob(filepath.Join(root, base, "*", "Chart.yaml"))
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			var c struct {
+				Name    string
+				Version string
+			}
+			if err := yaml.Unmarshal(data, &c); err != nil {
+				return err
+			}
+			expected["oci://ghcr.io/tym83/aep/"+base+"/"+c.Name] = c.Version
+		}
+	}
+	for _, a := range m.Artifacts {
+		if a.Kind != "chart" {
+			continue
+		}
+		if version, ok := expected[a.Ref]; !ok || version != a.Version {
+			return fmt.Errorf("unexpected chart or version: %s:%s", a.Ref, a.Version)
+		}
+		delete(expected, a.Ref)
+	}
+	if len(expected) > 0 {
+		return fmt.Errorf("charts missing from inventory: %v", expected)
+	}
+	return nil
 }

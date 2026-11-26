@@ -10,14 +10,15 @@ short names are expanded to `docker.io/library/...` or `docker.io/...`.
 
 The inventory covers the charts in `charts/` and `policies/`, their rendered
 containers (including hooks and init containers), the operator's pinned Kyverno,
-kgateway and OpenChoreo data-plane charts, and standalone/controller-created
+kgateway, Argo CD and OpenChoreo data-plane charts, and standalone/controller-created
 images in `release/extra-images.yaml`. Both production and nonproduction policy
 bundles are included. ServiceClaim CRDs and bootstrap RBAC are embedded in the
 operator; they do not require a GitHub download. The optional LLM and SRE charts
+(including token-proxy), audit-forwarder, control-plane backup and ITSM bridge
 are included, but model weights must be staged separately on their PVC.
 
 This repository currently expects an existing OpenChoreo control plane. It does
-not install Argo CD, ESO, Argo Workflows or the OpenChoreo observability/control
+not install ESO, Argo Workflows or the OpenChoreo observability/control
 planes. Inventory and mirror those separately if your installation uses them.
 Cozystack, Kubernetes, cert-manager, CNI, storage and Flux are prerequisites, not
 AEP artifacts: follow [Cozystack's air-gap guide](https://cozystack.io/docs/install/kubernetes/air-gapped/) for
@@ -49,7 +50,7 @@ bin/aep-release manifest --check
 Generation resolves real digests; any missing image/chart or signature discovery
 error fails generation. It renders upstream charts by digest using the operator's
 values, and local charts with representative required identity values. It packages
-local charts deterministically into `release/artifacts/` (an OCI layout), so new
+local charts and the Argo CD HTTP chart deterministically into `release/artifacts/` (an OCI layout), so new
 chart changes never reuse a previously published chart's digest. Commit this
 layout alongside `release/manifest.yaml`; keep it with the CLI when mirroring.
 Run commands from the repository root. `--root` changes inventory input paths;
@@ -60,11 +61,21 @@ paths are explicit CLI paths relative to the working directory.
 policies, tooling, the standalone image list and build inventory. It renders local charts and pinned upstream charts from release/.cache without
 network access and rejects missing or surplus runtime images. Run generation for each release after publishing
 its images, then review the manifest diff and promote the exact digests. The
-chart image defaults use published commit or release tags. The operator embeds
+chart image defaults include verified digests. The operator embeds
 the inventory, renders delivered images as repository:tag@digest, and selects
 Flux OCIRepository sources by ref.digest. Publish images for a new source revision
 and update defaults before generating its inventory. Existing mirror tags cannot
 be replaced accidentally; --allow-retag is an explicit override.
+
+Argo CD 9.7.1 is fetched from `https://argoproj.github.io/argo-helm` and
+packaged as `oci://argoproj.github.io/argo-helm/argo-cd` in the local layout.
+This is a logical mirror path, not an upstream OCI registry. `mirror` and
+`bundle` read its bytes from the layout; the mirrored operator selects those
+same bytes by digest. Argo CD and Redis images use the image mirror, including
+the Redis initialization hook. With no chart mirror, `--argocd-chart-url`
+continues to select an HTTP Helm repository and the pinned chart version.
+With a chart mirror, the packaged OCI chart takes precedence over HTTP URLs;
+an OCI override must identify the inventory chart (optionally already mirrored).
 
 Credentials use the standard Docker credential keychain (`docker login` and
 credential helpers). Use `--ca /path/to/registry-ca.pem` for a private registry CA.

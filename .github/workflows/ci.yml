@@ -52,6 +52,7 @@ jobs:
       - name: Fetch pinned upstream charts for mirror rendering
         run: |
           mkdir -p release/.cache
+          helm pull argo-cd --repo https://argoproj.github.io/argo-helm --version 9.7.1 --untar --untardir release/.cache
           helm pull oci://ghcr.io/kyverno/charts/kyverno --version 3.9.2 --untar --untardir release/.cache
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway --version v2.3.11 --untar --untardir release/.cache
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds --version v2.3.11 --untar --untardir release/.cache

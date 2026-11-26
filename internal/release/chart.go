@@ -4,16 +4,19 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/tym83/aep/internal/operator"
 	"sigs.k8s.io/yaml"
 )
 
@@ -183,4 +186,27 @@ func compactLayout(root string, m Manifest) error {
 		}
 	}
 	return nil
+}
+
+// Convert the pinned HTTP chart to OCI so bundle/load and Flux share the same
+// immutable bytes even though upstream does not publish this chart as OCI.
+func packageArgoChart(ctx context.Context, root string) (Artifact, string, func(), error) {
+	dir, err := os.MkdirTemp("", "aep-argocd-")
+	if err != nil {
+		return Artifact{}, "", nil, err
+	}
+	cleanup := func() { os.RemoveAll(dir) }
+	cmd := exec.CommandContext(ctx, "helm", "pull", "argo-cd", "--repo", "https://argoproj.github.io/argo-helm", "--version", operator.ArgoCDChartVersion, "--untar", "--untardir", dir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		cleanup()
+		return Artifact{}, "", nil, fmt.Errorf("fetch Argo CD: %w: %s", err, out)
+	}
+	path := filepath.Join(dir, "argo-cd")
+	a, err := PackageChart(root, path)
+	if err != nil {
+		cleanup()
+		return Artifact{}, "", nil, err
+	}
+	a.Ref = operator.ArgoCDChartOCI
+	return a, path, cleanup, nil
 }
