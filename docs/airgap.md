@@ -30,8 +30,8 @@ Use a registry supporting OCI manifests, Helm media types and multi-platform
 indexes. Configure nodes/container runtimes to trust its CA and authenticate
 pulls in **every** management, control-plane and tier cluster. Flux credentials
 alone do not authenticate kubelet image pulls. Prepare the chart source Secrets
-in every management tenant namespace where the operator creates OCIRepository
-objects. `secretRef` is a Docker registry credentials Secret; `certSecretRef`
+in aep-system; the operator copies the configured Secrets into each managed
+tenant namespace before creating OCIRepository objects. `secretRef` is a Docker registry credentials Secret; `certSecretRef`
 contains the CA (and client certificate/key if mTLS is required) in the format
 supported by your installed Flux source-controller.
 
@@ -52,7 +52,8 @@ local charts deterministically into `release/artifacts/` (an OCI layout), so new
 chart changes never reuse a previously published chart's digest. Commit this
 layout alongside `release/manifest.yaml`; keep it with the CLI when mirroring.
 Run commands from the repository root. `--root` changes inventory input paths;
-local layout paths in the manifest remain relative to the working directory.
+manifest and local layout paths resolve relative to --root. Bundle and extraction
+paths are explicit CLI paths relative to the working directory.
 
 `manifest --check` is an offline freshness check over delivery code, charts,
 policies, tooling, the standalone image list and build inventory. It does not
@@ -66,7 +67,7 @@ since Helm values and Flux sources still select version tags.
 
 Credentials use the standard Docker credential keychain (`docker login` and
 credential helpers). Use `--ca /path/to/registry-ca.pem` for a private registry CA.
-`--insecure` enables HTTP; it does not disable HTTPS certificate verification.
+`--insecure-registry=registry.example.com:5000` enables HTTP for that host only; it does not disable HTTPS certificate verification.
 
 ```sh
 bin/aep-release mirror --to registry.example.com/aep --ca registry-ca.pem --key vendor.pub
@@ -74,7 +75,7 @@ bin/aep-release mirror --to registry.example.com/aep --ca registry-ca.pem --key 
 
 Copying retains all index children, original manifest bytes, digests and version
 tags. Repeating a copy skips matching destination manifests and reuses blobs;
-a stale destination tag is updated only after its content is present.
+an existing tag with different content fails unless --allow-retag is explicitly set.
 
 ## Fully disconnected transfer
 
@@ -102,12 +103,18 @@ checksums detect corruption, but do not authenticate a release inventory.
 Cosign simple-signing artifacts at the conventional `sha256-<digest>.sig` tag are
 discovered and pinned during generation, copied with their subjects, and verified
 against the independently supplied PEM public key (ECDSA, RSA or Ed25519).
-A signed artifact fails closed without a key or with an invalid signature. Keyless
-verification is unavailable offline. OCI-referrer-only signature discovery,
-attestations, SBOM transfer and multiple vendor key selection are not implemented;
-use conventional cosign signature tags and a release signing key for this path.
-Locally packaged charts are unsigned until your release signing process signs
-them. This tooling does not claim that unsigned upstream artifacts are trusted.
+With --key, every artifact must have a valid signature, including artifacts whose
+signature field is missing. Checksums supplied inside the bundle never establish
+trust. Use repeated --trust-key=registry/prefix=vendor.pub for per-prefix trust
+and --verify=registry/prefix,other/prefix to require verification explicitly.
+Prefix boundaries are respected; the most specific trusted key wins. Unknown
+or keyless signatures are copied without verification when their artifact is
+not required by policy; required artifacts fail closed without a trusted key.
+Keyless verification and OCI-referrer-only discovery are unavailable offline.
+
+Load extracts into the system temporary directory by default. --work-dir selects
+a writable parent (the bundle can be read-only); --max-size caps total extracted
+bytes, defaulting to 100 GiB. Archive links and path traversal are rejected.
 
 ## Install
 
@@ -123,9 +130,10 @@ registryCASecret: mirror-ca
 
 The last two values belong to the operator chart. They configure Flux
 `OCIRepository.spec.secretRef` and `.certSecretRef`. Create the referenced Secrets
-in each source namespace before onboarding an organization. The operator flags
+in aep-system before onboarding an organization. They are copied with organization ownership checks. The operator flags
 are `--image-registry-mirror`, `--chart-registry-mirror`, `--registry-secret` and
-`--registry-ca-secret`; both mirror flags normally use the same prefix.
+`--registry-ca-secret`; both mirror flags normally use the same prefix. For an HTTP chart mirror, set
+registryInsecure: true (operator --registry-insecure).
 
 ```sh
 helm upgrade --install aep-operator \

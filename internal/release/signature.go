@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 )
@@ -20,10 +21,17 @@ import (
 // verify checks cosign's simple-signing payload and signature offline. The key is
 // supplied independently by the operator, never trusted from the transferred bundle.
 func (c *Client) verify(a Artifact, img v1.Image) error {
-	if c.Key == "" {
-		return fmt.Errorf("%s has cosign signatures: --key is required (keyless verification is unavailable offline)", a.Ref)
+	keyPath, required := c.signaturePolicy(a)
+	if !required {
+		return nil
 	}
-	b, e := os.ReadFile(c.Key)
+	if keyPath == "" {
+		return fmt.Errorf("no trusted key for %s", a.Ref)
+	}
+	if img == nil {
+		return fmt.Errorf("missing signature for %s", a.Ref)
+	}
+	b, e := os.ReadFile(keyPath)
 	if e != nil {
 		return e
 	}
@@ -83,4 +91,33 @@ func (c *Client) verify(a Artifact, img v1.Image) error {
 		}
 	}
 	return fmt.Errorf("no valid cosign signature for %s@%s with provided key", a.Ref, a.Digest)
+}
+
+// Prefix matching respects repository boundaries, avoiding trust in lookalike names.
+func matchesPrefix(ref, prefix string) bool {
+	ref = strings.TrimPrefix(ref, "oci://")
+	prefix = strings.TrimRight(strings.TrimPrefix(prefix, "oci://"), "/")
+	return ref == prefix || strings.HasPrefix(ref, prefix+"/")
+}
+func (c *Client) signaturePolicy(a Artifact) (string, bool) {
+	key, longest := c.Key, 0
+	for prefix, path := range c.Keys {
+		if matchesPrefix(a.Ref, prefix) && len(prefix) > longest {
+			key, longest = path, len(prefix)
+		}
+	}
+	required := key != ""
+	for _, prefix := range strings.Split(c.Verify, ",") {
+		if prefix != "" && matchesPrefix(a.Ref, prefix) {
+			required = true
+		}
+	}
+	return key, required
+}
+func (c *Client) requireSignature(a Artifact) error {
+	key, required := c.signaturePolicy(a)
+	if required && (key == "" || a.Signature == "") {
+		return fmt.Errorf("trusted signature required for %s", a.Ref)
+	}
+	return nil
 }

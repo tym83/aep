@@ -6,8 +6,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/tym83/aep/internal/release"
 	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/tym83/aep/internal/release"
 	"sigs.k8s.io/yaml"
 )
 
@@ -18,22 +21,54 @@ func main() {
 	}
 }
 func run(args []string) error {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
+	if len(args) == 0 {
+		return fmt.Errorf("subcommand required: manifest, mirror, bundle, load")
+	}
+	if args[0] == "-h" || args[0] == "--help" {
 		fmt.Println("Usage: aep-release <manifest|mirror|bundle|load> [flags]")
 		return nil
 	}
 	cmd := args[0]
+	if cmd != "manifest" && cmd != "mirror" && cmd != "bundle" && cmd != "load" {
+		return fmt.Errorf("unknown command %q", cmd)
+	}
 	f := flag.NewFlagSet("aep-release "+cmd, flag.ContinueOnError)
-	path := f.String("manifest", "release/manifest.yaml", "Release manifest path")
-	root := f.String("root", ".", "Repository root for manifest generation")
-	check := f.Bool("check", false, "Verify manifest inputs without network access")
-	to := f.String("to", "", "Destination registry[/prefix]")
-	out := f.String("out", "", "Bundle directory")
-	from := f.String("from", "", "Bundle directory")
-	c := &release.Client{}
-	f.BoolVar(&c.Insecure, "insecure", false, "Use HTTP for registry access (trusted networks only)")
+	var path, root, to, out, from string
+	var check bool
+	c := &release.Client{Keys: map[string]string{}}
+	if cmd != "load" {
+		f.StringVar(&path, "manifest", "release/manifest.yaml", "Manifest path relative to --root")
+	}
+	f.StringVar(&root, "root", ".", "Base directory for repository and local OCI layouts")
+	if cmd == "manifest" {
+		f.BoolVar(&check, "check", false, "Verify tracked inputs and rendered images offline")
+	}
+	if cmd == "mirror" || cmd == "load" {
+		f.StringVar(&to, "to", "", "Destination registry[/prefix]")
+		f.BoolVar(&c.AllowRetag, "allow-retag", false, "Permit replacing an existing tag with different content")
+	}
+	if cmd == "bundle" {
+		f.StringVar(&out, "out", "", "Bundle output directory")
+	}
+	if cmd == "load" {
+		f.StringVar(&from, "from", "", "Bundle directory")
+		f.StringVar(&c.WorkDir, "work-dir", "", "Extraction parent directory; defaults to system temporary directory")
+		f.Int64Var(&c.MaxSize, "max-size", 100<<30, "Maximum total extracted bytes")
+	}
+	f.StringVar(&c.InsecureRegistry, "insecure-registry", "", "Exact registry host[:port] allowed to use HTTP")
 	f.StringVar(&c.CA, "ca", "", "PEM registry CA bundle")
-	f.StringVar(&c.Key, "key", "", "Trusted cosign public key PEM")
+	if cmd != "manifest" {
+		f.StringVar(&c.Key, "key", "", "Trusted cosign public key; requires signatures for every artifact")
+		f.StringVar(&c.Verify, "verify", "", "Comma-separated repository prefixes requiring trusted signatures")
+		f.Func("trust-key", "Trusted prefix=public-key-file (repeatable)", func(s string) error {
+			prefix, key, ok := strings.Cut(s, "=")
+			if !ok || prefix == "" || key == "" {
+				return fmt.Errorf("expected prefix=key-file")
+			}
+			c.Keys[prefix] = key
+			return nil
+		})
+	}
 	if e := f.Parse(args[1:]); e != nil {
 		if errors.Is(e, flag.ErrHelp) {
 			return nil
@@ -43,15 +78,21 @@ func run(args []string) error {
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
 	}
+	if c.MaxSize < 0 {
+		return fmt.Errorf("--max-size must be positive")
+	}
 	if e := c.Init(); e != nil {
 		return e
 	}
 	ctx := context.Background()
+	if path != "" && !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
 	if cmd == "manifest" {
-		if *check {
-			return release.Check(*root, *path)
+		if check {
+			return release.Check(root, path)
 		}
-		m, e := release.Generate(ctx, *root, c)
+		m, e := release.Generate(ctx, root, c)
 		if e != nil {
 			return e
 		}
@@ -59,20 +100,22 @@ func run(args []string) error {
 		if e != nil {
 			return e
 		}
-		return os.WriteFile(*path, b, 0644)
+		return os.WriteFile(path, b, 0644)
 	}
 	if cmd == "load" {
-		return c.Load(ctx, *from, *to)
+		return c.Load(ctx, from, to)
 	}
-	if cmd != "mirror" && cmd != "bundle" {
-		return fmt.Errorf("unknown command %q", cmd)
-	}
-	m, e := release.Read(*path)
+	m, e := release.Read(path)
 	if e != nil {
 		return e
 	}
-	if cmd == "mirror" {
-		return c.Mirror(ctx, m, *to)
+	for i := range m.Artifacts {
+		if m.Artifacts[i].Layout != "" && !filepath.IsAbs(m.Artifacts[i].Layout) {
+			m.Artifacts[i].Layout = filepath.Join(root, m.Artifacts[i].Layout)
+		}
 	}
-	return c.Bundle(ctx, m, *out)
+	if cmd == "mirror" {
+		return c.Mirror(ctx, m, to)
+	}
+	return c.Bundle(ctx, m, out)
 }

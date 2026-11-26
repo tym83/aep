@@ -33,7 +33,7 @@ func TestMirrorBundleLoad(t *testing.T) {
 	s := httptest.NewServer(registry.New())
 	defer s.Close()
 	host := strings.TrimPrefix(s.URL, "http://")
-	c := &Client{Insecure: true}
+	c := &Client{InsecureRegistry: host}
 	if e := c.Init(); e != nil {
 		t.Fatal(e)
 	}
@@ -69,6 +69,18 @@ func TestMirrorBundleLoad(t *testing.T) {
 	if e = c.Bundle(ctx, m, dir); e != nil {
 		t.Fatal(e)
 	}
+	// A bundle's self-supplied checksums do not establish trust.
+	c.Key = "trusted.pub"
+	if err := c.Load(ctx, dir, host+"/untrusted"); err == nil || !strings.Contains(err.Error(), "signature required") {
+		t.Fatalf("unsigned bundle accepted: %v", err)
+	}
+	c.Key = ""
+	c.MaxSize = 1
+	if err := c.Load(ctx, dir, host+"/oversize"); err == nil || !strings.Contains(err.Error(), "size limit") {
+		t.Fatalf("oversize bundle accepted: %v", err)
+	}
+	c.MaxSize = 0
+	c.WorkDir = t.TempDir()
 	// Source server can be gone for load; the destination is independent.
 	s.Close()
 	dest := httptest.NewServer(registry.New())
@@ -129,8 +141,8 @@ func TestSignatureVerification(t *testing.T) {
 		t.Fatal("wrong subject accepted")
 	}
 	c.Key = ""
-	if e = c.verify(a, img); e == nil {
-		t.Fatal("signature accepted without trust key")
+	if e = c.verify(a, img); e != nil {
+		t.Fatal("optional signature blocked transfer")
 	}
 }
 func TestImages(t *testing.T) {
@@ -199,12 +211,84 @@ func TestHelmOCICompatibility(t *testing.T) {
 	server := httptest.NewServer(registry.New())
 	defer server.Close()
 	to := strings.TrimPrefix(server.URL, "http://")
-	c := &Client{Insecure: true}
+	c := &Client{InsecureRegistry: to}
 	if e = c.Mirror(context.Background(), Manifest{Schema: 1, Artifacts: []Artifact{a}}, to); e != nil {
 		t.Fatal(e)
 	}
 	out, e := exec.Command("helm", "template", "example", "oci://"+to+"/ghcr.io/tym83/aep/charts/example", "--version", "1.0.0", "--plain-http").CombinedOutput()
 	if e != nil || !strings.Contains(string(out), "kind: ConfigMap") {
 		t.Fatalf("Helm cannot consume packaged OCI chart: %v %s", e, out)
+	}
+}
+
+func TestRetagRequiresOptIn(t *testing.T) {
+	server := httptest.NewServer(registry.New())
+	defer server.Close()
+	host := strings.TrimPrefix(server.URL, "http://")
+	c := &Client{InsecureRegistry: host}
+	dst, err := c.ref(host + "/image:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := empty.Image
+	second, err := mutate.AppendLayers(first, static.NewLayer([]byte("changed"), types.OCILayer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h1, _ := first.Digest()
+	h2, _ := second.Digest()
+	ctx := context.Background()
+	if err = c.put(ctx, dst, h1.String(), first, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err = c.put(ctx, dst, h2.String(), second, nil); err == nil {
+		t.Fatal("retag accepted")
+	}
+	got, err := remote.Get(dst)
+	if err != nil || got.Digest != h1 {
+		t.Fatal("existing tag changed", err)
+	}
+	c.AllowRetag = true
+	if err = c.put(ctx, dst, h2.String(), second, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestInsecureRegistryScope(t *testing.T) {
+	c := &Client{InsecureRegistry: "mirror.example:5000"}
+	for _, tc := range []struct{ ref, scheme string }{
+		{"mirror.example:5000/app:v1", "http"},
+		{"upstream.example/app:v1", "https"},
+		{"mirror.example:5001/app:v1", "https"},
+	} {
+		r, err := c.ref(tc.ref)
+		if err != nil || r.Context().Registry.Scheme() != tc.scheme {
+			t.Fatal(tc, r, err)
+		}
+	}
+}
+func TestSignaturePolicy(t *testing.T) {
+	c := &Client{Keys: map[string]string{"ghcr.io/team": "team.pub"}, Verify: "docker.io/library"}
+	for _, tc := range []struct {
+		ref      string
+		required bool
+		key      string
+	}{
+		{"ghcr.io/team/image", true, "team.pub"},
+		{"ghcr.io/team-other/image", false, ""},
+		{"docker.io/library/alpine", true, ""},
+		{"other.example/image", false, ""},
+	} {
+		a := Artifact{Ref: tc.ref}
+		key, required := c.signaturePolicy(a)
+		if key != tc.key || required != tc.required {
+			t.Fatal(tc, key, required)
+		}
+		if err := c.requireSignature(a); (err != nil) != tc.required {
+			t.Fatal(tc, err)
+		}
+	}
+	c = &Client{Key: "trusted.pub"}
+	if err := c.Mirror(context.Background(), Manifest{Artifacts: []Artifact{{Ref: "example.org/unsigned"}}}, "mirror.example"); err == nil {
+		t.Fatal("unsigned artifact accepted with --key")
 	}
 }

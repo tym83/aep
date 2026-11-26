@@ -20,9 +20,14 @@ import (
 )
 
 type Client struct {
-	Insecure  bool
-	CA, Key   string
-	transport http.RoundTripper
+	InsecureRegistry string
+	AllowRetag       bool
+	Verify           string
+	Keys             map[string]string
+	WorkDir          string
+	MaxSize          int64
+	CA, Key          string
+	transport        http.RoundTripper
 }
 
 func (c *Client) Init() error {
@@ -53,7 +58,11 @@ func (c *Client) options(ctx context.Context) []remote.Option {
 }
 func (c *Client) ref(s string) (name.Reference, error) {
 	opts := []name.Option{}
-	if c.Insecure {
+	r, err := name.ParseReference(strings.TrimPrefix(s, "oci://"))
+	if err != nil {
+		return nil, err
+	}
+	if c.InsecureRegistry != "" && r.Context().RegistryStr() == c.InsecureRegistry {
 		opts = append(opts, name.Insecure)
 	}
 	return name.ParseReference(strings.TrimPrefix(s, "oci://"), opts...)
@@ -142,6 +151,9 @@ func (c *Client) put(ctx context.Context, dst name.Reference, digest string, img
 	if e != nil && !notFound(e) {
 		return e
 	}
+	if e == nil && !c.AllowRetag {
+		return fmt.Errorf("refusing to retag %s from %s to %s; use --allow-retag", dst, d.Digest, digest)
+	}
 	if idx != nil {
 		e = remote.WriteIndex(dst, idx, c.options(ctx)...)
 	} else {
@@ -162,6 +174,11 @@ func (c *Client) put(ctx context.Context, dst name.Reference, digest string, img
 func (c *Client) Mirror(ctx context.Context, m Manifest, to string) error {
 	if to == "" {
 		return fmt.Errorf("--to required")
+	}
+	for _, a := range m.Artifacts {
+		if err := c.requireSignature(a); err != nil {
+			return err
+		}
 	}
 	for _, a := range m.Artifacts {
 		var sig v1.Image

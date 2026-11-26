@@ -35,6 +35,9 @@ func (c *Client) Bundle(ctx context.Context, m Manifest, out string) error {
 		return e
 	}
 	for _, a := range m.Artifacts {
+		if err := c.requireSignature(a); err != nil {
+			return err
+		}
 		for _, sig := range []bool{false, true} {
 			if sig && a.Signature == "" {
 				continue
@@ -163,7 +166,7 @@ func (c *Client) Load(ctx context.Context, from, to string) error {
 	if e != nil {
 		return e
 	}
-	work, e := os.MkdirTemp(from, ".load-")
+	work, e := os.MkdirTemp(c.WorkDir, "aep-load-")
 	if e != nil {
 		return e
 	}
@@ -174,6 +177,11 @@ func (c *Client) Load(ctx context.Context, from, to string) error {
 	}
 	defer f.Close()
 	tr := tar.NewReader(f)
+	var total int64
+	limit := c.MaxSize
+	if limit == 0 {
+		limit = 100 << 30
+	}
 	for {
 		h, e := tr.Next()
 		if e == io.EOF {
@@ -182,6 +190,10 @@ func (c *Client) Load(ctx context.Context, from, to string) error {
 		if e != nil {
 			return e
 		}
+		if h.Size < 0 || h.Size > limit-total {
+			return fmt.Errorf("bundle exceeds extraction size limit %d", limit)
+		}
+		total += h.Size
 		p := filepath.Clean(h.Name)
 		if h.Typeflag != tar.TypeReg || filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
 			return fmt.Errorf("unsafe archive entry %q", h.Name)
@@ -213,6 +225,9 @@ func (c *Client) Load(ctx context.Context, from, to string) error {
 	}
 	// Verify every signature before performing the first registry write.
 	for _, a := range m.Artifacts {
+		if e := c.requireSignature(a); e != nil {
+			return e
+		}
 		if a.Signature != "" {
 			h, e := v1.NewHash(a.Signature)
 			if e != nil {
