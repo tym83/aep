@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -284,5 +285,60 @@ func TestProfileTiers(t *testing.T) {
 		if err != nil || strings.Join(sc.tiers, ",") != tc.want {
 			t.Fatalf("%s: %+v %v", tc.profile, sc, err)
 		}
+	}
+}
+
+func TestManagedResourceResolution(t *testing.T) {
+	makeApp := func(ns, name, org, managed, projectName string) *unstructured.Unstructured {
+		o := object("apps.cozystack.io/v1alpha1", "Postgres", ns, name, nil)
+		o.SetLabels(map[string]string{"aep.aenix.io/resource": "orders-db", "aep.aenix.io/organization": org, "aep.aenix.io/managed-by": managed, "aep.aenix.io/project": projectName, "aep.aenix.io/environment": "production"})
+		return o
+	}
+	for _, tc := range []struct {
+		name    string
+		exact   bool
+		matches int
+		query   string
+		want    int
+		bad     bool
+	}{
+		{"exact precedence", true, 2, "orders-db", 1, false},
+		{"resource", false, 1, "orders-db", 1, false},
+		{"multiple", false, 2, "orders-db", 2, false},
+		{"missing", false, 0, "orders-db", 0, true},
+		{"invalid selector", false, 1, "orders.db", 0, true},
+		{"injection", false, 1, "orders-db,other=x", 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			objects := []runtime.Object{
+				makeApp("tenant-other-prod", "foreign", "acme", "bridge", "foreign"),
+				makeApp("tenant-acme-nonprod", "wrong-tier", "acme", "bridge", "foreign"),
+				makeApp("tenant-acme-prod", "wrong-org", "other", "bridge", "foreign"),
+				makeApp("tenant-acme-prod", "unmanaged", "acme", "manual", "foreign"),
+			}
+			for i := 0; i < tc.matches; i++ {
+				objects = append(objects, makeApp("tenant-acme-prod", fmt.Sprintf("hashed-%d", i), "acme", "bridge", fmt.Sprintf("project-%d", i)))
+			}
+			if tc.exact {
+				objects = append(objects, makeApp("tenant-acme-prod", "orders-db", "acme", "bridge", "exact"))
+			}
+			s := fixture(t, objects...)
+			s.config.MaxBytes = 20000
+			out, err := s.query(scoped(), "managed_service_state", Args{Org: "acme", Service: "prod/Postgres/" + tc.query})
+			if (err != nil) != tc.bad {
+				t.Fatalf("error: %v", err)
+			}
+			if len(out.Rows) != tc.want {
+				t.Fatalf("rows: %+v", out.Rows)
+			}
+			for _, row := range out.Rows {
+				if row["project"] == "foreign" || row["environment"] != "production" {
+					t.Fatalf("wrong labels: %+v", row)
+				}
+				if tc.exact && row["name"] != "orders-db" {
+					t.Fatal("exact name lost precedence")
+				}
+			}
+		})
 	}
 }

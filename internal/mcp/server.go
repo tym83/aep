@@ -125,7 +125,7 @@ func (s *Server) Handler() http.Handler {
 
 var descriptions = map[string]string{
 	"infra_changes":         "Infrastructure release history and events, newest first. since/until are RFC3339; default last 24 hours. Historical specs are not stored in HelmRelease status.",
-	"managed_service_state": "Service evidence; service is tier/kind/name, e.g. nonprod/Postgres/orders. Includes conditions, bridge references, backups and optional PVC usage.",
+	"managed_service_state": "Service evidence; service is tier/kind/name, e.g. nonprod/Postgres/orders. Name is an exact application name or an OpenChoreo resource name; matches include project/environment. Includes conditions, bridge references, backups and optional PVC usage.",
 	"cluster_health":        "Tenant control plane, VM and node-group conditions and quotas. tier is required. Physical host data is never exposed.",
 	"quota_and_denials":     "Tier quota used/hard and quota-related FailedCreate/Forbidden events in the last 24 hours.",
 }
