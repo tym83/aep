@@ -19,6 +19,10 @@ consoleUrlTemplate: ""
 # Also deny direct access to .../k8sresources/logs on the OpenChoreo API
 # entry point: OpenChoreo authorizes it with releasebinding:view only.
 openchoreoUrl: ""
+# Host header when openchoreoUrl is an internal gateway address. The public
+# entry denies the direct log route, so point openchoreoUrl past it, for
+# example at the gateway Service, and set the public API host here.
+openchoreoHost: ""
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {memory: 256Mi}

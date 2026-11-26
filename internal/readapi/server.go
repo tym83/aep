@@ -41,6 +41,7 @@ type Server struct {
 	mux                  *http.ServeMux
 	openChoreoURL        string
 	openChoreo           *http.Client
+	openChoreoHost       string
 }
 
 func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNamespaceTemplate, consoleURLTemplate string, options ...func(*Server)) (*Server, error) {
