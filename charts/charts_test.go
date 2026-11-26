@@ -38,7 +38,7 @@ func resources(t *testing.T, rendered string) map[string]map[string]any {
 	return out
 }
 func TestAgentTokenProxy(t *testing.T) {
-	out, err := render(t, "aep-sre-agent", agentValues()...)
+	out, err := render(t, "aep-sre-agent", append(agentValues(), "dev=true")...)
 	if err != nil {
 		t.Fatal(out, err)
 	}
@@ -98,6 +98,38 @@ func TestLLMAuthenticationAndIsolation(t *testing.T) {
 	}
 	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key", "networkPolicy.allowedSources=null")
 	if err != nil || !strings.Contains(out, "ingress: []") {
+		t.Fatal(out, err)
+	}
+}
+
+func TestDigestRequirements(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	out, err := render(t, "aep-sre-agent", agentValues()...)
+	if err == nil || !strings.Contains(out, "digest is required") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-sre-agent", append(agentValues(), "tokenProxy.image.digest="+digest)...)
+	if err == nil || !strings.Contains(out, "image.digest is required") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-sre-agent", append(agentValues(), "image.digest="+digest)...)
+	if err == nil || !strings.Contains(out, "tokenProxy.image.digest is required") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-sre-agent", append(agentValues(), "image.digest="+digest, "tokenProxy.image.digest="+digest)...)
+	if err != nil || strings.Count(out, "@"+digest) != 2 {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key", "image.digest=")
+	if err == nil || !strings.Contains(out, "image.digest is required") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key", "image.digest=", "dev=true")
+	if err != nil || !strings.Contains(out, "vllm/vllm-openai:v0.11.0") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key")
+	if err != nil || !strings.Contains(out, "vllm/vllm-openai@sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c") {
 		t.Fatal(out, err)
 	}
 }

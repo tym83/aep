@@ -1,4 +1,9 @@
-image: vllm/vllm-openai:v0.11.0
+dev: false
+image:
+  repository: vllm/vllm-openai
+  tag: v0.11.0
+  # Docker Registry manifest digest for v0.11.0, verified 2026-11-25.
+  digest: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
 model: ""
 gpu: 1
 weights:

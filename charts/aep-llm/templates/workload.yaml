@@ -1,3 +1,4 @@
+{{- if and (not .Values.dev) (not .Values.image.digest) }}{{ fail "image.digest is required unless dev is true" }}{{ end }}
 {{- if and (not .Values.apiKeySecret) (not .Values.allowUnauthenticated) }}
 {{- fail "apiKeySecret is required unless allowUnauthenticated is true" }}
 {{- end }}
@@ -23,7 +24,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: inference
-          image: {{ .Values.image | quote }}
+          image: {{ printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")) | quote }}
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

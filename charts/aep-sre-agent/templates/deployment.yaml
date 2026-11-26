@@ -1,3 +1,5 @@
+{{- if and (not .Values.dev) (not .Values.tokenProxy.image.digest) }}{{ fail "tokenProxy.image.digest is required unless dev is true" }}{{ end }}
+{{- if and (not .Values.dev) (not .Values.image.digest) }}{{ fail "image.digest is required unless dev is true" }}{{ end }}
 {{- $org := required "organization is required" .Values.organization -}}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $org) }}{{ fail "invalid organization" }}{{ end -}}
 {{- if not (hasPrefix "https://" .Values.mcpUrl) }}{{ fail "mcpUrl must use HTTPS" }}{{ end -}}

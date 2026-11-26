@@ -1,3 +1,4 @@
+dev: false
 organization: ""
 image:
   repository: cr.openchoreo.dev/openchoreo/sre-agent
