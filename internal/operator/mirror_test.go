@@ -1,6 +1,14 @@
 package operator
 
 import (
+	"context"
+	api "github.com/tym83/aep/api/v1alpha1"
+	core "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	kubefake "k8s.io/client-go/kubernetes/fake"
+
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -59,5 +67,49 @@ func TestUpstreamMirrorRendering(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNormalizeMirrorOptions(t *testing.T) {
+	o := Options{ImageRegistryMirror: "oci://mirror.local/cache///", ChartRegistryMirror: "oci://mirror.local/cache///", RegistryInsecure: true}
+	o.Normalize()
+	if o.ImageRegistryMirror != "mirror.local/cache" || o.ChartRegistryMirror != o.ImageRegistryMirror {
+		t.Fatal(o)
+	}
+	u := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", "tenant", "chart", M{"url": "oci://ghcr.io/team/chart"})
+	o.chartSource(u)
+	spec := u.Object["spec"].(map[string]any)
+	if spec["insecure"] != true || spec["url"] != "oci://mirror.local/cache/ghcr.io/team/chart" {
+		t.Fatal(spec)
+	}
+	values := MirrorValues("kgateway", o.ImageRegistryMirror, M{})
+	if values["image"].(map[string]any)["registry"] != "mirror.local/cache/cr.kgateway.dev/kgateway-dev" {
+		t.Fatal(values)
+	}
+}
+
+func TestMirrorSecrets(t *testing.T) {
+	ctx := context.Background()
+	source := &core.Secret{ObjectMeta: metav1.ObjectMeta{Name: "mirror-auth", Namespace: "aep-system"}, Type: core.SecretTypeDockerConfigJson, Data: map[string][]byte{".dockerconfigjson": []byte("credentials")}}
+	ca := &core.Secret{ObjectMeta: metav1.ObjectMeta{Name: "mirror-ca", Namespace: "aep-system"}, Data: map[string][]byte{"ca.crt": []byte("certificate")}}
+	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	r := &Reconciler{Management: &Cluster{Kube: kubefake.NewClientset(source, ca), Dynamic: d}, Options: Options{RegistrySecret: "mirror-auth", RegistryCASecret: "mirror-ca"}}
+	s := &session{r: r, o: &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme", UID: "owner"}}}
+	if err := s.mirrorSecrets(ctx, "tenant-acme-prod"); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"mirror-auth", "mirror-ca"} {
+		got, err := r.Management.get(ctx, "v1", "secrets", "tenant-acme-prod", name)
+		if err != nil || got.GetLabels()[OwnerLabel] != "owner" || got.Object["data"] == nil {
+			t.Fatal(got, err)
+		}
+	}
+	s.o.UID = "other-owner"
+	if err := s.mirrorSecrets(ctx, "tenant-acme-prod"); err == nil {
+		t.Fatal("adopted foreign credentials")
+	}
+	r.Options.RegistrySecret = "missing"
+	if err := s.mirrorSecrets(ctx, "tenant-acme-test"); err == nil {
+		t.Fatal("missing source credentials accepted")
 	}
 }

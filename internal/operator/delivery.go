@@ -40,6 +40,9 @@ func (s *session) delivery(ctx context.Context) error {
 			return e
 		}
 		ns := TenantNamespace(s.o.Name, tier)
+		if err := s.mirrorSecrets(ctx, ns); err != nil {
+			return err
+		}
 		for i, ch := range charts {
 			source := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", ns, "aep-"+ch.name, M{"interval": "5m", "url": ch.url + "/" + ch.name, "ref": M{"tag": ch.version}})
 			s.r.Options.chartSource(source)

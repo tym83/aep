@@ -17,6 +17,7 @@ import (
 )
 
 func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
+	r.Options.Normalize()
 	if err := m.Add(&policyMaintenance{r: r}); err != nil {
 		return err
 	}

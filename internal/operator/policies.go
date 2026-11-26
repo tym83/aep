@@ -70,6 +70,9 @@ func (s *session) policies(ctx context.Context) error {
 		repository = "oci://ghcr.io/tym83/aep/policies"
 	}
 	for _, tier := range Tiers(s.o) {
+		if err := s.mirrorSecrets(ctx, TenantNamespace(s.o.Name, tier)); err != nil {
+			return err
+		}
 		values := policyValues(s.o, tier, key)
 
 		if argoEnabled(s.o) {

@@ -29,6 +29,7 @@ func run() error {
 	flag.StringVar(&o.VCSWebhookURL, "vcs-webhook-url", "", "OpenChoreo HTTPS /api/v1alpha1/autobuild endpoint; empty disables hook registration")
 	flag.StringVar(&o.ImageRegistryMirror, "image-registry-mirror", "", "Mirror registry prefix for every delivered image")
 	flag.StringVar(&o.ChartRegistryMirror, "chart-registry-mirror", "", "Mirror registry prefix for OCI charts")
+	flag.BoolVar(&o.RegistryInsecure, "registry-insecure", false, "Use HTTP for Flux OCI sources on the configured chart mirror")
 	flag.StringVar(&o.RegistrySecret, "registry-secret", "", "Flux authentication Secret in each source namespace")
 	flag.StringVar(&o.RegistryCASecret, "registry-ca-secret", "", "Flux CA Secret in each source namespace")
 	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")

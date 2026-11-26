@@ -1,14 +1,20 @@
 package operator
 
 import (
+	"context"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/registrymirror"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"strings"
 )
 
 func (o Options) chartSource(source *unstructured.Unstructured) {
 	spec := source.Object["spec"].(map[string]any)
 	spec["url"] = registrymirror.Rewrite(spec["url"].(string), o.ChartRegistryMirror)
+	if o.RegistryInsecure {
+		spec["insecure"] = true
+	}
 	if o.RegistrySecret != "" {
 		spec["secretRef"] = M{"name": o.RegistrySecret}
 	}
@@ -73,4 +79,30 @@ func ReleaseValues(chart string) M {
 }
 func DataPlaneValues(plane, gateway string) M {
 	return M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": plane, "serverUrl": gateway, "tls": M{"generateCerts": false, "caSecretName": "aep-agent-ca"}}}
+}
+
+// Normalize is called once before starting reconciliation.
+func (o *Options) Normalize() {
+	o.ImageRegistryMirror = strings.TrimRight(strings.TrimPrefix(o.ImageRegistryMirror, "oci://"), "/")
+	o.ChartRegistryMirror = strings.TrimRight(strings.TrimPrefix(o.ChartRegistryMirror, "oci://"), "/")
+}
+
+// Source credentials are namespace-local in Flux. Copy only explicitly configured
+// secrets, using organization ownership checks to avoid adopting tenant data.
+func (s *session) mirrorSecrets(ctx context.Context, ns string) error {
+	for _, name := range []string{s.r.Options.RegistrySecret, s.r.Options.RegistryCASecret} {
+		if name == "" {
+			continue
+		}
+		source, err := s.r.Management.Kube.CoreV1().Secrets("aep-system").Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		target := secretObject(ns, name, source.Data)
+		target.Object["type"] = string(source.Type)
+		if err := s.r.Management.apply(ctx, s.o, "secrets", target); err != nil {
+			return err
+		}
+	}
+	return nil
 }

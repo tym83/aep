@@ -27,3 +27,5 @@ global:
   imageRegistry: ""
 registrySecret: ""
 registryCASecret: ""
+
+registryInsecure: false

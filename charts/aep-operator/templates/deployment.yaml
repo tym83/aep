@@ -22,6 +22,7 @@ spec:
             - {{ printf "--argocd-chart-url=%s" .Values.argocdChartURL | quote }}
             - {{ printf "--argocd-host-template=%s" .Values.argocdHostTemplate | quote }}
             - {{ printf "--vcs-webhook-url=%s" .Values.vcsWebhookURL | quote }}
+            - {{ printf "--registry-insecure=%t" .Values.registryInsecure | quote }}
             - {{ printf "--image-registry-mirror=%s" .Values.global.imageRegistry | quote }}
             - {{ printf "--chart-registry-mirror=%s" .Values.global.imageRegistry | quote }}
             - {{ printf "--registry-secret=%s" .Values.registrySecret | quote }}
