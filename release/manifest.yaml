@@ -14,7 +14,11 @@ artifacts:
 - digest: sha256:da7cc77f187ee94157db39e01b66231f83163e4ca8f5d37537b4a95b2c0e1791
   kind: image
   ref: cr.openchoreo.dev/openchoreo/sre-agent
-  version: v1.4.0-m.3
+  version: sha256:da7cc77f187ee94157db39e01b66231f83163e4ca8f5d37537b4a95b2c0e1791
+- digest: sha256:08ad0b1d280850169a790dba1393ff7a90aef951fc19632cf4d3ce4f78e679ba
+  kind: image
+  ref: ecr-public.aws.com/docker/library/redis
+  version: 8.2.3-alpine
 - digest: sha256:02600428e7c956e222f4376413525866ed9fec28e6bcb1222774ce6bf5fc904a
   kind: image
   ref: ghcr.io/kyverno/readiness-checker
@@ -51,6 +55,10 @@ artifacts:
   kind: image
   ref: ghcr.io/tym83/aep-cp-backup
   version: sha-29e886e8fa23cc232371e08106182fb8fb47957d
+- digest: sha256:3f663228c520d65146e0b25b61f1fc2c67b64e0dd7b9fc1b37fc4635c94ba263
+  kind: image
+  ref: ghcr.io/tym83/aep-itsm-bridge
+  version: sha256:3f663228c520d65146e0b25b61f1fc2c67b64e0dd7b9fc1b37fc4635c94ba263
 - digest: sha256:aadcbd350a065133bac69b1dc7071ef02b376b62cff8ce58b1611e0c9923ed28
   kind: image
   ref: ghcr.io/tym83/aep-operator
@@ -66,11 +74,16 @@ artifacts:
 - digest: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
   kind: image
   ref: ghcr.io/tym83/aep-token-proxy
-  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+  version: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
 - digest: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
   kind: image
   ref: index.docker.io/vllm/vllm-openai
   version: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
+- digest: sha256:71b36f4c29cdda5f38d0efa5cfd0e988a61c96ff6a0f7abe3d30275b94705709
+  kind: chart
+  layout: release/artifacts
+  ref: oci://argoproj.github.io/argo-helm/argo-cd
+  version: 9.7.1
 - digest: sha256:ace42e2e6ba169305c424273239b595ee72860f7b9abbe0182265b2f6c15cbab
   kind: chart
   ref: oci://cr.kgateway.dev/kgateway-dev/charts/kgateway
@@ -87,57 +100,62 @@ artifacts:
   kind: chart
   ref: oci://ghcr.io/kyverno/charts/kyverno
   version: 3.9.2
-- digest: sha256:adb42fee0d765e43746307396dc1fc9e83aeed8dcf86a1a3feec58f4fded1893
+- digest: sha256:6f11e09adf26f7b7f02974163d56ebfea0dbeba887685ec3d19ac615cdabb597
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-audit-forwarder
-  version: 0.1.1
-- digest: sha256:2099527256e4c8abc17fba082df546ab2d2556a35c940fc276e156c28f5630fa
+  version: 0.1.2
+- digest: sha256:7c3be6bb76b5ed7bd70e9eb2e964a7260e8bf15112b48a707e0088b8806500c9
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge
-  version: 0.1.2
+  version: 0.1.3
 - digest: sha256:a3c32c0e7f20e3740193194474a792ac3faca2ae02f2a4d95075321a506bfdba
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
   version: 0.1.2
-- digest: sha256:4fd0540957c2dc8c6c3f4bae14f446720154c8d5ca9ca5285b6ea2d9d1a7b389
+- digest: sha256:aa66ec1a311f9d65a543ca7d6e4ac746aa5225d6cff3f8b6bd769efbe72bedea
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
-  version: 0.1.2
-- digest: sha256:a0269201dca485b8ff34f65ed2da34bff3f3ca907585858a1a91ef3b075f0f9d
+  version: 0.1.3
+- digest: sha256:b704350ff31598d5adaac90d969761ce3c6795efd558b6a66ba28c3b8a0a80bb
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-cost-ledger
-  version: 0.1.2
-- digest: sha256:2c8af7eef24624cfd0cd97f57c91a878ff0edf7f85d6c1ea2856f8eff2ba6905
+  version: 0.1.3
+- digest: sha256:809355be33984fe5366b54d9886b8a620517a36f99d0a39be81291a74c7f84e6
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-cp-backup
+  version: 0.1.2
+- digest: sha256:d377e9b4635a28f97fe7b3d712e55710462456c8640f92864ce56868146e9a21
+  kind: chart
+  layout: release/artifacts
+  ref: oci://ghcr.io/tym83/aep/charts/aep-itsm-bridge
   version: 0.1.1
 - digest: sha256:aaefafec42b2a583a259499ec9affe3da7c55ea393c9ad132f7a6e6be0f98aef
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-llm
   version: 0.1.2
-- digest: sha256:2d90d74f48e9692afe3ff98ee9a27b04bebe25a17920ce6e26f80856fed73fc5
+- digest: sha256:1c865f070ad9396d5718b4d52540987f1e52e73b19fccf59a3b4021fdfb395ab
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-operator
-  version: 0.1.2
-- digest: sha256:9596d1e382d9ae6f8e23e9cb5f3c5912799d5fde4384cc6db766eb37edc85e7e
+  version: 0.1.3
+- digest: sha256:663ebfab1d411a6f7348c3326d83b8fed4b22c8cbceb80f32af4f93f4c8e48dc
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-read-api
-  version: 0.1.2
-- digest: sha256:41e7c4d2d6120d71dd896014b80e2e2e9f4920693f04876d6164c3edd33aaddb
+  version: 0.1.3
+- digest: sha256:ddec6b2efb37775e0413b097cda7cef6e760a3ed5686f30f53769c8b56b8d936
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-sre-agent
-  version: 0.1.2
-- digest: sha256:67a4da7c0abf69a02f05b181886abd58170cee2f4e9d651ba001322d836b1f14
+  version: 0.1.3
+- digest: sha256:dbb11a9fbd26c2b53fa990f7a8b6e73f0b21fae3b6e8ef7d8c9f2c6fe40967f4
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
@@ -152,6 +170,10 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-prod
   version: 0.1.2
+- digest: sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09
+  kind: image
+  ref: quay.io/argoproj/argocd
+  version: v3.4.4
 - digest: sha256:c46e124f21ef8a6bb4b48de57106808b1007edcd5ddd4ff7df5d23b9efa60ce2
   kind: image
   ref: reg.kyverno.io/kyverno/background-controller
@@ -176,5 +198,5 @@ artifacts:
   kind: image
   ref: reg.kyverno.io/kyverno/reports-controller
   version: v1.19.2
-inputs: 0a6878d90fa505c8526940d5a21722e8c96f5dbe035186e6add8d0e5a7c00813
+inputs: c319205985693cc5544fc22854c9a56e27a9c23efca2737697dbc3d7b0c3e832
 schema: 1
