@@ -1,6 +1,7 @@
 package itsm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -247,18 +248,40 @@ func (s *ServiceNow) change(ctx context.Context, e Event, c Change, ref string) 
 type snValue string
 
 func (v *snValue) UnmarshalJSON(raw []byte) error {
-	var value string
-	if json.Unmarshal(raw, &value) == nil {
+	// The Table API returns strings; the Change Management API returns some
+	// fields, such as state, as JSON numbers.
+	scalar := func(b []byte) (string, bool) {
+		var s string
+		if json.Unmarshal(b, &s) == nil {
+			return s, true
+		}
+		var n json.Number
+		d := json.NewDecoder(bytes.NewReader(b))
+		d.UseNumber()
+		if d.Decode(&n) == nil {
+			return n.String(), true
+		}
+		return "", false
+	}
+	if value, ok := scalar(raw); ok {
 		*v = snValue(value)
 		return nil
 	}
 	var field struct {
-		Value string `json:"value"`
+		Value json.RawMessage `json:"value"`
 	}
 	if err := json.Unmarshal(raw, &field); err != nil {
 		return err
 	}
-	*v = snValue(field.Value)
+	if len(field.Value) == 0 || string(field.Value) == "null" {
+		*v = ""
+		return nil
+	}
+	value, ok := scalar(field.Value)
+	if !ok {
+		return fmt.Errorf("unsupported ServiceNow value %s", field.Value)
+	}
+	*v = snValue(value)
 	return nil
 }
 
