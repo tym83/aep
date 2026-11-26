@@ -86,7 +86,7 @@ func run() error {
 		return err
 	}
 	if *osURL != "" {
-		sinks = append(sinks, audit.OpenSearch{URL: *osURL, Index: *index, Username: os.Getenv("OPENSEARCH_USERNAME"), Password: os.Getenv("OPENSEARCH_PASSWORD")})
+		sinks = append(sinks, audit.OpenSearch{URL: *osURL, Index: *index, Username: os.Getenv("OPENSEARCH_USERNAME"), Password: os.Getenv("OPENSEARCH_PASSWORD"), DeadLetters: deadLetters})
 	}
 	if *sys != "" {
 		sinks = append(sinks, audit.Syslog{Address: *sys})

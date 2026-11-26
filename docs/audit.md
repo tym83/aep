@@ -262,3 +262,17 @@ MiB (webhook request limit 8 MiB; spool default 64 MiB). Configure the collector
 maximum message size to accommodate the largest accepted event and test it; a
 collector with a typical 8 KiB/64 KiB cap can lose evidence. Use S3 as the durable
 archive for large records.
+
+
+Install [the index template](../config/audit/opensearch-index-template.json) using
+`PUT /_index_template/aep-audit` before creating audit indices; adapt its pattern
+if changing `--opensearch-index`. Existing conflicting mappings require a new
+index. `details` is stored with `enabled:false` and `detailsRaw` retains its
+JSON string, avoiding conflicts between heterogeneous evidence bodies.
+The raw field is an indexing projection, not part of the sealed Event.
+
+Permanent per-item OpenSearch 4xx errors go to `dead-letter/opensearch/` in S3,
+increment `aep_audit_dead_letters_total`, and log `error.type` / `error.reason`.
+408, 429, authentication/authorization failures and server errors remain retryable.
+A dead-letter upload must succeed before acknowledgement. Every sink is attempted
+even if another fails; delivery retries require SIEM deduplication by event id.

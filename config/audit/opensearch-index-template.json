@@ -1,0 +1,25 @@
+{
+  "index_patterns": ["aep-audit*"],
+  "priority": 100,
+  "template": {
+    "mappings": {
+      "dynamic": false,
+      "properties": {
+        "id": {"type": "keyword"},
+        "source": {"type": "keyword"},
+        "stream": {"type": "keyword"},
+        "sequence": {"type": "unsigned_long"},
+        "time": {"type": "date_nanos"},
+        "recordedAt": {"type": "date_nanos"},
+        "action": {"type": "keyword"},
+        "actor": {"type": "keyword"},
+        "organization": {"type": "keyword"},
+        "resource": {"type": "keyword"},
+        "hash": {"type": "keyword"},
+        "prevHash": {"type": "keyword"},
+        "details": {"type": "object", "enabled": false},
+        "detailsRaw": {"type": "text", "index": false}
+      }
+    }
+  }
+}

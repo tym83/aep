@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +17,7 @@ import (
 type OpenSearch struct {
 	URL, Index, Username, Password string
 	Client                         *http.Client
+	DeadLetters                    ObjectWriter
 }
 
 func (s OpenSearch) Send(ctx context.Context, events []Event) error {
@@ -27,7 +29,15 @@ func (s OpenSearch) Send(ctx context.Context, events []Event) error {
 		m, _ := json.Marshal(map[string]any{"index": map[string]string{"_index": s.Index, "_id": e.Hash}})
 		b.Write(m)
 		b.WriteByte('\n')
-		b.Write(JSONL([]Event{e}))
+		raw, _ := json.Marshal(e.Details)
+		// Preserve the sealed event while indexing details without dynamic field types.
+		document := struct {
+			Event
+			DetailsRaw string `json:"detailsRaw"`
+		}{e, string(raw)}
+		encoded, _ := json.Marshal(document)
+		b.Write(encoded)
+		b.WriteByte('\n')
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", strings.TrimRight(s.URL, "/")+"/_bulk", &b)
 	if err != nil {
@@ -53,21 +63,37 @@ func (s OpenSearch) Send(ctx context.Context, events []Event) error {
 		Errors bool `json:"errors"`
 		Items  []map[string]struct {
 			Status int `json:"status"`
+			Error  struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"error"`
 		} `json:"items"`
 	}
 	if err = json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&result); err != nil {
 		return err
 	}
-	if result.Errors || len(result.Items) != len(events) {
+	if len(result.Items) != len(events) {
 		return fmt.Errorf("OpenSearch incomplete or failed bulk")
 	}
-	for _, item := range result.Items {
+	var failures []error
+	for i, item := range result.Items {
 		v, ok := item["index"]
-		if !ok || v.Status/100 != 2 {
-			return fmt.Errorf("OpenSearch item failed")
+		if !ok {
+			failures = append(failures, fmt.Errorf("OpenSearch missing index result"))
+			continue
+		}
+		if v.Status/100 == 2 {
+			continue
+		}
+		if v.Status >= 400 && v.Status < 500 && v.Status != 408 && v.Status != 429 && v.Status != 401 && v.Status != 403 {
+			if err := deadLetter(ctx, s.DeadLetters, "opensearch", events[i], v.Error.Type, v.Error.Reason); err != nil {
+				failures = append(failures, err)
+			}
+		} else {
+			failures = append(failures, fmt.Errorf("OpenSearch retryable item status=%d error.type=%q error.reason=%q", v.Status, v.Error.Type, v.Error.Reason))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 type Syslog struct {
