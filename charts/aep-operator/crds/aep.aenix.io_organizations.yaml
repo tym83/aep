@@ -457,7 +457,8 @@
                     "required": [
                       "provider",
                       "url",
-                      "credentialsSecretRef"
+                      "credentialsSecretRef",
+                      "readCredentialsSecretRef"
                     ],
                     "properties": {
                       "provider": {
@@ -497,6 +498,20 @@
                           }
                         }
                       },
+                      "readCredentialsSecretRef": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253,
+                            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                          }
+                        }
+                      },
                       "caBundleSecretRef": {
                         "type": "object",
                         "required": [
@@ -513,6 +528,10 @@
                       }
                     },
                     "x-kubernetes-validations": [
+                      {
+                        "rule": "self.readCredentialsSecretRef.name != self.credentialsSecretRef.name",
+                        "message": "Read and admin credentials must use separate Secrets"
+                      },
                       {
                         "rule": "self.provider == 'gitlab' ? has(self.groupPath) && !has(self.org) : has(self.org) && !has(self.groupPath)",
                         "message": "Use groupPath for GitLab and org for GitHub/Gitea"

@@ -6,13 +6,14 @@ d=json.loads(p.read_text())
 s=d['spec']['versions'][0]['schema']['openAPIV3Schema']['properties']
 props=s['spec']['properties']
 ref={'type':'object','required':['name'],'properties':{'name':{'type':'string','minLength':1,'maxLength':253,'pattern':r'^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'}}}
-props['vcs']={'type':'object','required':['provider','url','credentialsSecretRef'],'properties':{
+props['vcs']={'type':'object','required':['provider','url','credentialsSecretRef','readCredentialsSecretRef'],'properties':{
  'provider':{'type':'string','enum':['gitlab','github','gitea']},
  'url':{'type':'string','pattern':r'^https://[a-zA-Z0-9.-]+(:[0-9]+)?/?$'},
  'groupPath':{'type':'string','pattern':r'^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$'},
  'org':{'type':'string','pattern':r'^[a-zA-Z0-9_-]+$'},
- 'ensureGroup':{'type':'boolean'},'credentialsSecretRef':ref,'caBundleSecretRef':ref},
+ 'ensureGroup':{'type':'boolean'},'credentialsSecretRef':ref,'readCredentialsSecretRef':ref,'caBundleSecretRef':ref},
  'x-kubernetes-validations':[
+ {'rule':"self.readCredentialsSecretRef.name != self.credentialsSecretRef.name",'message':'Read and admin credentials must use separate Secrets'},
  {'rule':"self.provider == 'gitlab' ? has(self.groupPath) && !has(self.org) : has(self.org) && !has(self.groupPath)",'message':'Use groupPath for GitLab and org for GitHub/Gitea'},
  {'rule':"!has(self.ensureGroup) || !self.ensureGroup || self.provider == 'gitlab'",'message':'Only GitLab supports group creation'}]}
 tiers=props['tiers']

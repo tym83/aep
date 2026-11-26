@@ -33,13 +33,14 @@ type SecretNameReference struct {
 	Name string `json:"name"`
 }
 type VCSSpec struct {
-	Provider             string               `json:"provider"`
-	URL                  string               `json:"url"`
-	GroupPath            string               `json:"groupPath,omitempty"`
-	Org                  string               `json:"org,omitempty"`
-	EnsureGroup          bool                 `json:"ensureGroup,omitempty"`
-	CredentialsSecretRef SecretNameReference  `json:"credentialsSecretRef"`
-	CABundleSecretRef    *SecretNameReference `json:"caBundleSecretRef,omitempty"`
+	Provider                 string               `json:"provider"`
+	URL                      string               `json:"url"`
+	GroupPath                string               `json:"groupPath,omitempty"`
+	Org                      string               `json:"org,omitempty"`
+	EnsureGroup              bool                 `json:"ensureGroup,omitempty"`
+	ReadCredentialsSecretRef SecretNameReference  `json:"readCredentialsSecretRef"`
+	CredentialsSecretRef     SecretNameReference  `json:"credentialsSecretRef"`
+	CABundleSecretRef        *SecretNameReference `json:"caBundleSecretRef,omitempty"`
 }
 type TierSpec struct {
 	ArgoCD   *ArgoCDSpec  `json:"argocd,omitempty"`

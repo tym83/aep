@@ -18,7 +18,7 @@ import (
 )
 
 func argoOrg() *api.Organization {
-	return &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{VCS: &api.VCSSpec{Provider: "gitlab", URL: "https://git.example", GroupPath: "acme", CredentialsSecretRef: api.SecretNameReference{Name: "git"}}, Tiers: map[string]api.TierSpec{"nonprod": {ArgoCD: &api.ArgoCDSpec{Enabled: true}}}}}
+	return &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{VCS: &api.VCSSpec{Provider: "gitlab", URL: "https://git.example", GroupPath: "acme", CredentialsSecretRef: api.SecretNameReference{Name: "git"}, ReadCredentialsSecretRef: api.SecretNameReference{Name: "git-read"}}, Tiers: map[string]api.TierSpec{"nonprod": {ArgoCD: &api.ArgoCDSpec{Enabled: true}}}}}
 }
 func TestArgoIsolation(t *testing.T) {
 	o := argoOrg()

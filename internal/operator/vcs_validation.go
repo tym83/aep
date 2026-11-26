@@ -38,6 +38,12 @@ func validateIntegrations(o *api.Organization) error {
 	if len(validation.IsDNS1123Subdomain(v.CredentialsSecretRef.Name)) > 0 {
 		return fmt.Errorf("vcs.credentialsSecretRef.name must name a Secret in the operator management namespace")
 	}
+	if len(validation.IsDNS1123Subdomain(v.ReadCredentialsSecretRef.Name)) > 0 {
+		return fmt.Errorf("vcs.readCredentialsSecretRef.name is required for read-only cloning")
+	}
+	if v.ReadCredentialsSecretRef.Name == v.CredentialsSecretRef.Name {
+		return fmt.Errorf("read and admin credentials must use separate Secrets")
+	}
 	if v.CABundleSecretRef != nil && len(validation.IsDNS1123Subdomain(v.CABundleSecretRef.Name)) > 0 {
 		return fmt.Errorf("invalid vcs.caBundleSecretRef.name")
 	}
