@@ -41,6 +41,7 @@ type config struct {
 	AEPClientID      string                    `json:"aepClientId"`
 	ConfirmationURL  string                    `json:"confirmationUrl"`
 	SyncCMDB         bool                      `json:"syncCmdb"`
+	MirrorSince      string                    `json:"mirrorSince"`
 	Services         []itsm.ApplicationService `json:"services"`
 	JiraProject      string                    `json:"jiraProject"`
 	JiraServiceDesk  string                    `json:"jiraServiceDesk"`
@@ -86,6 +87,14 @@ func run() error {
 		if err := itsm.ValidateURL(s, allowHTTP); err != nil {
 			return err
 		}
+	}
+	var mirrorSince time.Time
+	if cfg.MirrorSince != "" {
+		t, err := time.Parse(time.RFC3339, cfg.MirrorSince)
+		if err != nil {
+			return fmt.Errorf("mirrorSince must be RFC3339: %w", err)
+		}
+		mirrorSince = t
 	}
 	secret := []byte(os.Getenv("ITSM_INBOUND_HMAC_SECRET"))
 	keyID := os.Getenv("ITSM_INBOUND_HMAC_KEY_ID")
@@ -170,7 +179,7 @@ func run() error {
 		keys[id] = []byte(previous)
 	}
 
-	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB, CompanyID: cfg.CompanyID}
+	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB, CompanyID: cfg.CompanyID, MirrorSince: mirrorSince}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", &itsm.Receiver{Engine: engine, NoteEngine: notes, Keys: keys, Organization: cfg.Organization})
 	mux.Handle("GET /metrics", itsm.MetricsHandler(engine, notes))

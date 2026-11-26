@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +33,10 @@ type Poller struct {
 	Services                                 []ApplicationService
 	SyncCMDB                                 bool
 	CompanyID                                string
+	// Changes created before MirrorSince are not mirrored, so enabling the
+	// bridge does not flood the ITSM with an organization's history. Zero
+	// mirrors every change.
+	MirrorSince time.Time
 }
 
 func (p *Poller) Once(ctx context.Context) error {
@@ -43,7 +48,7 @@ func (p *Poller) Once(ctx context.Context) error {
 	}
 	for i := range list.Items {
 		cr := list.Items[i]
-		if cr.Spec.Organization != p.Organization {
+		if cr.Spec.Organization != p.Organization || cr.CreationTimestamp.Time.Before(p.MirrorSince) {
 			continue
 		}
 		// API resourceVersion is carried for review but only changes in spec/status
