@@ -33,6 +33,7 @@ func run() error {
 	flag.IntVar(&cfg.MaxBytes, "max-bytes", 65536, "Maximum evidence JSON bytes")
 	flag.IntVar(&cfg.RequestsPerMinute, "requests-per-minute", 60, "Per-token request limit")
 	flag.StringVar(&cfg.MetricsURL, "metrics-query-url-template", "", "Tenant VictoriaMetrics /api/v1/query URL, with {org} and {namespace} placeholders")
+	flag.Func("redact-pattern", "Additional evidence redaction regex (repeatable)", func(pattern string) error { cfg.RedactPatterns = append(cfg.RedactPatterns, pattern); return nil })
 	flag.Parse()
 	if *issuer == "" || *aud == "" {
 		return fmt.Errorf("issuer and audience required")

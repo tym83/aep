@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/tym83/aep/internal/operator"
 	"net/http"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -23,15 +24,17 @@ import (
 var organizations = schema.GroupVersionResource{Group: "aep.aenix.io", Version: "v1alpha1", Resource: "organizations"}
 
 type Config struct {
+	RedactPatterns                       []string
 	MaxRows, MaxBytes, RequestsPerMinute int
 	MetricsURL                           string
 }
 type Server struct {
-	Client   dynamic.Interface
-	verifier authn.Verifier
-	config   Config
-	mu       sync.Mutex
-	limits   map[[32]byte]*bucket
+	redactPatterns []*regexp.Regexp
+	Client         dynamic.Interface
+	verifier       authn.Verifier
+	config         Config
+	mu             sync.Mutex
+	limits         map[[32]byte]*bucket
 }
 type bucket struct {
 	limiter *rate.Limiter
@@ -68,7 +71,15 @@ func New(c dynamic.Interface, v authn.Verifier, cfg Config) (*Server, error) {
 	if cfg.MaxRows < 1 || cfg.MaxRows > 1000 || cfg.MaxBytes < 1024 || cfg.MaxBytes > 1048576 || cfg.RequestsPerMinute < 1 {
 		return nil, fmt.Errorf("invalid output or rate limits")
 	}
-	return &Server{Client: c, verifier: v, config: cfg, limits: map[[32]byte]*bucket{}}, nil
+	patterns := make([]*regexp.Regexp, 0, len(cfg.RedactPatterns))
+	for _, pattern := range cfg.RedactPatterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid redact pattern: %w", err)
+		}
+		patterns = append(patterns, re)
+	}
+	return &Server{redactPatterns: patterns, Client: c, verifier: v, config: cfg, limits: map[[32]byte]*bucket{}}, nil
 }
 func (s *Server) Handler() http.Handler {
 	server := sdk.NewServer(&sdk.Implementation{Name: "cozystack-mcp", Version: "0.1.0"}, nil)
@@ -175,7 +186,10 @@ func (s *Server) resolve(ctx context.Context, id *authn.Identity) (scope, error)
 }
 func (s *Server) bounded(e Evidence) Evidence {
 	for i := range e.Rows {
-		e.Rows[i] = sanitize(e.Rows[i]).(map[string]any)
+		e.Rows[i] = sanitize(e.Rows[i], s.redactPatterns...).(map[string]any)
+	}
+	for i, item := range e.Unavailable {
+		e.Unavailable[i] = sanitize(item, s.redactPatterns...).(string)
 	}
 	if len(e.Rows) > s.config.MaxRows {
 		e.Rows = e.Rows[:s.config.MaxRows]

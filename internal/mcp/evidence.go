@@ -145,7 +145,7 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 					continue
 				}
 				ref, _ := o.Object["involvedObject"].(map[string]any)
-				if ref["kind"] == "Secret" || ref["kind"] == "TenantSecret" {
+				if physicalEvent(reason, ref) || ref["kind"] == "Secret" || ref["kind"] == "TenantSecret" {
 					continue
 				}
 				e.Rows = append(e.Rows, map[string]any{"kind": "Event", "namespace": ns, "name": o.GetName(), "time": ts.Format(time.RFC3339Nano), "reason": reason, "message": message, "object": ref, "count": o.Object["count"]})
@@ -371,4 +371,11 @@ func selectFields(items []any, keys []string) []any {
 		out = append(out, row)
 	}
 	return out
+}
+
+// VMI lifecycle events can disclose host assignments even with generic reasons.
+// Omit all VMI events rather than depend on provider-specific message wording.
+func physicalEvent(reason string, ref map[string]any) bool {
+	name, _ := ref["name"].(string)
+	return reason == "Scheduled" || ref["kind"] == "Node" || ref["kind"] == "VirtualMachineInstance" || (ref["kind"] == "Pod" && strings.HasPrefix(name, "virt-launcher-"))
 }

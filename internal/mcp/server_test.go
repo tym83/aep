@@ -236,3 +236,40 @@ func TestRCARolesAndInvalidOrganizations(t *testing.T) {
 		}
 	}
 }
+
+func TestPhysicalEventsAndConfiguredRedaction(t *testing.T) {
+	extra := []runtime.Object{}
+	for i, tc := range []struct{ reason, kind, name string }{
+		{"Scheduled", "Pod", "workload"}, {"Started", "Pod", "virt-launcher-vm-abc"},
+		{"SuccessfulCreate", "VirtualMachineInstance", "vm"}, {"Ready", "Node", "host-1"},
+		{"Updated", "Postgres", "orders"},
+	} {
+		extra = append(extra, object("v1", "Event", "tenant-acme-nonprod", string(rune('a'+i)), map[string]any{
+			"lastTimestamp": time.Now().Add(-time.Minute).UTC().Format(time.RFC3339), "reason": tc.reason,
+			"involvedObject": map[string]any{"kind": tc.kind, "name": tc.name}, "message": "changed on host-42 rack-east"}))
+	}
+	base := fixture(t, extra...)
+	s, err := New(base.Client, base.verifier, Config{RedactPatterns: []string{`host-[0-9]+`, `rack-[a-z]+`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.query(scoped(), "infra_changes", Args{Org: "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Rows) != 1 {
+		t.Fatalf("unexpected events: %+v", out)
+	}
+	b, _ := json.Marshal(out)
+	if strings.Contains(string(b), "host-") || strings.Contains(string(b), "rack-") {
+		t.Fatal(string(b))
+	}
+	nested := s.bounded(Evidence{Rows: []map[string]any{{"host-42-secret": "hidden", "details": []any{"rack-east"}}}, Unavailable: []string{"host-42/events"}})
+	encoded, _ := json.Marshal(nested)
+	if strings.Contains(string(encoded), "host-") || strings.Contains(string(encoded), "rack-") || strings.Contains(string(encoded), "hidden") {
+		t.Fatal(string(encoded))
+	}
+	if _, err := New(base.Client, base.verifier, Config{RedactPatterns: []string{"["}}); err == nil {
+		t.Fatal("invalid regex accepted")
+	}
+}

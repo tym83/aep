@@ -13,29 +13,33 @@ var sensitive = regexp.MustCompile(`(?i)password|passwd|token|secret|credential|
 var textSensitive = regexp.MustCompile(`(?i)password|passwd|token|secret|credential|\bkey\b|api[_-]?key|authorization|bearer\s|-----BEGIN|[a-z]+://[^\s/]+:[^\s/]+@|eyJ[A-Za-z0-9_-]+\.`)
 var email = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
 
-func sanitize(v any) any {
+func sanitize(v any, patterns ...*regexp.Regexp) any {
 	switch x := v.(type) {
 	case map[string]any:
 		r := map[string]any{}
 		for k, v := range x {
 			if sensitive.MatchString(k) {
-				r[k] = "[REDACTED]"
+				r[sanitize(k, patterns...).(string)] = "[REDACTED]"
 			} else {
-				r[k] = sanitize(v)
+				r[sanitize(k, patterns...).(string)] = sanitize(v, patterns...)
 			}
 		}
 		return r
 	case []any:
 		r := make([]any, len(x))
 		for i, v := range x {
-			r[i] = sanitize(v)
+			r[i] = sanitize(v, patterns...)
 		}
 		return r
 	case string:
 		if textSensitive.MatchString(x) {
 			return "[REDACTED]"
 		}
-		return email.ReplaceAllString(strings.ToValidUTF8(x, ""), "[REDACTED]")
+		x = email.ReplaceAllString(strings.ToValidUTF8(x, ""), "[REDACTED]")
+		for _, pattern := range patterns {
+			x = pattern.ReplaceAllString(x, "[REDACTED]")
+		}
+		return x
 	default:
 		return v
 	}
