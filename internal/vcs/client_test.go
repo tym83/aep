@@ -8,12 +8,14 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func fakeClient(t *testing.T, provider string, h http.HandlerFunc) *Client {
@@ -142,12 +144,83 @@ func TestGitHubAppExchange(t *testing.T) {
 		if e = rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, digest[:], signature); e != nil {
 			t.Error(e)
 		}
-		fmt.Fprint(w, `{"token":"installation-token"}`)
+		fmt.Fprintf(w, `{"token":"installation-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
 	}))
 	defer server.Close()
 	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
 	token, e := GitHubApp(context.Background(), server.URL, "123", "42", private, ca)
 	if e != nil || token != "installation-token" {
 		t.Fatal(token, e)
+	}
+}
+
+func TestWebhookConfigurationComparison(t *testing.T) {
+	for _, provider := range []string{"gitlab", "github"} {
+		t.Run(provider, func(t *testing.T) {
+			updates := 0
+			c := fakeClient(t, provider, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" {
+					fmt.Fprint(w, `[{"id":9,"url":"https://cp.example/hooks","push_events":true,"enable_ssl_verification":true,"active":true,"events":["push"],"config":{"url":"https://cp.example/hooks","content_type":"json","insecure_ssl":"0"}}]`)
+				} else {
+					updates++
+					w.WriteHeader(200)
+				}
+			})
+			for _, secret := range []string{"first", "first", "rotated", "rotated"} {
+				if e := c.EnsureWebhook(context.Background(), "acme/repo", "https://cp.example/hooks", secret); e != nil {
+					t.Fatal(e)
+				}
+			}
+			if updates != 2 {
+				t.Fatalf("expected initial secret establishment and rotation, got %d writes", updates)
+			}
+		})
+	}
+}
+func TestInstallationTokenCacheAndReadPermissions(t *testing.T) {
+	key, e := rsa.GenerateKey(rand.Reader, 2048)
+	if e != nil {
+		t.Fatal(e)
+	}
+	private := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		var body map[string]any
+		if e := json.NewDecoder(r.Body).Decode(&body); e != nil {
+			t.Fatal(e)
+		}
+		if calls != 3 && body["permissions"].(map[string]any)["contents"] != "read" {
+			t.Error("read token not restricted")
+		}
+		fmt.Fprintf(w, `{"token":"token-%d","expires_at":%q}`, calls, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+	}))
+	defer server.Close()
+	ca := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	for range 2 {
+		if _, e := GitHubAppRead(context.Background(), server.URL, "123", "42", private, ca); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if calls != 1 {
+		t.Fatal("token not cached", calls)
+	}
+	installationCache.Lock()
+	for k, v := range installationCache.tokens {
+		v.expires = time.Now().Add(4 * time.Minute)
+		installationCache.tokens[k] = v
+	}
+	installationCache.Unlock()
+	if _, e := GitHubAppRead(context.Background(), server.URL, "123", "42", private, ca); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 2 {
+		t.Fatal("token not refreshed before expiry", calls)
+	}
+	if _, e := GitHubApp(context.Background(), server.URL, "123", "42", private, ca); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 3 {
+		t.Fatal("admin token shared read cache", calls)
 	}
 }

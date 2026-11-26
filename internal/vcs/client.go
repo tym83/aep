@@ -4,6 +4,7 @@ package vcs
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -12,8 +13,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
+
+var hookSecrets = struct {
+	sync.Mutex
+	hashes map[string][32]byte
+}{hashes: map[string][32]byte{}}
 
 type Provider interface {
 	Verify(context.Context) error
@@ -138,10 +145,16 @@ func (c *Client) EnsureWebhook(ctx context.Context, repo, target, secret string)
 	// Paginate to avoid duplicate hooks in repositories with many integrations.
 	for page := 1; page <= 100; page++ {
 		var hooks []struct {
-			ID     int64  `json:"id"`
-			URL    string `json:"url"`
+			ID     int64    `json:"id"`
+			URL    string   `json:"url"`
+			Push   bool     `json:"push_events"`
+			SSL    bool     `json:"enable_ssl_verification"`
+			Active bool     `json:"active"`
+			Events []string `json:"events"`
 			Config struct {
-				URL string `json:"url"`
+				URL         string `json:"url"`
+				ContentType string `json:"content_type"`
+				InsecureSSL string `json:"insecure_ssl"`
 			} `json:"config"`
 		}
 		_, err := c.request(ctx, "GET", fmt.Sprintf("%s?per_page=100&page=%d", path, page), nil, &hooks)
@@ -150,11 +163,28 @@ func (c *Client) EnsureWebhook(ctx context.Context, repo, target, secret string)
 		}
 		for _, h := range hooks {
 			if h.URL == target || h.Config.URL == target {
+				cacheKey := fmt.Sprintf("%s|%s|%d", c.base, repo, h.ID)
+				digest := sha256.Sum256([]byte(secret))
+				hookSecrets.Lock()
+				known, ok := hookSecrets.hashes[cacheKey]
+				hookSecrets.Unlock()
+				matches := h.Push && h.SSL
+				if c.provider == "github" {
+					matches = h.Active && len(h.Events) == 1 && h.Events[0] == "push" && h.Config.ContentType == "json" && h.Config.InsecureSSL == "0"
+				}
+				if matches && ok && known == digest {
+					return nil
+				}
 				method := "PUT"
 				if c.provider == "github" {
 					method = "PATCH"
 				}
 				_, err = c.request(ctx, method, fmt.Sprintf("%s/%d", path, h.ID), body, nil)
+				if err == nil {
+					hookSecrets.Lock()
+					hookSecrets.hashes[cacheKey] = digest
+					hookSecrets.Unlock()
+				}
 				return err
 			}
 		}
