@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/tym83/aep/internal/registrymirror"
+	buildversion "github.com/tym83/aep/internal/version"
 	inventory "github.com/tym83/aep/release"
 	"io"
 	"k8s.io/apimachinery/pkg/util/yaml"
@@ -26,6 +27,9 @@ func (h HelmFleetRenderer) Render(ctx context.Context, name, version, namespace 
 		values = M{}
 	}
 	values = MirrorValues(name, h.Mirror, values)
+	if strings.HasPrefix(name, "aep-") {
+		setMap(values, []string{"global", "aepVersion"}, buildversion.Version)
+	}
 	setMap(values, []string{"global", "imageRegistry"}, h.Mirror)
 	if name == "openchoreo-data-plane" && h.Mirror != "" {
 		setMap(values, []string{"global", "imageRegistry"}, h.Mirror+"/cr.openchoreo.dev")

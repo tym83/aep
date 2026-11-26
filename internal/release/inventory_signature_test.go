@@ -34,13 +34,34 @@ func (r *rejectInventoryNetwork) RoundTrip(req *http.Request) (*http.Response, e
 }
 
 func TestInventoryOwnImagesDoNotDiscoverSignatures(t *testing.T) {
+	// A frozen release has concrete own-image pins; the source inventory now
+	// contains @build placeholders and must not supply historical commit pins.
+	root := t.TempDir()
+	for _, dir := range []string{".github/workflows", "release"} {
+		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{".github/workflows/images.yml", "Dockerfile.operator"} {
+		data, err := os.ReadFile(filepath.Join("../..", path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := "schema: 1\nartifacts:\n- kind: image\n  own: true\n  ref: ghcr.io/tym83/aep-operator\n  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83\n  digest: sha256:" + strings.Repeat("a", 64) + "\n"
+	if err := os.WriteFile(filepath.Join(root, "release/manifest.yaml"), []byte(manifest), 0644); err != nil {
+		t.Fatal(err)
+	}
 	transport := &rejectInventoryNetwork{}
 	c := &Client{transport: transport}
 	for _, ref := range []string{
 		"ghcr.io/tym83/aep-operator:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83",
 		"ghcr.io/tym83/aep-operator@sha256:" + strings.Repeat("b", 64),
 	} {
-		a, err := c.resolveInventoryImage(context.Background(), "../..", ref)
+		a, err := c.resolveInventoryImage(context.Background(), root, ref)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -48,14 +69,14 @@ func TestInventoryOwnImagesDoNotDiscoverSignatures(t *testing.T) {
 			t.Fatalf("missing local pin/publish requirement: %+v", a)
 		}
 	}
-	if _, err := c.resolveInventoryImage(context.Background(), "../..", "ghcr.io/tym83/aep-operator:latest@sha256:"+strings.Repeat("b", 64)); err == nil {
+	if _, err := c.resolveInventoryImage(context.Background(), root, "ghcr.io/tym83/aep-operator:latest@sha256:"+strings.Repeat("b", 64)); err == nil {
 		t.Fatal("mutable local image tag accepted")
 	}
 	if transport.calls != 0 {
 		t.Fatal("own images accessed registry")
 	}
 	for _, ref := range []string{"ghcr.io/tym83/aep-operator-unrelated:v1.0.0", "ghcr.io/other/aep-operator:v1.0.0"} {
-		if _, err := c.resolveInventoryImage(context.Background(), "../..", ref); err == nil {
+		if _, err := c.resolveInventoryImage(context.Background(), root, ref); err == nil {
 			t.Fatal("upstream lookup skipped")
 		}
 	}
