@@ -158,3 +158,41 @@ func TestGitLabAPIAccessLabelIsScoped(t *testing.T) {
 		t.Fatal("shared-secrets Job cannot reach the Kubernetes API in a Cozystack tenant")
 	}
 }
+
+// Cozystack tenant LimitRanges give unset containers default limits below
+// GitLab's requests, which makes the Pods invalid; the AEP baseline also
+// requires limits. Every main container must carry explicit CPU and memory limits.
+func TestGitLabContainersHaveLimits(t *testing.T) {
+	if _, e := os.Stat("../../charts/aep-gitlab/charts/gitlab-10.6.2.tgz"); e != nil {
+		t.Skip("run helm dependency build charts/aep-gitlab")
+	}
+	b, e := exec.Command("helm", "template", "gitlab", "../../charts/aep-gitlab", "--namespace", "tenant-aep", "--set", "gitlab.global.ingress.class=nginx").CombinedOutput()
+	if e != nil {
+		t.Fatalf("%v %s", e, b)
+	}
+	for _, d := range decode(t, b) {
+		spec, _ := d["spec"].(map[string]any)
+		switch d["kind"] {
+		case "Deployment", "StatefulSet", "Job":
+			template, _ := spec["template"].(map[string]any)
+			spec, _ = template["spec"].(map[string]any)
+		case "CronJob":
+			j, _ := spec["jobTemplate"].(map[string]any)
+			js, _ := j["spec"].(map[string]any)
+			template, _ := js["template"].(map[string]any)
+			spec, _ = template["spec"].(map[string]any)
+		default:
+			continue
+		}
+		m, _ := d["metadata"].(map[string]any)
+		containers, _ := spec["containers"].([]any)
+		for _, v := range containers {
+			c := v.(map[string]any)
+			r, _ := c["resources"].(map[string]any)
+			l, _ := r["limits"].(map[string]any)
+			if l["cpu"] == nil || l["memory"] == nil {
+				t.Errorf("%s/%v container %v has no CPU and memory limits", d["kind"], m["name"], c["name"])
+			}
+		}
+	}
+}

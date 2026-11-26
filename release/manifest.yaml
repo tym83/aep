@@ -155,7 +155,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-cp-backup
   signature: required-at-publish
   version: 0.1.3
-- digest: sha256:187346c7261ff7381b86a6b08be9b9050d3a72e20d1b95f0aa05c1356ff23c87
+- digest: sha256:5add973a5389abb6c2093b53c8ca7d6ba3c3504dfcb182710247d7e0f637a369
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-gitlab
@@ -315,5 +315,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: 902d9610d0d7b36f27ca6128cd5d074c065d4abc4c2e56a70d4f6a1b8e3806ff
+inputs: 135bb72d5d9995fddbf73587550a34f001f7c93db1456a168ce8f58db3ebac9a
 schema: 1
