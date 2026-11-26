@@ -46,11 +46,19 @@ func Normalize(u *unstructured.Unstructured, deleted bool) []Event {
 	base.Details["notes"] = val(u, "status", "notes")
 	base.Details["phase"] = str(u, "status", "phase")
 	base.Details["target"] = val(u, "spec", "target")
+	for _, field := range []string{"operation", "model", "desired", "justification", "window", "externalRef", "requesterGroups"} {
+		base.Details[field] = val(u, "spec", field)
+	}
+	base.Details["desiredHash"] = Digest(val(u, "spec", "desired"))
 	base.Details["conditions"] = val(u, "status", "conditions")
 	before := val(u, "status", "before")
 	base.Details["beforeSnapshotRef"] = fmt.Sprintf("changerequest:%s@%s/status/before#sha256:%s", u.GetUID(), u.GetResourceVersion(), Digest(before))
 	// Keep snapshots alongside their reference so deletion of the CR cannot erase evidence.
 	base.Details["before"] = before
+	if deleted {
+		base.Action = "changerequest.deleted"
+		return []Event{base}
+	}
 	base.Action = "changerequest.observed"
 	out := []Event{base}
 	created := base
@@ -89,7 +97,7 @@ func Normalize(u *unstructured.Unstructured, deleted bool) []Event {
 // history for transitions compacted while the watcher is unavailable.
 func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) {
 	ri := c.Resource(schema.GroupVersionResource{Group: "aep.aenix.io", Version: "v1alpha1", Resource: resource})
-	accept := func(u *unstructured.Unstructured, deleted bool) error {
+	accept := func(u *unstructured.Unstructured, deleted, added bool) error {
 		key := string(u.GetUID())
 		rev := u.GetResourceVersion()
 		if deleted {
@@ -116,8 +124,8 @@ func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) 
 			if e.ID != "" {
 				checkpoint.IDs = append(checkpoint.IDs, e.ID)
 			}
-			if u.GetKind() == "Organization" && checkpoint.Revision == "" {
-				e.Action = "organization.created"
+			if u.GetKind() == "Organization" && checkpoint.Revision == "" && !deleted {
+				e.Action = organizationInitialAction(added)
 			}
 			events = append(events, e)
 		}
@@ -141,7 +149,7 @@ func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) 
 		list, err := ri.List(ctx, metav1.ListOptions{})
 		if err == nil {
 			for i := range list.Items {
-				if err = accept(&list.Items[i], false); err != nil {
+				if err = accept(&list.Items[i], false, false); err != nil {
 					return
 				}
 			}
@@ -157,7 +165,7 @@ func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) 
 					}
 					u, ok := ev.Object.(*unstructured.Unstructured)
 					if ok {
-						if err = accept(u, ev.Type == watch.Deleted); err != nil {
+						if err = accept(u, ev.Type == watch.Deleted, ev.Type == watch.Added); err != nil {
 							w.Stop()
 							return
 						}
@@ -270,4 +278,11 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	w.WriteHeader(204)
+}
+
+func organizationInitialAction(added bool) string {
+	if added {
+		return "organization.created"
+	}
+	return "organization.observed"
 }
