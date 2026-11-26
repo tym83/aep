@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aep.aenix.io/schemas/audit/v1",
+  "title": "AEP audit event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recordedAt",
+    "version",
+    "stream",
+    "id",
+    "time",
+    "source",
+    "action",
+    "actor",
+    "resource",
+    "prevHash",
+    "hash",
+    "sequence"
+  ],
+  "properties": {
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "version": {
+      "const": "aep.audit/v1"
+    },
+    "stream": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source": {
+      "type": "string"
+    },
+    "action": {
+      "type": "string"
+    },
+    "actor": {
+      "type": "string"
+    },
+    "organization": {
+      "type": "string"
+    },
+    "resource": {
+      "type": "string"
+    },
+    "prevHash": {
+      "type": "string",
+      "pattern": "^([a-f0-9]{64})?$"
+    },
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "details": {
+      "type": "object"
+    }
+  }
+}

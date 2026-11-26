@@ -1,0 +1,24 @@
+# Merge with the existing TenantControlPlane spec; do not replace other flags/volumes.
+# Cozystack owns this object through KamajiControlPlane: use chart passthrough
+# described in docs/audit.md instead of a direct patch when available.
+apiVersion: kamaji.clastix.io/v1alpha1
+kind: TenantControlPlane
+metadata:
+  name: EXAMPLE
+  namespace: EXAMPLE
+spec:
+  controlPlane:
+    deployment:
+      extraArgs:
+        apiServer:
+          - --audit-policy-file=/etc/aep-audit/policy.yaml
+          - --audit-webhook-config-file=/etc/aep-audit/webhook.yaml
+          - --audit-webhook-version=audit.k8s.io/v1
+          - --audit-webhook-mode=batch
+          - --audit-webhook-batch-max-wait=5s
+      additionalVolumes:
+        - name: aep-audit
+          secret: {secretName: aep-audit-apiserver}
+      additionalVolumeMounts:
+        apiServer:
+          - {name: aep-audit, mountPath: /etc/aep-audit, readOnly: true}

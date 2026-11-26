@@ -1,0 +1,15 @@
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages: [RequestReceived]
+rules:
+  - level: Metadata
+    resources:
+      - group: aep.aenix.io
+        resources: ["*"]
+      - group: apps.cozystack.io
+        resources: ["*"]
+      - group: openchoreo.dev
+        resources: ["*"]
+      # Add each served *.openchoreo.dev subgroup explicitly; audit policy
+      # groups do not support suffix wildcards.
+  - level: None
