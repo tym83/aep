@@ -1,0 +1,15 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Values",
+  "metadata": {
+    "name": "values"
+  },
+  "namespaceSelector": [
+    {
+      "name": "gitops-payments",
+      "labels": {
+        "aep.aenix.io/argocd": "allowed"
+      }
+    }
+  ]
+}

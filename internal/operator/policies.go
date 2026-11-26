@@ -71,6 +71,16 @@ func (s *session) policies(ctx context.Context) error {
 	}
 	for _, tier := range Tiers(s.o) {
 		values := policyValues(s.o, tier, key)
+		if len(s.o.Spec.Policy.PlatformNamespaces) > 0 {
+			values["app-cluster-baseline"]["platformNamespaces"] = stringsAny(s.o.Spec.Policy.PlatformNamespaces)
+		}
+		if argoEnabled(s.o) {
+			host, err := argoHost(s.r.Options.ArgoCDHostTemplate, s.o.Name)
+			if err != nil {
+				return err
+			}
+			values["app-cluster-baseline"]["argocdHost"] = host
+		}
 		for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-" + tier} {
 			if name == "app-cluster-prod" && missingKey {
 				continue

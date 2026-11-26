@@ -1,0 +1,69 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-network-boundaries
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: ingress-boundary
+      match:
+        any:
+          - resources:
+              kinds: [Ingress]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ .Values.platformNamespaces | toJson }}
+      validate:
+        message: Platform hosts and nginx snippets are reserved for platform namespaces.
+        deny:
+          conditions:
+            any:
+              - key: {{ "{{ keys(request.object.metadata.annotations || `{}`)[?starts_with(@, 'nginx.ingress.kubernetes.io/') && ends_with(@, '-snippet')] | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
+{{ if .Values.argocdHost }}
+              - key: {{ "{{ request.object.spec.rules[].host || `[]` }}" | quote }}
+                operator: AnyIn
+                value: [{{ .Values.argocdHost | quote }}]
+              - key: {{ "{{ request.object.spec.tls[].hosts[] || `[]` }}" | quote }}
+                operator: AnyIn
+                value: [{{ .Values.argocdHost | quote }}]
+{{ end }}
+    - name: gitops-services
+      match:
+        any:
+          - resources:
+              kinds: [Service]
+              namespaceSelector:
+                matchLabels:
+                  aep.aenix.io/argocd: allowed
+      validate:
+        message: GitOps Services must be ClusterIP without externalIPs.
+        deny:
+          conditions:
+            any:
+              - key: {{ "{{ request.object.spec.type || 'ClusterIP' }}" | quote }}
+                operator: NotEquals
+                value: ClusterIP
+              - key: {{ "{{ request.object.spec.externalIPs || `[]` | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
+    - name: no-external-ips
+      match:
+        any:
+          - resources:
+              kinds: [Service]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ .Values.platformNamespaces | toJson }}
+      validate:
+        message: externalIPs are restricted to platform namespaces to prevent traffic interception.
+        deny:
+          conditions:
+            all:
+              - key: {{ "{{ request.object.spec.externalIPs || `[]` | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
