@@ -14,6 +14,16 @@ pinned in go.mod. OIDC verification reuses internal/authn and requires issuer,
 signature, expiration and audience validation. The verified `client_id` claim is
 also extracted; an unverified claim or an arbitrary `azp` is never accepted.
 
+Use **Keycloak >= 26** for the service-account `client_id` claim. Check existing
+client mappers after an upgrade: the older `clientId` spelling does not authorize
+MCP access. See the [Keycloak migration guide](https://docs.redhat.com/en/documentation/red_hat_build_of_keycloak/26.0/pdf/migration_guide/Red_Hat_build_of_Keycloak-26.0-Migration_Guide-en-US.pdf).
+For older versions, add a **Hardcoded claim** protocol mapper on the dedicated
+`aep-<org>-sre-agent` client only: Token Claim Name `client_id`, Claim value
+`aep-<org>-sre-agent`, Claim JSON Type `String`, Add to access token ON.
+Do not attach this fixed organization identity to a realm-wide shared client scope.
+Configure the MCP audience separately and verify a freshly issued client-credentials
+JWT contains both the expected `client_id` and audience before deployment.
+
 ```sh
 cozystack-mcp --issuer https://identity.example/realms/cozy --audience aep-mcp \
   --tls-cert /tls/tls.crt --tls-key /tls/tls.key --listen :8443 \
@@ -23,14 +33,19 @@ cozystack-mcp --issuer https://identity.example/realms/cozy --audience aep-mcp \
 
 Use --kubeconfig only for stand testing; production uses a dedicated ServiceAccount.
 HTTP requires explicit --tls-termination-proxy and a trusted HTTPS ingress; the agent
-extension rejects credentials over plaintext. Internal CA bundles must be trusted.
+token-proxy uses HTTPS upstream; only its pod-local loopback endpoint uses HTTP.
+Internal CA bundles must be trusted.
 
 Authorization resolves token groups against registered Organization objects. A
-matching `aep-<org>-*` group (optionally prefixed with `/`) or exact
+matching `aep-<org>-<role>` group (optionally prefixed with `/`) with role
+`developer`, `platform`, `admin` or `auditor`, or exact
 `client_id=aep-<org>-sre-agent` grants that organization. Zero or multiple matches
 are refused, including conflicting group/client memberships and ambiguous name
 prefixes. Configure clients with one organization's groups only. Every tool's org
-argument must equal that scope. Tier names come from Organization.spec.tiers;
+argument must equal that scope. `finance`, `approver` and `breakglass` do not grant
+RCA access. Organizations with names rejected by operator name validation are skipped;
+`platform` and `security` are reserved. Tier names follow `operator.Tiers` (small:
+nonprod; standard: nonprod and prod);
 management namespaces are derived as `tenant-<org>-<tier>`, never supplied by callers.
 Stateless transport prevents a session from carrying another token's identity.
 
@@ -59,6 +74,12 @@ status fields are projected, then credential patterns and email addresses are
 redacted. Sensitive free-text markers suppress the whole message, including
 multiline/quoted values. Pattern filtering is defense in depth, not a guarantee
 against all possible confidential text. Treat events as untrusted data.
+Scheduled events, virt-launcher Pod events, VMI lifecycle events (including node
+assignment) and Node events are omitted. Add repeatable `--redact-pattern` flags
+for installation-specific host identifiers, for example
+`--redact-pattern 'host-[0-9]+' --redact-pattern 'rack-[a-z]+'`.
+Patterns scrub evidence strings and keys, including availability diagnostics;
+invalid expressions prevent startup.
 
 Limitations: HelmRelease history contains revisions/digests, not historical app
 specs or annotations. App observations use the latest managedFields timestamp and
@@ -91,11 +112,13 @@ Resource versions must match the installed CRDs; absent kinds are explicit gaps.
 `cmd/alert-router` accepts only POST /api/v1alpha1/rca-agent/analyze, with the upstream
 payload: namespace, project, component, environment, optional release_line/meta,
 and alert containing id, value, timestamp and rule. It reads the Namespace from the
-OpenChoreo control-plane cluster. The namespace name must equal its
-`aep.aenix.io/organization` label, with `openchoreo.dev/control-plane=true`.
+OpenChoreo control-plane cluster. The namespace name identifies the Organization. Its
+`aep.aenix.io/organization` label must equal that Organization's UID, with
+`openchoreo.dev/control-plane=true`.
 No namespace supplied merely through an alert metric label is trusted on its own.
 The sender is a trusted observer; these checks do not authenticate end-user alerts.
-A namespace-read ClusterRole is sufficient; no tenant resource or Secret access.
+The ClusterRole requires `get` on core `namespaces` and
+`organizations.aep.aenix.io`; no tenant resource or Secret access.
 
 The destination defaults to `http://sre-agent.aep-{org}.svc:8080`. Template substitution
 uses a validated namespace name, and redirects are forbidden. Payloads and responses
@@ -135,21 +158,26 @@ trusted ingestion binding remains required by the platform design.
 
 `charts/aep-sre-agent` uses the upstream observability chart's image repository and
 configuration variable names. Its development default tag is latest-dev, matching
-the inspected chart; **set image.digest to a tested signed image for production**.
+the inspected chart. **Set image.digest and tokenProxy.image.digest to tested
+signed images for production**; rendering fails if either is empty unless
+`dev: true` is explicitly set.
 The selected image must include src/extensions. The assets under agents/rca are
 mounted as both `EXTENSIONS_DIR/rca` and `EXTENSIONS_DIR/chat`; remediation is disabled.
 The ConfigMap includes mcp.json, CONTEXT.md and three single-file skills. The standalone
-mcp.json is a template: replace its HTTPS URL before using it outside the chart.
-The chart uses mcpUrl directly because upstream only interpolates header env values.
+mcp.json points at `http://127.0.0.1:8081/mcp`; the chart uses `tokenProxy.port`
+for its loopback URL. The token-proxy sidecar forwards to the configured HTTPS
+`mcpUrl`, replacing Authorization with a client-credentials access token.
 When editing assets, synchronize their copies under charts/aep-sre-agent/files/rca.
 
 Deploy in namespace `aep-<org>` with organization, secretName, llm.baseUrl,
 llm.modelName, oauth.tokenUrl and jwt issuer/audience/jwksUrl configured. The existing
-per-org Secret contains COZYSTACK_MCP_TOKEN, RCA_LLM_API_KEY, OAUTH_CLIENT_SECRET and
+per-org Secret contains RCA_LLM_API_KEY, OAUTH_CLIENT_SECRET and
 SQL_BACKEND_URI. This mounts credentials as environment values without granting the
-pod Kubernetes API access. Tokens must be audience-scoped and rotated before expiry;
-the upstream static extension header does not refresh them. Update the Secret and
-roll out the Deployment after token rotation. caSecretName optionally supplies a
+pod Kubernetes API access. The proxy obtains tokens from `oauth.tokenUrl` using
+OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET and caches them until 80% of expires_in.
+Configure the client's audience for MCP; `oauth.scope` supplies optional scopes.
+Token refresh is automatic; after rotating the client secret, roll out the Deployment
+to reload its environment. caSecretName optionally supplies a
 complete trusted CA bundle in ca.crt. Give the agent's OAuth client only organization
 read permissions in OpenChoreo and observer; prompt instructions alone are not authz.
 
@@ -167,8 +195,15 @@ identity, database, DNS, MCP and inference endpoints and must be supplied there.
 8000, GPU requests/limits and a PVC mounted at /weights. Install inside the GPU tenant
 cluster, not the management cluster. Set model explicitly; extraArgs can configure
 the model's tool-call parser, automatic tool choice and tensor parallelism. Mirror
-weights/images for disconnected installs. apiKeySecret is optional for an isolated
-stand, required alongside network controls for a shared network. Preserve the PVC
+weights/images for disconnected installs. The v0.11.0 manifest digest is pinned in
+values. Empty image.digest is rejected unless dev is true. apiKeySecret is required
+unless `allowUnauthenticated: true` is explicitly set for an isolated stand.
+The ingress NetworkPolicy defaults to pods labelled
+`app.kubernetes.io/name=aep-sre-agent` in the same namespace, on TCP port 8000 only.
+Set `networkPolicy.allowedSources` to explicit Kubernetes NetworkPolicy peers for
+other namespaces; an empty list denies all ingress. Both pod and container run
+nonroot with RuntimeDefault seccomp; the container drops all capabilities and
+forbids privilege escalation. Preserve the PVC
 on upgrades and plan retention before uninstalling the release. No model quality or
 compatibility claim is made: validate tool calls and structured output on the stand
 before accepting an inference backend. External inference needs explicit org consent.
@@ -180,14 +215,10 @@ semantics. One real quota injector and one simulated disk injector are implement
 28 automated injectors are TODO. Simulations/stubs cannot satisfy the 70% acceptance
 gate. There is no claim of an end-to-end stand run or GPU inference validation.
 
-The images workflow builds cozystack-mcp, alert-router and rca-eval alongside existing
+The images workflow builds cozystack-mcp, token-proxy, alert-router and rca-eval alongside existing
 images. Build/test/vet and Helm rendering validate the local implementation; deploy
 with signed immutable images and review tier RoleBindings before a stand exercise.
 Remaining integration gates: observer authentication proxy, installed CRD/metrics
-compatibility, per-org token rotation/report lifecycle, inference compatibility,
+compatibility, per-org client-secret rotation/report lifecycle, inference compatibility,
 and the complete thirty-case real-failure evaluation.
 
-The alert-router ClusterRole requires `get` on core `namespaces` and on
-`organizations.aep.aenix.io`. It resolves the Organization by namespace name and
-requires the namespace organization label to equal its UID, as set by the operator,
-and `openchoreo.dev/control-plane=true`.

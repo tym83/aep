@@ -75,6 +75,30 @@ func TestOIDCVerifier(t *testing.T) {
 			t.Fatalf("unexpected identity %+v", id)
 		}
 	})
+	t.Run("service account requires mapped client_id", func(t *testing.T) {
+		for _, mapped := range []bool{false, true} {
+			c := claims(func(c map[string]any) {
+				delete(c, "client_id")
+				delete(c, "groups")
+				c["clientId"] = "aep-acme-sre-agent"
+				c["azp"] = "aep-acme-sre-agent"
+				c["aud"] = "aep-mcp"
+				if mapped {
+					c["client_id"] = "aep-acme-sre-agent"
+				}
+			})
+			id, err := newVerifier("aep-mcp").Verify(context.Background(), signJWT(t, key, "test-key", c))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mapped && id.ClientID != "aep-acme-sre-agent" {
+				t.Fatal("mapped claim missing")
+			}
+			if !mapped && id.ClientID != "" {
+				t.Fatal("legacy claim or azp granted client identity")
+			}
+		}
+	})
 	t.Run("expired token", func(t *testing.T) {
 		token := signJWT(t, key, "test-key", claims(func(c map[string]any) { c["exp"] = time.Now().Add(-time.Hour).Unix() }))
 		if _, e := newVerifier("").Verify(context.Background(), token); e == nil {
