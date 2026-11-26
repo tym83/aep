@@ -183,6 +183,11 @@ func Images(data []byte) ([]string, error) {
 		if e != nil {
 			return nil, e
 		}
+		// Component type templates describe developer images supplied at runtime.
+		// They are not executable workloads shipped in the platform inventory.
+		if v["apiVersion"] == "openchoreo.dev/v1alpha1" && (v["kind"] == "ClusterComponentType" || v["kind"] == "ComponentType") {
+			continue
+		}
 		walk(v)
 	}
 	out := []string{}

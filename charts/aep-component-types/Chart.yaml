@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aep-component-types
+description: Restricted-compliant OpenChoreo golden paths for AEP
+type: application
+version: 0.1.0
+appVersion: "1.4.0"

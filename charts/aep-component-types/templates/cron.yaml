@@ -1,0 +1,247 @@
+{{- if .Values.types.cron }}
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterComponentType
+metadata:
+  annotations:
+    openchoreo.dev/description: AEP restricted-compliant scheduled task
+  name: aep-cron
+spec:
+  allowedTraits: []
+  allowedWorkflows:{{ range .Values.allowedWorkflows }}
+  - kind: ClusterWorkflow
+    name: {{ . | quote }}{{ else }} []{{ end }}
+  environmentConfigs:
+    openAPIV3Schema:
+      properties:
+        imagePullPolicy:
+          default: IfNotPresent
+          enum:
+          - Always
+          - IfNotPresent
+          - Never
+          type: string
+        imagePullSecrets:
+          default: []
+          items:
+            type: string
+          type: array
+        readOnlyRootFilesystem:
+          default: true
+          type: boolean
+        resources:
+          default: {}
+          properties:
+            limits:
+              default: {}
+              properties:
+                cpu:
+                  default: {{ required "resources.limits.cpu is required" .Values.resources.limits.cpu | quote }}
+                  minLength: 1
+                  type: string
+                memory:
+                  default: {{ required "resources.limits.memory is required" .Values.resources.limits.memory | quote }}
+                  minLength: 1
+                  type: string
+              type: object
+            requests:
+              default: {}
+              properties:
+                cpu:
+                  default: {{ required "resources.requests.cpu is required" .Values.resources.requests.cpu | quote }}
+                  minLength: 1
+                  type: string
+                memory:
+                  default: {{ required "resources.requests.memory is required" .Values.resources.requests.memory | quote }}
+                  minLength: 1
+                  type: string
+              type: object
+          type: object
+        runAsUser:
+          default: 65532
+          minimum: 1
+          type: integer
+        schedule:
+          default: 1 * * * *
+          type: string
+      type: object
+  parameters:
+    openAPIV3Schema:
+      properties:
+        activeDeadlineSeconds:
+          default: 300
+          type: integer
+        backoffLimit:
+          default: 3
+          type: integer
+        concurrencyPolicy:
+          default: Forbid
+          type: string
+        failedJobsHistoryLimit:
+          default: 1
+          type: integer
+        restartPolicy:
+          default: OnFailure
+          enum:
+          - Never
+          - OnFailure
+          type: string
+        successfulJobsHistoryLimit:
+          default: 3
+          type: integer
+        timeZone:
+          type: string
+      type: object
+  resources:
+  - id: serviceaccount
+    targetPlane: dataplane
+    template:
+      apiVersion: v1
+      automountServiceAccountToken: false
+      imagePullSecrets: |
+        ${size(environmentConfigs.imagePullSecrets) > 0 ? environmentConfigs.imagePullSecrets.map(n, {"name": n}) : oc_omit()}
+      kind: ServiceAccount
+      metadata:
+        labels: ${metadata.labels}
+        name: ${metadata.name}
+        namespace: ${metadata.namespace}
+  - id: cronjob
+    targetPlane: dataplane
+    template:
+      apiVersion: batch/v1
+      kind: CronJob
+      metadata:
+        labels: ${metadata.labels}
+        name: ${metadata.name}
+        namespace: ${metadata.namespace}
+      spec:
+        concurrencyPolicy: ${parameters.concurrencyPolicy}
+        failedJobsHistoryLimit: ${parameters.failedJobsHistoryLimit}
+        jobTemplate:
+          metadata:
+            labels: ${metadata.labels}
+          spec:
+            activeDeadlineSeconds: ${parameters.activeDeadlineSeconds}
+            backoffLimit: ${parameters.backoffLimit}
+            template:
+              metadata:
+                labels: ${metadata.podSelectors}
+              spec:
+                automountServiceAccountToken: false
+                containers:
+                - args: |
+                    ${has(workload.container.args) ? workload.container.args : oc_omit()}
+                  command: |
+                    ${has(workload.container.command) ? workload.container.command : oc_omit()}
+                  env: ${dependencies.toContainerEnvs()}
+                  envFrom: ${configurations.toContainerEnvFrom()}
+                  image: ${workload.container.image}
+                  imagePullPolicy: ${environmentConfigs.imagePullPolicy}
+                  name: main
+                  resources:
+                    limits:
+                      cpu: ${environmentConfigs.resources.limits.cpu}
+                      memory: ${environmentConfigs.resources.limits.memory}
+                    requests:
+                      cpu: ${environmentConfigs.resources.requests.cpu}
+                      memory: ${environmentConfigs.resources.requests.memory}
+                  securityContext:
+                    allowPrivilegeEscalation: false
+                    capabilities:
+                      drop:
+                      - ALL
+                    readOnlyRootFilesystem: ${environmentConfigs.readOnlyRootFilesystem}
+                  volumeMounts: '${dyn(configurations.toContainerVolumeMounts() + dependencies.toContainerVolumeMounts())
+                    + [{"name": "aep-tmp", "mountPath": "/tmp"}]}'
+                restartPolicy: ${parameters.restartPolicy}
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: ${environmentConfigs.runAsUser}
+                  seccompProfile:
+                    type: RuntimeDefault
+                serviceAccountName: ${metadata.name}
+                volumes: '${dyn(configurations.toVolumes() + dependencies.toVolumes())
+                  + [{"name": "aep-tmp", "emptyDir": {}}]}'
+        schedule: ${environmentConfigs.schedule}
+        successfulJobsHistoryLimit: ${parameters.successfulJobsHistoryLimit}
+        timeZone: |
+          ${has(parameters.timeZone) ? parameters.timeZone : oc_omit()}
+  - forEach: ${configurations.toConfigEnvsByContainer()}
+    id: env-config
+    targetPlane: dataplane
+    template:
+      apiVersion: v1
+      data: |
+        ${envConfig.envs.transformMapEntry(index, env, {env.name: env.value})}
+      kind: ConfigMap
+      metadata:
+        name: ${envConfig.resourceName}
+        namespace: ${metadata.namespace}
+    var: envConfig
+  - forEach: ${configurations.toConfigFileList()}
+    id: file-config
+    targetPlane: dataplane
+    template:
+      apiVersion: v1
+      data:
+        ${config.name}: |
+          ${config.value}
+      kind: ConfigMap
+      metadata:
+        name: ${config.resourceName}
+        namespace: ${metadata.namespace}
+    var: config
+  - forEach: ${configurations.toSecretEnvsByContainer()}
+    id: secret-env-external
+    targetPlane: dataplane
+    template:
+      apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      metadata:
+        name: ${secretEnv.resourceName}
+        namespace: ${metadata.namespace}
+      spec:
+        data: |
+          ${secretEnv.envs.map(secret, {
+            "secretKey": secret.name,
+            "remoteRef": {
+              "key": secret.remoteRef.key,
+              ?"property": secret.remoteRef.?property
+            }
+          })}
+        refreshInterval: 15s
+        secretStoreRef:
+          kind: ClusterSecretStore
+          name: ${dataplane.secretStore}
+        target:
+          creationPolicy: Owner
+          name: ${secretEnv.resourceName}
+    var: secretEnv
+  - forEach: ${configurations.toSecretFileList()}
+    id: secret-file-external
+    targetPlane: dataplane
+    template:
+      apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      metadata:
+        name: ${file.resourceName}
+        namespace: ${metadata.namespace}
+      spec:
+        data:
+        - remoteRef:
+            key: ${file.remoteRef.key}
+            property: |
+              ${has(file.remoteRef.property) ? file.remoteRef.property : oc_omit()}
+          secretKey: ${file.name}
+        refreshInterval: 15s
+        secretStoreRef:
+          kind: ClusterSecretStore
+          name: ${dataplane.secretStore}
+        target:
+          creationPolicy: Owner
+          name: ${file.resourceName}
+    var: file
+  validations:
+  - message: Job components must not have endpoints.
+    rule: ${size(workload.endpoints) == 0}
+  workloadType: cronjob
+{{- end }}
