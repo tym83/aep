@@ -113,7 +113,7 @@ artifacts:
   kind: chart
   ref: oci://ghcr.io/kyverno/charts/kyverno
   version: 3.9.2
-- digest: sha256:abb54b73013c9a2bd1153633b8d71b1e61bcf9775407911b5baf543016db1417
+- digest: sha256:225109206d46c4aadb76450f5421b718d636d4f8df61d422ff728274043cef01
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-audit-forwarder
@@ -315,5 +315,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: da5e49022244c911f995b1422df00d27f44c5aead9b6e6408683b71dc4838767
+inputs: 6e1521dddc33c1d9db6a14a8b3c0459431905361d7371911c7ca7aa06792c327
 schema: 1
