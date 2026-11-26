@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/tym83/aep/internal/operator"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -147,16 +147,14 @@ func (s *Server) resolve(ctx context.Context, id *authn.Identity) (scope, error)
 	if list.GetContinue() != "" {
 		return scope{}, fmt.Errorf("organization registry exceeds limit")
 	}
+	memberships := authn.Memberships(id.Groups, []string{"developer", "platform", "admin", "auditor"})
 	matches := map[string]scope{}
 	for _, o := range list.Items {
 		name := o.GetName()
-		matched := id.ClientID == "aep-"+name+"-sre-agent"
-		for _, g := range id.Groups {
-			g = strings.TrimPrefix(g, "/")
-			if strings.HasPrefix(g, "aep-"+name+"-") && len(g) > len("aep-"+name+"-") {
-				matched = true
-			}
+		if operator.ValidateName(name) != nil {
+			continue
 		}
+		matched := id.ClientID == "aep-"+name+"-sre-agent" || len(memberships[name]) > 0
 		if matched {
 			sc := scope{org: name}
 			tiers, _, _ := nestedMap(o.Object, "spec", "tiers")

@@ -216,3 +216,23 @@ func TestMetricsIsolationAndClusterHealth(t *testing.T) {
 		}
 	}
 }
+
+func TestRCARolesAndInvalidOrganizations(t *testing.T) {
+	s := fixture(t, object("aep.aenix.io/v1alpha1", "Organization", "", "platform", nil), object("aep.aenix.io/v1alpha1", "Organization", "", "team-one", nil))
+	for _, role := range []string{"developer", "platform", "admin", "auditor", "finance", "approver", "breakglass", "unknown", "developer-extra"} {
+		for _, prefix := range []string{"", "/"} {
+			_, err := s.resolve(context.Background(), &authn.Identity{Groups: []string{prefix + "aep-acme-" + role}})
+			allowed := role == "developer" || role == "platform" || role == "admin" || role == "auditor"
+			if (err == nil) != allowed {
+				t.Errorf("%s%s: %v", prefix, role, err)
+			}
+		}
+	}
+	for _, name := range []string{"platform", "team-one"} {
+		for _, id := range []*authn.Identity{{Groups: []string{"aep-" + name + "-admin"}}, {ClientID: "aep-" + name + "-sre-agent"}} {
+			if _, err := s.resolve(context.Background(), id); err == nil {
+				t.Errorf("accepted invalid org %s", name)
+			}
+		}
+	}
+}
