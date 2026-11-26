@@ -543,12 +543,7 @@
                     ]
                   }
                 },
-                "x-kubernetes-validations": [
-                  {
-                    "rule": "!has(self.tiers.nonprod.argocd) || !self.tiers.nonprod.argocd.enabled || has(self.vcs)",
-                    "message": "Argo CD requires spec.vcs"
-                  }
-                ]
+                "x-kubernetes-validations": []
               },
               "status": {
                 "type": "object",

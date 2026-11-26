@@ -97,7 +97,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	objects = append(objects, obj("argoproj.io/v1alpha1", "AppProject", "argocd", "default", M{"sourceRepos": []any{}, "destinations": []any{}, "clusterResourceWhitelist": []any{}}).Object)
 	// Only the existing tier operator can write the runtime credentials.
 	role := obj("rbac.authorization.k8s.io/v1", "Role", "argocd", "aep-operator", nil)
-	role.Object["rules"] = []any{rule("", []string{"secrets"}, []string{"get", "create", "patch"})}
+	role.Object["rules"] = []any{rule("", []string{"secrets"}, []string{"get", "create", "patch", "delete"})}
 	objects = append(objects, role.Object)
 	rb := obj("rbac.authorization.k8s.io/v1", "RoleBinding", "argocd", "aep-operator", nil)
 	rb.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "aep-operator"}
@@ -123,7 +123,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 func (s *session) argocd(ctx context.Context) error {
 	if !argoEnabled(s.o) {
 		s.o.Status.ArgoCDURL = ""
-		return s.deleteNamed(ctx, s.r.Management, helmAPI, "helmreleases", TenantNamespace(s.o.Name, "nonprod"), "aep-argocd")
+		return s.cleanupArgo(ctx)
 	}
 	if !s.vcsVerified {
 		return pending("Argo CD requires verified corporate VCS credentials and organization")
@@ -204,21 +204,12 @@ func (s *session) argoCredentials(ctx context.Context, c *Cluster) error {
 	if e = c.apply(ctx, s.o, "secrets", oidc); e != nil {
 		return e
 	}
-	credentials, e := s.vcsSecret(ctx)
+	credentials, e := s.vcsReadCredentials(ctx)
 	if e != nil {
 		return e
 	}
 	data := map[string][]byte{"type": []byte("git"), "url": []byte(repositoryPrefix(s.o.Spec.VCS)), "username": []byte(vcsUsername(s.o.Spec.VCS.Provider, credentials)), "password": credentials["token"]}
-	if len(credentials["token"]) == 0 && s.o.Spec.VCS.Provider == "github" {
-		delete(data, "username")
-		delete(data, "password")
-		for _, key := range []string{"githubAppID", "githubAppInstallationID", "githubAppPrivateKey"} {
-			data[key] = credentials[key]
-		}
-		if strings.TrimRight(s.o.Spec.VCS.URL, "/") != "https://github.com" {
-			data["githubAppEnterpriseBaseUrl"] = []byte(strings.TrimRight(s.o.Spec.VCS.URL, "/") + "/api/v3")
-		}
-	}
+
 	repo := secretObject("argocd", "aep-corporate-vcs", data)
 	repo.SetLabels(map[string]string{"argocd.argoproj.io/secret-type": "repo-creds"})
 	return c.apply(ctx, s.o, "secrets", repo)

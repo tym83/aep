@@ -12,6 +12,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"slices"
+	"sync"
 	"time"
 )
 
@@ -27,9 +28,11 @@ type Options struct {
 }
 type Reconciler struct {
 	client.Client
-	Management *Cluster
-	Options    Options
-	Recorder   record.EventRecorder
+	Management   *Cluster
+	Options      Options
+	Recorder     record.EventRecorder
+	hookMu       sync.Mutex
+	hookAttempts map[string]time.Time
 }
 type session struct {
 	vcsVerified bool
@@ -124,7 +127,10 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 				reason = "Pending"
 			}
 			setCondition(o, step.name, false, reason, err.Error())
-			if step.name == "PoliciesReady" || step.name == "VCSReady" {
+			if step.name == "VCSReady" || step.name == "ArgoCDReady" {
+				continue
+			}
+			if step.name == "PoliciesReady" {
 				policyErr = err
 				if errors.Is(err, errCosignKeyMissing) {
 					setCondition(o, step.name, false, "CosignKeyMissing", err.Error())

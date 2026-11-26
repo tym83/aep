@@ -8,6 +8,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"net/url"
 	"strings"
+	"time"
 )
 
 func vcsUsername(provider string, data map[string][]byte) string {
@@ -20,9 +21,15 @@ func vcsUsername(provider string, data map[string][]byte) string {
 	return "x-access-token"
 }
 func (s *session) vcsSecret(ctx context.Context) (map[string][]byte, error) {
-	sec, e := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, s.o.Spec.VCS.CredentialsSecretRef.Name, metav1.GetOptions{})
+	return s.vcsNamedSecret(ctx, s.o.Spec.VCS.CredentialsSecretRef.Name)
+}
+func (s *session) vcsNamedSecret(ctx context.Context, name string) (map[string][]byte, error) {
+	sec, e := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, name, metav1.GetOptions{})
 	if e != nil {
 		return nil, fmt.Errorf("VCS credentials Secret is unavailable")
+	}
+	if sec.Labels[OwnerLabel] != s.o.Name {
+		return nil, fmt.Errorf("VCS Secret must carry organization name label")
 	}
 	return sec.Data, nil
 }
@@ -38,12 +45,15 @@ func (s *session) vcsCA(ctx context.Context) ([]byte, error) {
 	if e != nil || len(sec.Data["ca.crt"]) == 0 {
 		return nil, fmt.Errorf("VCS CA Secret must contain ca.crt")
 	}
+	if sec.Labels[OwnerLabel] != s.o.Name {
+		return nil, fmt.Errorf("VCS CA Secret must carry organization name label")
+	}
 	return sec.Data["ca.crt"], nil
 }
 func (s *session) vcs(ctx context.Context) error {
 	v := s.o.Spec.VCS
-	if v == nil {
-		return nil
+	if v == nil || (s.o.Spec.Tiers["nonprod"].ArgoCD != nil && !argoEnabled(s.o)) {
+		return s.cleanupBuildCredentials(ctx)
 	}
 	data, e := s.vcsSecret(ctx)
 	if e != nil {
@@ -78,26 +88,16 @@ func (s *session) vcs(ctx context.Context) error {
 		return e
 	}
 	s.vcsVerified = true
-	// Only a reference is published on the control plane. ESO reads a dedicated
-	// management Secret through the organization's preconfigured workflow store.
-	buildName := "vcs-" + s.o.Name + "-build"
-	if e = s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, buildName, map[string][]byte{"username": []byte(vcsUsername(v.Provider, data)), "password": []byte(token)})); e != nil {
-		return e
-	}
-	wp, e := s.cp.get(ctx, ocAPI, "workflowplanes", s.o.Name, "nonprod")
+	read, e := s.vcsReadCredentials(ctx)
 	if e != nil {
-		return pending("VCS verified; provision organization WorkflowPlane nonprod with an ESO Kubernetes store scoped to management Secret %s", buildName)
-	}
-	store, _, _ := unstructured.NestedString(wp.Object, "spec", "secretStoreRef", "name")
-	if store == "" {
-		return pending("WorkflowPlane nonprod requires secretStoreRef for VCS credentials")
-	}
-	ref := obj(ocAPI, "SecretReference", s.o.Name, "aep-corporate-vcs", M{"targetPlane": M{"kind": "WorkflowPlane", "name": "nonprod"}, "template": M{"type": "kubernetes.io/basic-auth"}, "data": []any{M{"secretKey": "username", "remoteRef": M{"key": buildName, "property": "username"}}, M{"secretKey": "password", "remoteRef": M{"key": buildName, "property": "password"}}}})
-	ref.SetLabels(map[string]string{"openchoreo.dev/secret-type": "git-credentials", "kubernetes.io/secret-type": "basic-auth", "openchoreo.dev/workflow-plane-kind": "WorkflowPlane", "openchoreo.dev/workflow-plane-name": "nonprod"})
-	if e = s.cp.apply(ctx, s.o, "secretreferences", ref); e != nil {
 		return e
 	}
-	if s.r.Options.VCSWebhookURL != "" {
+	buildErr := s.vcsBuildCredentials(ctx, read)
+	if buildErr != nil {
+		s.vcsEvent("", buildErr)
+	}
+
+	if s.r.Options.VCSWebhookURL != "" && s.r.claimHookReconcile(string(s.o.UID)) {
 		u, e := url.Parse(s.r.Options.VCSWebhookURL)
 		if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
 			return fmt.Errorf("VCS webhook URL must be HTTPS")
@@ -123,25 +123,29 @@ func (s *session) vcs(ctx context.Context) error {
 			}
 			repo, e := s.repositoryURL(ctx, component)
 			if e != nil {
-				return e
+				s.vcsEvent(component.GetName(), e)
+				continue
 			}
 			prefix := repositoryPrefix(v)
 			if !strings.HasPrefix(repo, prefix) {
-				return fmt.Errorf("autoBuild repository is outside the corporate VCS allow-list")
+				s.vcsEvent(component.GetName(), fmt.Errorf("autoBuild repository is outside the corporate VCS allow-list"))
+				continue
 			}
 			path := strings.TrimSuffix(strings.TrimPrefix(repo, strings.TrimRight(v.URL, "/")+"/"), ".git")
 			if strings.ContainsAny(path, "?#%") || strings.Contains(path, "..") {
-				return fmt.Errorf("invalid autoBuild repository path")
+				s.vcsEvent(component.GetName(), fmt.Errorf("invalid autoBuild repository path"))
+				continue
 			}
 			if !repos[path] {
 				if e = c.EnsureWebhook(ctx, path, s.r.Options.VCSWebhookURL, secret); e != nil {
-					return e
+					s.vcsEvent(component.GetName(), e)
+					continue
 				}
 				repos[path] = true
 			}
 		}
 	}
-	return nil
+	return buildErr
 }
 
 // repositoryURL follows OpenChoreo's workflow schema extension instead of assuming
@@ -181,4 +185,71 @@ func repositoryPaths(schema M, path []string) [][]string {
 		out = append(out, repositoryPaths(child, next)...)
 	}
 	return out
+}
+
+// Read credentials never fall back to the administrative token.
+func (s *session) vcsReadCredentials(ctx context.Context) (map[string][]byte, error) {
+	data, err := s.vcsNamedSecret(ctx, s.o.Spec.VCS.ReadCredentialsSecretRef.Name)
+	if err != nil {
+		return nil, err
+	}
+	if len(data["token"]) > 0 {
+		return data, nil
+	}
+	if s.o.Spec.VCS.Provider != "github" {
+		return nil, fmt.Errorf("read-only VCS token is empty")
+	}
+	ca, err := s.vcsCA(ctx)
+	if err != nil {
+		return nil, err
+	}
+	token, err := vcs.GitHubAppRead(ctx, s.o.Spec.VCS.URL, string(data["githubAppID"]), string(data["githubAppInstallationID"]), data["githubAppPrivateKey"], ca)
+	if err != nil {
+		return nil, err
+	}
+	return map[string][]byte{"username": []byte("x-access-token"), "token": []byte(token)}, nil
+}
+
+func (s *session) vcsBuildCredentials(ctx context.Context, read map[string][]byte) error {
+	v := s.o.Spec.VCS
+	// Only a reference is published on the control plane. ESO reads a dedicated
+	// management Secret through the organization's preconfigured workflow store.
+	buildName := "vcs-" + s.o.Name + "-build"
+	if e := s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, buildName, map[string][]byte{"username": []byte(vcsUsername(v.Provider, read)), "password": read["token"]})); e != nil {
+		return e
+	}
+	wp, e := s.cp.get(ctx, ocAPI, "workflowplanes", s.o.Name, "nonprod")
+	if e != nil {
+		return pending("VCS verified; provision organization WorkflowPlane nonprod with an ESO Kubernetes store scoped to management Secret %s", buildName)
+	}
+	store, _, _ := unstructured.NestedString(wp.Object, "spec", "secretStoreRef", "name")
+	if store == "" {
+		return pending("WorkflowPlane nonprod requires secretStoreRef for VCS credentials")
+	}
+	ref := obj(ocAPI, "SecretReference", s.o.Name, "aep-corporate-vcs", M{"targetPlane": M{"kind": "WorkflowPlane", "name": "nonprod"}, "template": M{"type": "kubernetes.io/basic-auth"}, "data": []any{M{"secretKey": "username", "remoteRef": M{"key": buildName, "property": "username"}}, M{"secretKey": "password", "remoteRef": M{"key": buildName, "property": "password"}}}})
+	ref.SetLabels(map[string]string{"openchoreo.dev/secret-type": "git-credentials", "kubernetes.io/secret-type": "basic-auth", "openchoreo.dev/workflow-plane-kind": "WorkflowPlane", "openchoreo.dev/workflow-plane-name": "nonprod"})
+	if e = s.cp.apply(ctx, s.o, "secretreferences", ref); e != nil {
+		return e
+	}
+	return nil
+}
+
+func (s *session) vcsEvent(component string, err error) {
+	if s.r.Recorder != nil {
+		s.r.Recorder.Eventf(s.o, "Warning", "VCSComponentSkipped", "Component %s: %s", component, err.Error())
+	}
+}
+
+func (r *Reconciler) claimHookReconcile(key string) bool {
+	r.hookMu.Lock()
+	defer r.hookMu.Unlock()
+	if r.hookAttempts == nil {
+		r.hookAttempts = map[string]time.Time{}
+	}
+	now := time.Now()
+	if last, ok := r.hookAttempts[key]; ok && now.Sub(last) < 15*time.Minute {
+		return false
+	}
+	r.hookAttempts[key] = now
+	return true
 }

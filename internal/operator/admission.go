@@ -61,7 +61,7 @@ func (s *session) admission(ctx context.Context) error {
 		{"platform", []string{"environments", "dataplanes", "deploymentpipelines", "observabilityplanes", "componenttypes", "traits", "resourcetypes", "workflows", "workflowplanes"}, []any{validations[0]}},
 		{"roles", []string{"authzroles"}, []any{validations[1], validations[2]}},
 		{"bindings", []string{"authzrolebindings"}, []any{validations[1], validations[3]}},
-		{"vcs-secrets", []string{"secretreferences"}, []any{M{"expression": "!(request.name.startsWith('aep-') || (object != null && object.metadata.name.startsWith('aep-')))", "message": "System SecretReferences are managed by the organization operator."}}},
+		{"vcs-secrets", []string{"secretreferences"}, []any{M{"expression": "!(request.name.startsWith('aep-') || (object != null && object.metadata.name.startsWith('aep-')))", "message": "System SecretReferences are managed by the organization operator."}, M{"expression": "request.operation == 'DELETE' || !has(object.spec.data) || object.spec.data.all(d, !has(d.remoteRef) || !d.remoteRef.key.startsWith('vcs-'))", "message": "VCS remote keys are reserved for the organization operator."}}},
 		{"decommission", []string{"projects", "components", "resources"}, []any{validations[4]}},
 	}
 	for _, group := range groups {

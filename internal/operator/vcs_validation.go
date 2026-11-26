@@ -23,9 +23,6 @@ func validateIntegrations(o *api.Organization) error {
 	}
 	v := o.Spec.VCS
 	if v == nil {
-		if argoEnabled(o) {
-			return fmt.Errorf("Argo CD requires spec.vcs")
-		}
 		return nil
 	}
 	if v.Provider != "gitlab" && v.Provider != "github" && v.Provider != "gitea" {
@@ -75,5 +72,5 @@ func repositoryPrefix(v *api.VCSSpec) string {
 
 func argoEnabled(o *api.Organization) bool {
 	a := o.Spec.Tiers["nonprod"].ArgoCD
-	return a != nil && a.Enabled
+	return o.Spec.VCS != nil && a != nil && a.Enabled
 }

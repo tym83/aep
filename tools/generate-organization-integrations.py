@@ -25,9 +25,8 @@ for tier in ('nonprod','prod'):
   tiers['properties'][tier]['x-kubernetes-validations']=[v for v in tiers['properties'][tier].get('x-kubernetes-validations',[]) if 'Argo CD' not in v.get('message','')]
   rule={'rule':"!has(self.argocd)",'message':'Argo CD is supported only in nonprod; use OpenChoreo promotion for prod'}
   if rule not in tiers['properties'][tier]['x-kubernetes-validations']:tiers['properties'][tier]['x-kubernetes-validations'].append(rule)
-rule={'rule':"!has(self.tiers.nonprod.argocd) || !self.tiers.nonprod.argocd.enabled || has(self.vcs)",'message':'Argo CD requires spec.vcs'}
-s['spec'].setdefault('x-kubernetes-validations',[])
-if rule not in s['spec']['x-kubernetes-validations']:s['spec']['x-kubernetes-validations'].append(rule)
+# Removing VCS deactivates Argo and triggers credential cleanup.
+s['spec']['x-kubernetes-validations']=[v for v in s['spec'].get('x-kubernetes-validations',[]) if v.get('message') != 'Argo CD requires spec.vcs']
 s['status']['properties']['argocdURL']={'type':'string'}
 def lists(v):
  if isinstance(v,dict):
