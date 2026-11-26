@@ -77,6 +77,8 @@ get on selected Namespace names, namespace Roles listing Secrets and each
 namespaced OpenChoreo resource, and a ClusterRole listing explicitly enumerated
 cluster-scoped OpenChoreo resources. Generate/review the resource list from the
 pinned OpenChoreo release; do not grant wildcard resources or admin credentials.
+[`config/backup/aep-cp-reader.yaml`](../config/backup/aep-cp-reader.yaml) is that
+identity for OpenChoreo 1.4.0-m.3 (repeat the Role per organization namespace).
 New discovered kinds without permission fail closed until reviewed. Restore
 needs a separate temporary identity with get/create/update on these resources;
 the CronJob does not carry write permissions. Credentials are mounted as a
