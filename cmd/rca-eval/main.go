@@ -26,7 +26,7 @@ func run() error {
 	suite := flag.String("suite", "eval/cases.yaml", "Failure set")
 	selected := flag.String("case", "", "Case ID; empty selects all")
 	execute := flag.Bool("execute", false, "Mutate an isolated stand and request RCA; otherwise list cases")
-	kube := flag.String("kubeconfig", "", "Stand management kubeconfig")
+	kube := flag.String("mgmt-kubeconfig", "", "Stand management kubeconfig")
 	recovery := flag.Bool("restore", false, "Restore the recovery journal without running a case")
 	r := rcaeval.Runner{}
 	flag.StringVar(&r.JournalPath, "journal", "eval-recovery.json", "Durable recovery journal; must not exist before injection")

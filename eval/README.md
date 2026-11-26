@@ -61,15 +61,15 @@ agent; run through a local port-forward on the stand. The router is tested separ
 ```sh
 ./rca-eval --execute --case quota-pods --org example --tier nonprod \
   --quota tenant-quota --project stand --component probe --environment dev \
-  --agent-url http://127.0.0.1:8080 --kubeconfig ./stand.kubeconfig \
+  --agent-url http://127.0.0.1:8080 --mgmt-kubeconfig ./stand.kubeconfig \
   --journal ./eval-recovery.json > quota-result.json
 
 ./rca-eval --execute --case database-disk-full --org example --tier nonprod \
   --app stand-db --project stand --component probe --environment dev \
-  --agent-url http://127.0.0.1:8080 --kubeconfig ./stand.kubeconfig \
+  --agent-url http://127.0.0.1:8080 --mgmt-kubeconfig ./stand.kubeconfig \
   --journal ./eval-recovery.json > simulation-result.json
 
-./rca-eval --restore --kubeconfig ./stand.kubeconfig --journal ./eval-recovery.json
+./rca-eval --restore --mgmt-kubeconfig ./stand.kubeconfig --journal ./eval-recovery.json
 ```
 
 Recovery is only needed when a journal remains. The default deadline is ten minutes,

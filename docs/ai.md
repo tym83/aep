@@ -31,7 +31,7 @@ cozystack-mcp --issuer https://identity.example/realms/cozy --audience aep-mcp \
   --metrics-query-url-template 'https://metrics.example/{namespace}/api/v1/query'
 ```
 
-Use --kubeconfig only for stand testing; production uses a dedicated ServiceAccount.
+Use --mgmt-kubeconfig (MCP) or --cp-kubeconfig (alert router) only for stand testing; production uses a dedicated ServiceAccount.
 HTTP requires explicit --tls-termination-proxy and a trusted HTTPS ingress; the agent
 token-proxy uses HTTPS upstream; only its pod-local loopback endpoint uses HTTP.
 Internal CA bundles must be trusted.

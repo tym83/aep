@@ -21,7 +21,7 @@ func main() {
 }
 func run() error {
 	listen := flag.String("listen", ":8443", "Listen address")
-	kube := flag.String("kubeconfig", "", "Management kubeconfig; default in-cluster")
+	kube := flag.String("mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	issuer := flag.String("issuer", "", "OIDC issuer (required)")
 	jwks := flag.String("jwks-url", "", "OIDC JWKS override")
 	aud := flag.String("audience", "", "Required OIDC audience")

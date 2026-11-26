@@ -21,7 +21,7 @@ func main() {
 }
 func run() error {
 	listen := flag.String("listen", ":8080", "Listen address")
-	kube := flag.String("kubeconfig", "", "Control-plane kubeconfig; default in-cluster")
+	kube := flag.String("cp-kubeconfig", "", "Control-plane kubeconfig; default in-cluster")
 	template := flag.String("agent-url-template", "http://sre-agent.aep-{org}.svc:8080", "Per-organization agent base URL")
 	caFile := flag.String("client-ca", "", "Observer client certificate CA PEM file")
 	secretFile := flag.String("hmac-secret-file", "", "Shared HMAC secret file (at least 32 bytes; trailing whitespace trimmed)")
