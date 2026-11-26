@@ -6,10 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/operator"
+	"k8s.io/apimachinery/pkg/runtime"
 	"net/http"
 	"regexp"
-	"sort"
 	"sync"
 	"time"
 
@@ -167,12 +168,11 @@ func (s *Server) resolve(ctx context.Context, id *authn.Identity) (scope, error)
 		}
 		matched := id.ClientID == "aep-"+name+"-sre-agent" || len(memberships[name]) > 0
 		if matched {
-			sc := scope{org: name}
-			tiers, _, _ := nestedMap(o.Object, "spec", "tiers")
-			for t := range tiers {
-				sc.tiers = append(sc.tiers, t)
+			var org api.Organization
+			if err := runtime.DefaultUnstructuredConverter.FromUnstructured(o.Object, &org); err != nil {
+				continue
 			}
-			sort.Strings(sc.tiers)
+			sc := scope{org: name, tiers: operator.Tiers(&org)}
 			matches[name] = sc
 		}
 	}

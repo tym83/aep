@@ -169,3 +169,11 @@ func TestPartialInjectionReturnsRecovery(t *testing.T) {
 		t.Fatal("quota not restored")
 	}
 }
+
+func TestTargetNamespace(t *testing.T) {
+	for _, tc := range []struct{ tier, want string }{{"", "tenant-acme"}, {"nonprod", "tenant-acme-nonprod"}} {
+		if got := (Target{Organization: "acme", Tier: tc.tier}).Namespace(); got != tc.want {
+			t.Fatalf("%q: %s", tc.tier, got)
+		}
+	}
+}

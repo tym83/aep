@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/tym83/aep/internal/operator"
 	"os"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 type Target struct{ Organization, Tier, Quota, App, WorkloadImage string }
 
-func (t Target) Namespace() string { return "tenant-" + t.Organization + "-" + t.Tier }
+func (t Target) Namespace() string { return operator.TenantNamespace(t.Organization, t.Tier) }
 
 type Journal struct {
 	Resource   schema.GroupVersionResource `json:"resource"`

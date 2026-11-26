@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tym83/aep/internal/operator"
 	"github.com/tym83/aep/internal/policy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -27,7 +28,6 @@ var events = resource("", "v1", "events")
 var quotas = resource("", "v1", "resourcequotas")
 var appResources = map[string]string{"Postgres": "postgreses", "Redis": "redises", "Kubernetes": "kuberneteses", "Kafka": "kafkas", "RabbitMQ": "rabbitmqs", "MySQL": "mysqls", "ClickHouse": "clickhouses"}
 
-func namespace(org, tier string) string { return "tenant-" + org + "-" + tier }
 func (s *Server) list(ctx context.Context, e *Evidence, g schema.GroupVersionResource, ns string) []unstructured.Unstructured {
 	// Bound backend work as well as output. A partial list is always explicit.
 	list, err := s.Client.Resource(g).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 1000})
@@ -128,7 +128,7 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 			if !tierOK(tier) {
 				continue
 			}
-			ns := namespace(sc.org, tier)
+			ns := operator.TenantNamespace(sc.org, tier)
 			if name == "quota_and_denials" {
 				for _, o := range s.list(ctx, &e, quotas, ns) {
 					e.Rows = append(e.Rows, project(o))
@@ -201,7 +201,7 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 		if len(parts) != 3 || !tierOK(parts[0]) || appResources[parts[1]] == "" || len(validation.IsDNS1123Subdomain(parts[2])) != 0 {
 			return e, fmt.Errorf("service must be tier/kind/name within the organization")
 		}
-		ns := namespace(sc.org, parts[0])
+		ns := operator.TenantNamespace(sc.org, parts[0])
 		service := parts[2]
 		release := strings.ToLower(parts[1]) + "-" + service
 		app, err := s.Client.Resource(resource("apps.cozystack.io", "v1alpha1", appResources[parts[1]])).Namespace(ns).Get(ctx, service, metav1.GetOptions{})
@@ -247,7 +247,7 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 		if !tierOK(a.Tier) {
 			return e, fmt.Errorf("unknown tier")
 		}
-		ns := namespace(sc.org, a.Tier)
+		ns := operator.TenantNamespace(sc.org, a.Tier)
 		for _, g := range []schema.GroupVersionResource{resource("kamaji.clastix.io", "v1alpha1", "tenantcontrolplanes"), resource("apps.cozystack.io", "v1alpha1", "kubernetesnodeses"), resource("kubevirt.io", "v1", "virtualmachineinstances"), quotas} {
 			for _, o := range s.list(ctx, &e, g, ns) {
 				e.Rows = append(e.Rows, project(o))

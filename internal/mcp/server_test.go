@@ -273,3 +273,16 @@ func TestPhysicalEventsAndConfiguredRedaction(t *testing.T) {
 		t.Fatal("invalid regex accepted")
 	}
 }
+
+func TestProfileTiers(t *testing.T) {
+	for _, tc := range []struct {
+		profile string
+		want    string
+	}{{"small", "nonprod"}, {"standard", "nonprod,prod"}} {
+		s := fixture(t, object("aep.aenix.io/v1alpha1", "Organization", "", "profiled", map[string]any{"spec": map[string]any{"profile": tc.profile, "tiers": map[string]any{"nonprod": map[string]any{}, "prod": map[string]any{}, "rogue": map[string]any{}}}}))
+		sc, err := s.resolve(context.Background(), &authn.Identity{ClientID: "aep-profiled-sre-agent"})
+		if err != nil || strings.Join(sc.tiers, ",") != tc.want {
+			t.Fatalf("%s: %+v %v", tc.profile, sc, err)
+		}
+	}
+}
