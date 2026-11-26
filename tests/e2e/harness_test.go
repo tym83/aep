@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/yaml"
 )
 
@@ -68,11 +69,13 @@ type matrix struct {
 	Actions map[string]action
 }
 type suite struct {
-	t        *testing.T
-	c        config
-	run      string
-	tokens   map[string]string
-	fixtures []fixture
+	t             *testing.T
+	c             config
+	run           string
+	tokens        map[string]string
+	cleanupClient dynamic.Interface
+	cleanupKinds  []string
+	fixtures      []fixture
 }
 type fixture struct {
 	project, resource, component, projectRelease, resourceRelease string
@@ -330,6 +333,8 @@ func TestAcceptance(t *testing.T) {
 	}
 	s := &suite{t: t, c: c, run: hex.EncodeToString(b), tokens: map[string]string{}, fixtures: make([]fixture, 2)}
 	t.Logf("run id: %s", s.run)
+	s.prepareCleanup()
+	t.Cleanup(s.sweep)
 	for i := range c.Organizations {
 		s.setup(i)
 	}

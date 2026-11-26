@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,44 +17,12 @@ func (s *suite) cleanupObject(org int, kind, name string) {
 		s.t.Fatal("refusing cleanup of an object without this run id")
 	}
 	s.t.Cleanup(func() {
-		var err error
-		if kind == "resources" || kind == "projects" || kind == "components" {
-			bindingKind := map[string]string{"resources": "resourcereleasebindings", "projects": "projectreleasebindings", "components": "releasebindings"}[kind]
-			code, _ := s.call(org, "developer", "openchoreo", "GET", s.oc(org, "/"+bindingKind+"/"+name+"-"+s.c.Resources.ProdEnvironment), nil, nil)
-			if code != 404 {
-				s.t.Errorf("cleanup withheld: production binding not confirmed absent for %s", name)
-				return
-			}
-		}
-		if len(s.c.Cleanup.TokenCommand) > 0 {
-			var tok string
-			tok, err = token(s.c.Cleanup.TokenCommand, "")
-			if err == nil {
-				var code int
-				code, _, err = exchange(context.Background(), s.c.Endpoints["openchoreo"], s.oc(org, "/"+kind+"/"+name), "DELETE", tok, nil, nil)
-				if code != 200 && code != 202 && code != 204 && code != 404 {
-					err = fmt.Errorf("cleanup returned %d", code)
-				} else if err == nil && code != 404 {
-					s.wait("nonprod deletion", func() bool {
-						status, _, readErr := exchange(context.Background(), s.c.Endpoints["openchoreo"], s.oc(org, "/"+kind+"/"+name), "GET", tok, nil, nil)
-						if readErr != nil {
-							s.t.Fatal(readErr)
-						}
-						if status != 200 && status != 404 {
-							s.t.Fatalf("cleanup verification returned %d", status)
-						}
-						return status == 404
-					})
-				}
-			}
-		} else {
-			_, err = command([]string{"kubectl", "--kubeconfig", s.c.Cleanup.AepcpKubeconfig, "--request-timeout=30s"}, "delete", kind+".openchoreo.dev", name, "-n", s.c.Organizations[org].Name, "--ignore-not-found", "--wait=true", "--timeout=30s")
-		}
-		if err != nil {
+		if err := s.cleanupNow(org, kind, name); err != nil {
 			s.t.Errorf("cleanup %s/%s failed: %v", kind, name, err)
 		}
 	})
 }
+
 func (s *suite) createOC(org int, role, kind, name string, spec map[string]any) {
 	s.cleanupObject(org, kind, name)
 	s.require(org, role, "openchoreo", "POST", s.oc(org, "/"+kind), object(name, spec, s.run), nil, 200, 201, 202)
@@ -112,6 +79,9 @@ func (s *suite) setup(org int) {
 func (s *suite) newChange(org int, role, endpoint, operation, name, release string) string {
 	target := map[string]any{"kind": "Resource", "name": name, "project": s.fixtures[org].project, "environment": s.c.Resources.ProdEnvironment}
 	desired := map[string]any{}
+	if operation == "decommission" {
+		desired["deleteData"] = true
+	}
 	if operation == "promote" {
 		desired["releaseName"] = release
 	}

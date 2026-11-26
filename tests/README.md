@@ -127,15 +127,22 @@ OpenChoreo user roles cannot delete projects/components/resources by design.
 Tests register cleanup before each create and delete only exact run-named
 objects (also labeled `aep.aenix.io/e2e-run`). Nonprod cleanup uses the dedicated
 `cleanup.tokenCommand` platform identity, or, when absent,
-`kubectl --kubeconfig cleanup.aepcpKubeconfig` against **aep-cp**. It never deletes
-a namespace, selects an entire organization, or touches existing resources.
-Deletion is idempotent; cleanup errors fail the run. Objects with a production
-binding are retained if approved decommission cannot confirm its removal.
+the Kubernetes Go client with `cleanup.aepcpKubeconfig` against **aep-cp**.
+Discovery and namespace reads must succeed before setup; an unreachable API
+fails fast with a diagnostic. No kubectl process is used for cleanup. It never
+deletes a namespace, selects an entire organization, or touches existing resources.
+Deletion is retried until absence is confirmed or the configured timeout expires.
+A final sweep, registered before setup, finds run-owned objects including
+controller-generated releases, then lists again and reports swept/remaining/error
+counts. Kubeconfig mode discovers OpenChoreo resource kinds; token mode uses the
+fixture kinds and follows list pagination. Cleanup errors or leftovers fail
+the run. Objects with a production binding are retained if approved decommission cannot confirm its removal.
 
 Production resource bindings are removed exclusively by a `decommission`
-ChangeRequest created by the developer, approved by a separate approver and
-observed Applied. This also handles a regression that unexpectedly permits a
-direct prod write. No privileged production binding deletion is used.
+ChangeRequest with `desired.deleteData: true`, created by the developer,
+approved by a separate approver, observed Applied and verified absent.
+Applied/Finalizing alone is insufficient. This also handles a regression that
+unexpectedly permits a direct prod write. No privileged production binding deletion is used.
 ChangeRequests are audit records and are **never deleted**. Each justification
 and note contains the run id printed at test start. An interrupted process may
 leave run-owned objects: locate that run's records, complete approved production
