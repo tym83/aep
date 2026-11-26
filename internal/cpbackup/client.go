@@ -19,9 +19,10 @@ import (
 )
 
 type Resource struct {
-	GVR        schema.GroupVersionResource
-	Kind       string
-	Namespaced bool
+	GVR           schema.GroupVersionResource
+	Kind          string
+	Namespaced    bool
+	InventoryOnly bool // Discover retains excluded kinds only to inventory skipped identities.
 }
 
 func Discover(d discovery.DiscoveryInterface) ([]Resource, error) {
@@ -47,7 +48,7 @@ func Discover(d discovery.DiscoveryInterface) ([]Resource, error) {
 			continue
 		}
 		for _, r := range l.APIResources {
-			if strings.Contains(r.Name, "/") || excludedKind(r.Kind) {
+			if strings.Contains(r.Name, "/") {
 				continue
 			}
 			list := false
@@ -59,7 +60,7 @@ func Discover(d discovery.DiscoveryInterface) ([]Resource, error) {
 			if !list {
 				return nil, fmt.Errorf("OpenChoreo resource %s cannot be listed", r.Name)
 			}
-			out = append(out, Resource{gv.WithResource(r.Name), r.Kind, r.Namespaced})
+			out = append(out, Resource{gv.WithResource(r.Name), r.Kind, r.Namespaced, excludedKind(r.Kind)})
 		}
 	}
 	if len(out) == 0 {
@@ -88,9 +89,13 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 	entries := []Entry{}
 	skipped := []Skipped{}
 	absent := map[string]bool{}
+	inventoryOnly := map[schema.GroupVersionResource]bool{}
+	for _, r := range resources {
+		inventoryOnly[r.GVR] = r.InventoryOnly
+	}
 	add := func(r schema.GroupVersionResource, u *unstructured.Unstructured) {
 		reason := ""
-		if excludedKind(u.GetKind()) {
+		if inventoryOnly[r] || excludedKind(u.GetKind()) {
 			reason = "run or controller-rendered kind"
 		}
 		for _, owner := range u.GetOwnerReferences() {
@@ -190,7 +195,9 @@ func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a A
 	}
 	available := map[schema.GroupVersionResource]Resource{}
 	for _, r := range resources {
-		available[r.GVR] = r
+		if !r.InventoryOnly {
+			available[r.GVR] = r
+		}
 	}
 	// Preflight all kinds before creating anything.
 	for _, e := range a.Payload.Entries {

@@ -91,6 +91,9 @@ func (a Archive) Validate() error {
 		if e.Object == nil || e.Object.GetName() == "" || e.SHA256 != hash(e.Object) {
 			return fmt.Errorf("invalid object checksum or identity")
 		}
+		if excludedKind(e.Object.GetKind()) {
+			return fmt.Errorf("archive contains transient or rendered kind: %s", e.Object.GetKind())
+		}
 		av := e.Resource.GroupVersion().String()
 		if av != e.Object.GetAPIVersion() {
 			return fmt.Errorf("resource apiVersion mismatch")

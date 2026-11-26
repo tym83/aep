@@ -28,7 +28,7 @@ func TestRestoreSafety(t *testing.T) {
 			a := New([]string{"acme"}, []Entry{{Resource: g, Object: u}})
 			u.Object["spec"] = map[string]any{"value": "live"}
 			c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{g: kind + "List"}, u)
-			resources := []Resource{{g, kind, true}}
+			resources := []Resource{{g, kind, true, false}}
 			opts := RestoreOptions{Merge: true}
 			if Restore(context.Background(), c, resources, a, false, io.Discard, opts) == nil {
 				t.Fatal("default overwrite allowed")
@@ -52,7 +52,7 @@ func TestMergeRequired(t *testing.T) {
 	u := obj(g.GroupVersion().String(), "Project", "acme", "existing")
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{g: "ProjectList"}, u)
 	a := New([]string{"acme"}, nil)
-	if Restore(context.Background(), c, []Resource{{g, "Project", true}}, a, false, io.Discard) == nil {
+	if Restore(context.Background(), c, []Resource{{g, "Project", true, false}}, a, false, io.Discard) == nil {
 		t.Fatal("occupied namespace accepted")
 	}
 }
@@ -82,7 +82,7 @@ func TestExportControllerOwnedAndRuns(t *testing.T) {
 	yes := true
 	u.SetOwnerReferences([]metav1.OwnerReference{{Controller: &yes, Name: "parent", UID: "id"}})
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{g: "ProjectList", s: "SecretList", n: "NamespaceList"}, obj("v1", "Namespace", "", "acme"), u)
-	a, err := Export(context.Background(), c, []Resource{{g, "Project", true}}, []string{"acme"})
+	a, err := Export(context.Background(), c, []Resource{{g, "Project", true, false}}, []string{"acme"})
 	if err != nil || len(a.Payload.Entries) != 1 || len(a.Payload.Skipped) != 1 {
 		t.Fatalf("%+v %v", a, err)
 	}
@@ -93,5 +93,40 @@ func TestExportControllerOwnedAndRuns(t *testing.T) {
 	}
 	if rank("WorkflowRelease") <= rank("Component") || rank("WorkflowBinding") <= rank("WorkflowRelease") || rank("FutureWorkflowThing") == rank("Workflow") {
 		t.Fatal("workflow substring affects ordering")
+	}
+}
+
+type inventoryDiscovery struct{ *discoveryfake.FakeDiscovery }
+
+func (d inventoryDiscovery) ServerPreferredResources() ([]*metav1.APIResourceList, error) {
+	return []*metav1.APIResourceList{{GroupVersion: "openchoreo.dev/v1alpha1", APIResources: []metav1.APIResource{
+		{Name: "workflowruns", Kind: "WorkflowRun", Namespaced: true, Verbs: metav1.Verbs{"list"}},
+		{Name: "renderedreleases", Kind: "RenderedRelease", Namespaced: true, Verbs: metav1.Verbs{"list"}},
+		{Name: "projects", Kind: "Project", Namespaced: true, Verbs: metav1.Verbs{"list"}},
+	}}}, nil
+}
+func TestDiscoveryInventoriesExcludedObjectsWithoutExportingBodies(t *testing.T) {
+	resources, err := Discover(inventoryDiscovery{&discoveryfake.FakeDiscovery{Fake: &ktesting.Fake{}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[schema.GroupVersionResource]string{{Version: "v1", Resource: "secrets"}: "SecretList"}
+	objects := []runtime.Object{obj("v1", "Namespace", "", "acme")}
+	for _, r := range resources {
+		kinds[r.GVR] = r.Kind + "List"
+		objects = append(objects, obj(r.GVR.GroupVersion().String(), r.Kind, "acme", "example"))
+		if (r.Kind != "Project") != r.InventoryOnly {
+			t.Fatal("discovery exclusion missing", r.Kind)
+		}
+	}
+	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), kinds, objects...)
+	a, err := Export(context.Background(), c, resources, []string{"acme"})
+	if err != nil || len(a.Payload.Entries) != 2 || len(a.Payload.Skipped) != 2 {
+		t.Fatalf("entries=%d skipped=%d err=%v", len(a.Payload.Entries), len(a.Payload.Skipped), err)
+	}
+	for _, s := range a.Payload.Skipped {
+		if s.Name != "example" || s.Reason != "run or controller-rendered kind" {
+			t.Fatal(s)
+		}
 	}
 }

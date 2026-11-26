@@ -52,7 +52,7 @@ func TestRestoreOrderDryRunIdempotent(t *testing.T) {
 	g := schema.GroupVersion{Group: "openchoreo.dev", Version: "v1alpha1"}
 	entries := []Entry{{Resource: g.WithResource("releasebindings"), Object: obj(g.String(), "ReleaseBinding", "acme", "b")}, {Resource: g.WithResource("components"), Object: obj(g.String(), "Component", "acme", "c")}, {Resource: ns, Object: obj("v1", "Namespace", "", "acme")}, {Resource: g.WithResource("environments"), Object: obj(g.String(), "Environment", "acme", "dev")}}
 	a := New([]string{"acme"}, entries)
-	resources := []Resource{{g.WithResource("releasebindings"), "ReleaseBinding", true}, {g.WithResource("components"), "Component", true}, {g.WithResource("environments"), "Environment", true}}
+	resources := []Resource{{g.WithResource("releasebindings"), "ReleaseBinding", true, false}, {g.WithResource("components"), "Component", true, false}, {g.WithResource("environments"), "Environment", true, false}}
 	kinds := map[schema.GroupVersionResource]string{}
 	for _, r := range resources {
 		kinds[r.GVR] = r.Kind + "List"
@@ -131,7 +131,7 @@ func TestExportOrganizationSecretsAndClusterScope(t *testing.T) {
 	token := obj("v1", "Secret", "acme", "sa-token")
 	token.Object["type"] = "kubernetes.io/service-account-token"
 	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{p: "ProjectList", cp: "ClusterDataPlaneList", n: "NamespaceList", s: "SecretList"}, obj("v1", "Namespace", "", "acme"), secret, token, obj(g.String(), "Project", "acme", "one"), obj(g.String(), "Project", "other", "excluded"), obj(g.String(), "ClusterDataPlane", "", "shared"))
-	a, e := Export(context.Background(), c, []Resource{{p, "Project", true}, {cp, "ClusterDataPlane", false}}, []string{"acme"})
+	a, e := Export(context.Background(), c, []Resource{{p, "Project", true, false}, {cp, "ClusterDataPlane", false, false}}, []string{"acme"})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -139,7 +139,7 @@ func TestExportOrganizationSecretsAndClusterScope(t *testing.T) {
 		t.Fatal(len(a.Payload.Entries))
 	}
 	// Missing organizations may not yet have been provisioned on aep-cp.
-	if absent, e := Export(context.Background(), c, []Resource{{p, "Project", true}}, []string{"missing"}); e != nil || len(absent.Payload.Skipped) != 1 || absent.Payload.Skipped[0].Reason != "absent" {
+	if absent, e := Export(context.Background(), c, []Resource{{p, "Project", true, false}}, []string{"missing"}); e != nil || len(absent.Payload.Skipped) != 1 || absent.Payload.Skipped[0].Reason != "absent" {
 		t.Fatal("missing namespace not recorded", e)
 	}
 	_, _ = c.Resource(s).Namespace("acme").Get(context.Background(), "credentials", metav1.GetOptions{})
