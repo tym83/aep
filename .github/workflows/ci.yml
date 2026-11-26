@@ -27,4 +27,4 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make charts-lint
-      - run: go test ./internal/manifests
+      - run: go test ./internal/manifests ./charts

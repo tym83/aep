@@ -133,3 +133,25 @@ func TestDigestRequirements(t *testing.T) {
 		t.Fatal(out, err)
 	}
 }
+
+func TestChartLint(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm is required for chart tests")
+	}
+	digest := "sha256:" + strings.Repeat("a", 64)
+	for _, tc := range []struct {
+		chart  string
+		values []string
+	}{
+		{"aep-sre-agent", append(agentValues(), "image.digest="+digest, "tokenProxy.image.digest="+digest)},
+		{"aep-llm", []string{"model=test", "apiKeySecret=key"}},
+	} {
+		args := []string{"lint", "--strict", "./" + tc.chart}
+		for _, v := range tc.values {
+			args = append(args, "--set", v)
+		}
+		if out, err := exec.Command("helm", args...).CombinedOutput(); err != nil {
+			t.Fatalf("%s: %v: %s", tc.chart, err, out)
+		}
+	}
+}
