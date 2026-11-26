@@ -102,3 +102,16 @@ func TestEscapedEvidenceLengthRejectedBeforeStorage(t *testing.T) {
 		}
 	}
 }
+func TestOAuthPermanentFailureIsTerminalAndRedacted(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(`{"error":"invalid_client","error_description":"SECRET"}`))
+	}))
+	defer srv.Close()
+	h := HTTP{BaseURL: srv.URL, Client: OAuthClient(context.Background(), srv.URL+"/token", "id", "secret")}
+	err := h.Do(context.Background(), "GET", "/api", "", nil, nil)
+	if permanent(err) != 401 || strings.Contains(err.Error(), "SECRET") {
+		t.Fatal(err)
+	}
+}

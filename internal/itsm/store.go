@@ -72,7 +72,7 @@ type Adapter interface {
 	Deliver(context.Context, Event, string) (string, error)
 }
 
-// Engine serializes deliveries and commits the durable cursor only after success.
+// Engine serializes each subject and records successful or terminal outcomes.
 // A single active process is required; the chart uses Recreate and one replica.
 type Engine struct {
 	Store   Store
@@ -222,6 +222,10 @@ func (e *Engine) Retry(ctx context.Context) error {
 		cm := &list.Items[i]
 		var r Record
 		if err := json.Unmarshal([]byte(cm.Data["state"]), &r); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := r.Event.Validate(); err != nil {
 			errs = append(errs, err)
 			continue
 		}

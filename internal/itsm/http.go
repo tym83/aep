@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,6 +65,10 @@ func (h HTTP) Do(ctx context.Context, method, path, key string, body, out any) e
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
+		}
+		var tokenError *oauth2.RetrieveError
+		if errors.As(err, &tokenError) && tokenError.Response != nil {
+			return &HTTPError{Status: tokenError.Response.StatusCode}
 		}
 		return fmt.Errorf("remote transport or OAuth token request failed")
 	}

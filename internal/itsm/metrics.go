@@ -20,7 +20,7 @@ func MetricsHandler(engines ...*Engine) http.Handler {
 			}
 			for _, cm := range list.Items {
 				var record Record
-				if json.Unmarshal([]byte(cm.Data["state"]), &record) != nil {
+				if json.Unmarshal([]byte(cm.Data["state"]), &record) != nil || record.Event.Validate() != nil {
 					counts["corrupt"]++
 					continue
 				}

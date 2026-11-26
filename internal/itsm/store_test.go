@@ -80,6 +80,12 @@ func TestIndependentSubjectsAndCleanup(t *testing.T) {
 	if err := engine.Store.Client.Create(ctx, bad); err != nil {
 		t.Fatal(err)
 	}
+	bad.Name = "invalid-envelope"
+	bad.ResourceVersion = ""
+	bad.Data["state"] = "{}"
+	if err := engine.Store.Client.Create(ctx, bad); err != nil {
+		t.Fatal(err)
+	}
 	if engine.Retry(ctx) == nil {
 		t.Fatal("corruption not reported")
 	}
