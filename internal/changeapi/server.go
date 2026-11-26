@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -191,7 +192,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 	if apierrors.IsAlreadyExists(e) {
 		existing := &api.ChangeRequest{}
 		if getErr := s.Client.Get(r.Context(), client.ObjectKeyFromObject(cr), existing); getErr != nil {
-			writeError(w, http.StatusInternalServerError, "cannot read the existing change")
+			storageError(w, "cannot read the existing change", getErr)
 			return
 		}
 		if existing.Annotations[annotationIdempotencyHash] != hash {
@@ -202,7 +203,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e != nil {
-		writeError(w, http.StatusInternalServerError, "cannot persist the change")
+		storageError(w, "cannot persist the change", e)
 		return
 	}
 	writeJSON(w, http.StatusCreated, view(cr))
@@ -221,7 +222,7 @@ func (s *Server) readChange(w http.ResponseWriter, r *http.Request) (*api.Change
 		return nil, false
 	}
 	if e != nil {
-		writeError(w, http.StatusInternalServerError, "cannot read the change")
+		storageError(w, "cannot read the change", e)
 		return nil, false
 	}
 	return cr, true
@@ -315,7 +316,7 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusPreconditionFailed, "the change was modified; re-read it and decide again")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, "cannot record the decision")
+		storageError(w, "cannot record the decision", e)
 		return
 	}
 	writeJSON(w, http.StatusOK, view(cr))
@@ -382,7 +383,7 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if e != nil {
-			writeError(w, http.StatusInternalServerError, "cannot record the note")
+			storageError(w, "cannot record the note", e)
 			return
 		}
 		writeJSON(w, http.StatusCreated, view(cr))
@@ -409,6 +410,22 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// storageError logs a failed Kubernetes call and answers without leaking
+// cluster details. Forbidden means the deployment does not cover the
+// organization's namespace (an operator misconfiguration, not a client error);
+// Invalid carries schema validation messages that are safe to return.
+func storageError(w http.ResponseWriter, msg string, e error) {
+	slog.Error(msg, "error", e)
+	switch {
+	case apierrors.IsForbidden(e):
+		writeError(w, http.StatusServiceUnavailable, msg+": the change service is not configured for this organization")
+	case apierrors.IsInvalid(e):
+		writeError(w, http.StatusBadRequest, msg+": "+e.Error())
+	default:
+		writeError(w, http.StatusInternalServerError, msg)
+	}
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
