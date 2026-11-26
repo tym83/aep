@@ -45,7 +45,8 @@ jobs:
           go-version-file: go.mod
       - run: bash tools/check-argocd.sh
       - run: helm repo add gitlab https://charts.gitlab.io && helm dependency build charts/aep-gitlab
-      - run: make charts-lint
+      - name: Lint and render own charts (including MCP TLS and ingress modes)
+        run: make charts-lint
       - run: go test ./internal/manifests ./charts
 
   airgap:

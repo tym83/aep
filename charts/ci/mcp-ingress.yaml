@@ -1,0 +1,11 @@
+tls:
+  issuerRef:
+    name: ""
+  terminationProxy: true
+ingress:
+  enabled: true
+  className: nginx
+  host: mcp.example.org
+  tls:
+    - hosts: [mcp.example.org]
+      secretName: mcp-ingress

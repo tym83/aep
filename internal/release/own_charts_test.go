@@ -18,7 +18,7 @@ func TestOwnChartVersions(t *testing.T) {
 	}
 	for _, p := range paths {
 		t.Run(filepath.Base(filepath.Dir(p)), func(t *testing.T) {
-			values := LocalValues("")
+			values := LocalValues(filepath.Base(filepath.Dir(p)))
 			values["global"] = map[string]any{"aepVersion": "sha-1234567"}
 			rendered, err := render(context.Background(), filepath.Dir(p), "", values)
 			if err != nil {
