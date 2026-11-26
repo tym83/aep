@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 )
@@ -15,11 +17,12 @@ import (
 var ErrFull = errors.New("audit spool capacity exceeded")
 
 type state struct {
-	Stream   string            `json:"stream"`
-	Sequence uint64            `json:"sequence"`
-	Head     string            `json:"head"`
-	Pending  []Event           `json:"pending"`
-	Seen     map[string]string `json:"seen"`
+	Stream      string            `json:"stream"`
+	Sequence    uint64            `json:"sequence"`
+	Head        string            `json:"head"`
+	Pending     []Event           `json:"pending"`
+	DeleteAfter map[string]uint64 `json:"deleteAfter,omitempty"`
+	Seen        map[string]string `json:"seen"`
 }
 type Spool struct {
 	mu    sync.Mutex
@@ -73,12 +76,12 @@ func Open(dir, stream string, maxBytes int) (*Spool, error) {
 	return s, nil
 }
 func (s *Spool) Close() error { return s.lock.Close() }
-func (s *Spool) save(st state) error {
+func (s *Spool) save(st state, enforceCap bool) error {
 	b, err := json.Marshal(st)
 	if err != nil {
 		return err
 	}
-	if len(b) > s.max {
+	if enforceCap && len(b) > s.max {
 		return ErrFull
 	}
 	f, err := os.OpenFile(filepath.Join(s.dir, "state.tmp"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
@@ -98,12 +101,10 @@ func (s *Spool) save(st state) error {
 	if err = os.Rename(f.Name(), filepath.Join(s.dir, "state.json")); err != nil {
 		return err
 	}
-	d, err := os.Open(s.dir)
+	err = syncDirectory(s.dir)
 	if err != nil {
-		return err
+		log.Fatalf("audit spool directory fsync failed: %v", err)
 	}
-	err = d.Sync()
-	d.Close()
 	// A directory fsync failure is fatal: the caller must restart, not reuse old state.
 	s.state = st
 	return err
@@ -118,6 +119,10 @@ func (s *Spool) Observe(key, revision string, events []Event) error {
 	}
 	st := s.state
 	st.Pending = append([]Event(nil), st.Pending...)
+	st.DeleteAfter = map[string]uint64{}
+	for k, v := range s.state.DeleteAfter {
+		st.DeleteAfter[k] = v
+	}
 	st.Seen = map[string]string{}
 	for k, v := range s.state.Seen {
 		st.Seen[k] = v
@@ -130,8 +135,14 @@ func (s *Spool) Observe(key, revision string, events []Event) error {
 	}
 	if key != "" {
 		st.Seen[key] = revision
+		delete(st.DeleteAfter, key)
+		for _, e := range events {
+			if strings.HasSuffix(e.Action, ".deleted") {
+				st.DeleteAfter[key] = st.Sequence
+			}
+		}
 	}
-	return s.save(st)
+	return s.save(st, true)
 }
 func (s *Spool) Pending() []Event {
 	s.mu.Lock()
@@ -147,7 +158,19 @@ func (s *Spool) Ack(last uint64) error {
 		i++
 	}
 	st.Pending = st.Pending[i:]
-	return s.save(st)
+	st.Seen = map[string]string{}
+	st.DeleteAfter = map[string]uint64{}
+	for k, v := range s.state.Seen {
+		if seq, ok := s.state.DeleteAfter[k]; !ok || seq > last {
+			st.Seen[k] = v
+		}
+	}
+	for k, v := range s.state.DeleteAfter {
+		if v > last {
+			st.DeleteAfter[k] = v
+		}
+	}
+	return s.save(st, false)
 }
 
 type Sink interface {
@@ -166,10 +189,30 @@ func (s *Spool) Flush(ctx context.Context, sinks []Sink) error {
 	if len(p) > 100 {
 		p = p[:100]
 	}
+	var failures []error
 	for _, sink := range sinks {
 		if err := sink.Send(ctx, p); err != nil {
-			return err
+			failures = append(failures, err)
 		}
 	}
+	if len(failures) > 0 {
+		return errors.Join(failures...)
+	}
 	return s.Ack(p[len(p)-1].Sequence)
+}
+
+var syncDirectory = func(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
+}
+
+func (s *Spool) StateSize() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, _ := json.Marshal(s.state)
+	return len(b), s.max
 }

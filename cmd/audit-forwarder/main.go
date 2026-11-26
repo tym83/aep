@@ -132,6 +132,8 @@ func run() error {
 			}
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		size, cap := s.StateSize()
+		fmt.Fprintf(w, "aep_audit_state_bytes %d\naep_audit_state_capacity_bytes %d\n", size, cap)
 		fmt.Fprintf(w, "aep_audit_pending_events %d\naep_audit_oldest_pending_seconds %f\n", len(p), age)
 	})
 	srv := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, MaxHeaderBytes: 16384, TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12}}
