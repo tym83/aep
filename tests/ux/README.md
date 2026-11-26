@@ -13,8 +13,8 @@ target; record assistance and continue only with participant consent.
 | Approver | Pending change by another person | Review target and diff; approve; inspect status; reject a second change; attempt own approval | Independent approval recorded; self-approval denied; rejection visible | 5 min |
 | Admin | Organization access page | Create restricted role binding; verify own access; attempt equivalent action in other organization | Own restricted binding works; cross-org modification denied | 8 min |
 | Auditor | Portal home | Inspect services, changes, compliance and costs; look for write controls; attempt write by API | Authorized reads work; unauthorized writes denied | 5 min |
-| Finance | Costs page | Select last month, project and service; inspect totals; attempt service access | Costs understandable; record actual extra access as a discrepancy | 5 min |
-| Breakglass | Incident and emergency request | Request bounded access; second security on-call user approves; inspect Applied condition | Recorded/NotImplemented limitation explicit; no claim that access was granted | 8 min |
+| Finance | Costs page | Select last month, project and service; inspect totals; attempt service access | Costs understandable; services/changes/compliance denied; individual change audit records follow the documented member contract | 5 min |
+| Breakglass | Incident and emergency request | Request bounded access; second security on-call user approves; inspect Applied condition | Applied=Recorded limitation explicit; no claim that access was granted | 8 min |
 | Security | Compliance page | Inspect violation; request exception with expiry; review emergency audit evidence | Owner, expiry and approval trace understandable | 8 min |
 | Datacenter operator | Machine inventory | Review unknown machine; request approval and decommission | No unapproved provisioning; storage risk visible | 10 min |
 
@@ -50,3 +50,13 @@ sum times 2.5. Keep task-specific responses separate from SUS.
 Report completion rate, median time and assistance rate per role. Preserve
 individual failures; a mean score must not hide isolation or authorization
 failures. Unsupported tasks are blocked, not passed.
+
+## Fixture lifecycle
+
+Use a distinct run id in names and all change justifications. User roles cannot
+delete OpenChoreo application objects. A moderator uses the dedicated cleanup
+platform identity or the configured aep-cp kubeconfig for exact run-owned
+nonprod objects only. Remove production bindings first through a developer's
+`decommission` request approved by a distinct approver. Never delete
+ChangeRequests; retain them as audit evidence. Do not report the breakglass
+record as a temporary grant: grant execution is a documented product gap.

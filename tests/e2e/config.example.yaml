@@ -1,8 +1,52 @@
-# Keep actual endpoints, credentials and helper scripts outside the repository.
+# Copy to a private file. All addresses below are deliberately non-routable.
 endpoints:
   read: https://read.example.invalid
+  change: https://change.example.invalid
   openchoreo: https://openchoreo.example.invalid
-tokenCommand: [/absolute/path/to/token-helper]
+  portal: https://portal.example.invalid
+  # Full MCP endpoint, including /mcp. Omit to skip MCP cells explicitly.
+  # mcp: https://mcp.example.invalid/mcp
+tokenCommand: [/absolute/path/to/oidc-token-helper]
+# A Backstage user token, not another copy of the OIDC access token.
+portalTokenCommand: [/absolute/path/to/backstage-token-helper]
+cleanup:
+  # Dedicated OpenChoreo platform identity; helper receives an empty username.
+  tokenCommand: [/absolute/path/to/cleanup-token-helper]
+  # Used only when tokenCommand is absent.
+  # aepcpKubeconfig: /private/path/aep-cp.yaml
+# managementKubeconfig: /private/path/management.yaml
+timeoutSeconds: 900
+resources:
+  project: acceptance
+  resourceType: cozystack-postgres
+  environment: dev
+  prodEnvironment: prod
+  parameters: {version: v17, database: acceptance, username: acceptance}
+  # Use valid specs matching your installed cluster types. Template variables
+  # bind the component to the run's project and resource; no existing app is edited.
+  componentSpec:
+    owner: {projectName: '{project}'}
+    componentType: {kind: ClusterComponentType, name: deployment/service}
+    parameters: {}
+  secretSpec:
+    secretStores: []
+    data: []
+  # Optional schema-specific payloads for protected-object denial probes:
+  # protectedSpecs:
+  #   create-environments: {dataPlaneRef: {kind: DataPlane, name: nonprod}}
+  #   create-dataplanes: {planeID: '{name}'}
+  #   create-resourcetypes: {workload: {}}
+  # Routes vary by OpenChoreo release. Set the actual observer/API routes.
+  # {environment} is substituted with dev or prod for the two logs cells.
+  logsPath: /api/v1/namespaces/{org}/projects/{project}/components/{component}/logs?environment={environment}
+  outputsPath: /api/v1/namespaces/{org}/resourcereleasebindings/{resource}-{environment}
+  # Dot paths in the outputs response. Secret references are acceptable;
+  # values are checked for presence and are never printed.
+  outputFields: [status.outputs.host, status.outputs.port, status.outputs.username, status.outputs.password]
+network:
+  image: busybox:1.37.0
+  # Literal IP:port reachable from A; configure with your stand addresses.
+  # controlAddress: 192.0.2.1:443
 organizations:
   - name: organization-a
     users:
@@ -12,7 +56,24 @@ organizations:
       admin: a-admin
       auditor: a-auditor
       finance: a-finance
-      breakglass: a-breakglass
+      breakglass: a-breakglass-only
+      # CanCreate requires developer/platform/admin in addition to breakglass.
+      breakglass-requester: a-developer-breakglass
+      security-oncall: a-security-oncall
+    # Log reads should target a running pre-provisioned app in dev and prod.
+    # logsProject: existing-project
+    # logsComponent: existing-component
+    # tierKubeconfig: /private/path/a-nonprod-user.yaml
+    # probeNamespace: acceptance
   - name: organization-b
     users:
       developer: b-developer
+      approver: b-approver
+    # Log reads should target a running pre-provisioned app in dev and prod.
+    # logsProject: existing-project
+    # logsComponent: existing-component
+    # tierKubeconfig: /private/path/b-nonprod-user.yaml
+    # probeNamespace: acceptance
+    # postgresAddress: 192.0.2.2:5432
+    # apiAddress: 192.0.2.3:6443
+    # leakMarkers: [existing-private-project, existing-private-service]

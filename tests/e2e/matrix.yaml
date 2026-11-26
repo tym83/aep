@@ -1,28 +1,682 @@
-roles: [developer, platform, approver, admin, auditor, finance, breakglass, other, anonymous]
-actions:
-  services:
-    endpoint: read
-    path: /v1/organizations/{org}/services
-    allow: [developer, platform, approver, admin, auditor, finance]
-  changes:
-    endpoint: read
-    path: /v1/organizations/{org}/changes
-    allow: [approver, auditor]
-  compliance:
-    endpoint: read
-    path: /v1/organizations/{org}/compliance
-    allow: [developer, platform, admin, auditor]
-  costs:
-    endpoint: read
-    path: /v1/organizations/{org}/costs?from=2026-01-01&to=2026-02-01
-    allow: [developer, platform, admin, auditor, finance]
-  projects:
-    endpoint: openchoreo
-    path: /api/v1/namespaces/{org}/projects
-    allow: [developer, platform, approver, admin, auditor]
-  prod-logs:
-    pending: DESIGN delegates production log access to organization policy.
-  finance-openchoreo:
-    pending: Operator does not generate a finance AuthzRole.
-  breakglass-grant:
-    pending: Actual temporary grant is not implemented; recorded changes do not grant access.
+{
+  "roles": [
+    "developer",
+    "platform",
+    "approver",
+    "admin",
+    "auditor",
+    "finance",
+    "breakglass",
+    "other",
+    "anonymous"
+  ],
+  "actions": {
+    "read-services": {
+      "endpoint": "read",
+      "path": "/v1/organizations/{org}/services",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "read-changes": {
+      "endpoint": "read",
+      "path": "/v1/organizations/{org}/changes",
+      "method": "GET",
+      "allow": [
+        "approver",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "read-compliance": {
+      "endpoint": "read",
+      "path": "/v1/organizations/{org}/compliance",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "read-costs": {
+      "endpoint": "read",
+      "path": "/v1/organizations/{org}/costs?from=2026-01-01&to=2026-02-01",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor",
+        "finance"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "me": {
+      "endpoint": "read",
+      "path": "/v1/me",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor",
+        "finance",
+        "breakglass"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "projects": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/projects",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "create-project": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/projects",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "deploymentPipelineRef": {
+            "name": "default"
+          }
+        }
+      }
+    },
+    "create-resource": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/resources",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "owner": {
+            "projectName": "{project}"
+          },
+          "type": {
+            "kind": "ClusterResourceType",
+            "name": "{resourceType}"
+          },
+          "parameters": {
+            "version": "v17",
+            "database": "acceptance",
+            "username": "acceptance"
+          }
+        }
+      }
+    },
+    "create-component": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/components",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "owner": {
+            "projectName": "{project}"
+          }
+        }
+      }
+    },
+    "bind-nonprod": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/resourcereleasebindings",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "environment": "{environment}",
+          "owner": {
+            "projectName": "{project}",
+            "resourceName": "{resource}"
+          },
+          "resourceRelease": "{resourceRelease}"
+        }
+      }
+    },
+    "bind-prod-direct": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/resourcereleasebindings",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "environment": "{prod}",
+          "owner": {
+            "projectName": "{project}",
+            "resourceName": "{resource}"
+          },
+          "resourceRelease": "{resourceRelease}"
+        }
+      }
+    },
+    "create-environments": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/environments",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "dataPlaneRef": {
+            "kind": "DataPlane",
+            "name": "nonprod"
+          }
+        }
+      }
+    },
+    "create-dataplanes": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/dataplanes",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "planeID": "{name}"
+        }
+      }
+    },
+    "create-resourcetypes": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/resourcetypes",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "workload": {}
+        }
+      }
+    },
+    "prod-logs": {
+      "endpoint": "openchoreo",
+      "path": "{logsPath}",
+      "method": "GET",
+      "allow": [],
+      "success": [
+        200
+      ]
+    },
+    "nonprod-logs": {
+      "endpoint": "openchoreo",
+      "path": "{nonprodLogsPath}",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "change-create-promote": {
+      "endpoint": "change",
+      "path": "/v1/changes",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform",
+        "admin"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "organization": "{org}",
+        "operation": "promote",
+        "model": "normal",
+        "target": {
+          "kind": "Resource",
+          "name": "{resource}",
+          "project": "{project}",
+          "environment": "{prod}"
+        },
+        "desired": {
+          "releaseName": "{resourceRelease}"
+        },
+        "justification": "Acceptance matrix {run} {name}"
+      }
+    },
+    "change-read": {
+      "endpoint": "change",
+      "path": "/v1/changes/{org}/{change}",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor",
+        "finance",
+        "breakglass"
+      ],
+      "success": [
+        200
+      ],
+      "fixture": "change"
+    },
+    "change-note": {
+      "endpoint": "change",
+      "path": "/v1/changes/{org}/{change}/notes",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor",
+        "finance",
+        "breakglass"
+      ],
+      "success": [
+        201
+      ],
+      "body": {
+        "text": "Acceptance note {run} {name}"
+      },
+      "fixture": "change"
+    },
+    "approve-own": {
+      "endpoint": "change",
+      "path": "/v1/changes/{org}/{change}/decision",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200
+      ],
+      "body": {
+        "decision": "approve"
+      },
+      "fixture": "self"
+    },
+    "approve-other": {
+      "endpoint": "change",
+      "path": "/v1/changes/{org}/{change}/decision",
+      "method": "POST",
+      "allow": [
+        "approver"
+      ],
+      "success": [
+        200
+      ],
+      "body": {
+        "decision": "approve"
+      },
+      "fixture": "decision"
+    },
+    "portal-read-services": {
+      "endpoint": "portal",
+      "path": "/v1/organizations/{org}/services",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "portal-read-changes": {
+      "endpoint": "portal",
+      "path": "/v1/organizations/{org}/changes",
+      "method": "GET",
+      "allow": [
+        "approver",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "portal-read-compliance": {
+      "endpoint": "portal",
+      "path": "/v1/organizations/{org}/compliance",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "portal-read-costs": {
+      "endpoint": "portal",
+      "path": "/v1/organizations/{org}/costs?from=2026-01-01&to=2026-02-01",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor",
+        "finance"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "portal-me": {
+      "endpoint": "portal",
+      "path": "/v1/me",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor",
+        "finance",
+        "breakglass"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "portal-change-create-promote": {
+      "endpoint": "portal",
+      "path": "/v1/changes",
+      "method": "POST",
+      "allow": [
+        "developer",
+        "platform",
+        "admin"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "organization": "{org}",
+        "operation": "promote",
+        "model": "normal",
+        "target": {
+          "kind": "Resource",
+          "name": "{resource}",
+          "project": "{project}",
+          "environment": "{prod}"
+        },
+        "desired": {
+          "releaseName": "{resourceRelease}"
+        },
+        "justification": "Acceptance matrix {run} {name}"
+      }
+    },
+    "portal-change-read": {
+      "endpoint": "portal",
+      "path": "/v1/changes/{org}/{change}",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "approver",
+        "admin",
+        "auditor",
+        "finance",
+        "breakglass"
+      ],
+      "success": [
+        200
+      ],
+      "fixture": "change"
+    },
+    "portal-approve-own": {
+      "endpoint": "portal",
+      "path": "/v1/changes/{org}/{change}/decision",
+      "method": "POST",
+      "allow": [],
+      "success": [
+        200
+      ],
+      "body": {
+        "decision": "approve"
+      },
+      "fixture": "self"
+    },
+    "portal-approve-other": {
+      "endpoint": "portal",
+      "path": "/v1/changes/{org}/{change}/decision",
+      "method": "POST",
+      "allow": [
+        "approver"
+      ],
+      "success": [
+        200
+      ],
+      "body": {
+        "decision": "approve"
+      },
+      "fixture": "decision"
+    },
+    "mcp-infra_changes": {
+      "endpoint": "mcp",
+      "path": "infra_changes",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "mcp-managed_service_state": {
+      "endpoint": "mcp",
+      "path": "managed_service_state",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "mcp-cluster_health": {
+      "endpoint": "mcp",
+      "path": "cluster_health",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "mcp-quota_and_denials": {
+      "endpoint": "mcp",
+      "path": "quota_and_denials",
+      "method": "GET",
+      "allow": [
+        "developer",
+        "platform",
+        "admin",
+        "auditor"
+      ],
+      "success": [
+        200
+      ]
+    },
+    "create-application-secret": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/secretreferences",
+      "method": "POST",
+      "allow": [
+        "platform"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {}
+    },
+    "create-authzrole": {
+      "endpoint": "openchoreo",
+      "path": "/api/v1/namespaces/{org}/authzroles",
+      "method": "POST",
+      "allow": [
+        "admin"
+      ],
+      "success": [
+        200,
+        201,
+        202
+      ],
+      "body": {
+        "metadata": {
+          "name": "{name}",
+          "labels": {
+            "aep.aenix.io/e2e-run": "{run}"
+          }
+        },
+        "spec": {
+          "actions": [
+            "project:view"
+          ]
+        }
+      }
+    }
+  }
+}
