@@ -1,0 +1,21 @@
+# Cozystack lets tenant-root pods (including the root ingress controller) reach
+# only tenant namespaces. AEP's public APIs live in aep-system, so the root
+# ingress controller needs an explicit egress path to them: API port 8080 and
+# the cert-manager HTTP-01 solver port 8089.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: aep-root-ingress-to-aep-system
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: tenant-root
+      cozystack.io/service: ingress
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: aep-system
+      toPorts:
+        - ports:
+            - {port: "8080", protocol: TCP}
+            - {port: "8089", protocol: TCP}
