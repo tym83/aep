@@ -27,7 +27,15 @@ const maxLogBytes = 4 << 20
 // there. This route evaluates logs:view for the exact environment with the
 // caller's own token first and only then reads the logs as the caller.
 func WithOpenChoreo(baseURL string, httpClient *http.Client) func(*Server) {
+	return WithOpenChoreoHost(baseURL, "", httpClient)
+}
+
+// WithOpenChoreoHost is WithOpenChoreo for an internal address of the
+// OpenChoreo gateway that routes by host name. The public entry point denies
+// the direct pod log route, so the read API must reach OpenChoreo past it.
+func WithOpenChoreoHost(baseURL, host string, httpClient *http.Client) func(*Server) {
 	return func(s *Server) {
+		s.openChoreoHost = host
 		s.openChoreoURL = strings.TrimRight(baseURL, "/")
 		s.openChoreo = httpClient
 		if s.openChoreo == nil {
@@ -167,6 +175,9 @@ func (s *Server) choreo(ctx context.Context, token, method, path string, body an
 		return 0, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if s.openChoreoHost != "" {
+		req.Host = s.openChoreoHost
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

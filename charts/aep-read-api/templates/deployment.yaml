@@ -31,6 +31,9 @@ spec:
             {{- with .Values.openchoreoUrl }}
             - {{ printf "--openchoreo-url=%s" . | quote }}
             {{- end }}
+            {{- with .Values.openchoreoHost }}
+            - {{ printf "--openchoreo-host=%s" . | quote }}
+            {{- end }}
           {{- if .Values.costCredentialsSecret }}
           envFrom:
             - secretRef:

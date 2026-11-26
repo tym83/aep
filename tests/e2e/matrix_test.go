@@ -60,6 +60,10 @@ func (s *suite) matrix() {
 					}
 					if role == "anonymous" {
 						expected = []int{401}
+						// The entry point denies the direct log route before authentication.
+						if strings.HasPrefix(name, "direct-") {
+							expected = []int{401, 403}
+						}
 					}
 					unique := x.name("cell")
 					body := x.expand(a.Body, target, unique)

@@ -190,7 +190,11 @@ no `logs:view` for the environment; 404 unknown environment, binding or pod;
 
 Deny the direct OpenChoreo route at the OpenChoreo API entry point (path
 `/api/v1/namespaces/*/releasebindings/*/k8sresources/logs`) so this route is
-the only way to read pod logs.
+the only way to read pod logs. The read API must then reach OpenChoreo past
+that entry: set `openchoreoUrl` to an internal address of the OpenChoreo
+gateway (for example its Service) and `openchoreoHost` to the public API host
+the gateway routes by. Prefer an internal TLS address where one exists; the
+caller's token travels on this hop.
 
 ## Existing change API
 

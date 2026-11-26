@@ -120,3 +120,31 @@ func TestLogsDisabledWithoutOpenChoreo(t *testing.T) {
 		t.Fatalf("unconfigured: %d", w.Code)
 	}
 }
+
+func TestLogsUseTheConfiguredHost(t *testing.T) {
+	s, _, c, sign := fixture(t)
+	withEnvironments(t, c)
+	hosts := map[string]bool{}
+	inner, _ := fakeChoreo(t, map[string]bool{"acme/dev": true}, "logdemo")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hosts[r.Host] = true
+		r2, _ := http.NewRequest(r.Method, inner.URL+r.URL.RequestURI(), r.Body)
+		r2.Header = r.Header
+		resp, err := http.DefaultClient.Do(r2)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer resp.Body.Close()
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(server.Close)
+	WithOpenChoreoHost(server.URL, "api.example.org", nil)(s)
+	if w := call(s, "/v1/organizations/acme/projects/logdemo/components/heartbeat/environments/dev/logs", sign([]string{"aep-acme-developer"}, nil)); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if len(hosts) != 1 || !hosts["api.example.org"] {
+		t.Fatalf("hosts %v", hosts)
+	}
+}
