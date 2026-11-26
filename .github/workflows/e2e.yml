@@ -1,0 +1,79 @@
+name: Manual acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      run_ui:
+        description: Run browser journeys as well as the API suite
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: acceptance-stand
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    # The protected environment supplies approval and narrowly scoped secrets.
+    # Runner must have network reachability to the disposable acceptance stand.
+    runs-on: ubuntu-latest
+    environment: acceptance
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: azure/setup-kubectl@v4
+      - name: Materialize private configuration
+        env:
+          CONFIG: ${{ secrets.AEP_E2E_CONFIG }}
+          FILES: ${{ secrets.AEP_E2E_FILES }}
+          UI_ENV: ${{ secrets.AEP_UI_ENV }}
+        run: |
+          umask 077
+          python3 - <<'PY'
+          import base64, json, os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'aep-acceptance'
+          root.mkdir(mode=0o700, exist_ok=True)
+          (root / 'config.yaml').write_text(os.environ['CONFIG'].replace('${E2E_DIR}', str(root)))
+          # JSON map: basename -> base64 bytes. Helpers and kubeconfigs stay private.
+          for name, value in json.loads(os.environ.get('FILES') or '{}').items():
+              if pathlib.Path(name).name != name or name in ('', '.', '..', 'config.yaml', 'ui.json'):
+                  raise ValueError('invalid private file name')
+              path = root / name
+              path.write_bytes(base64.b64decode(value, validate=True))
+              path.chmod(0o700)
+          (root / 'ui.json').write_text(os.environ.get('UI_ENV') or '{}')
+          PY
+      - name: API matrix and role journeys
+        run: go test -v -count=1 -timeout=100m -tags e2e ./tests/e2e -config "$RUNNER_TEMP/aep-acceptance/config.yaml"
+      - name: Install browser test dependencies
+        if: ${{ inputs.run_ui }}
+        working-directory: tests/ui
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Typecheck and install Chromium
+        if: ${{ inputs.run_ui }}
+        working-directory: tests/ui
+        run: |
+          npx tsc --noEmit
+          npx playwright install --with-deps chromium
+      - name: Browser journeys
+        if: ${{ inputs.run_ui }}
+        working-directory: tests/ui
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'aep-acceptance'
+          env = dict(os.environ)
+          for key, value in json.loads((root / 'ui.json').read_text()).items():
+              if not key.startswith('AEP_') or not isinstance(value, str):
+                  raise ValueError('invalid UI environment entry')
+              env[key] = value.replace('${E2E_DIR}', str(root))
+          subprocess.run(['npm', 'test'], env=env, check=True)
+          PY
+      - name: Remove private files
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/aep-acceptance"
