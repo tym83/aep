@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/google/cel-go/cel"
 	errors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -84,5 +85,8 @@ func TestOrganizationReservesExternalEnvironmentBeforeAttach(t *testing.T) {
 	}
 	if prod.GetAnnotations()["aep.aenix.io/change-model"] != "required" {
 		t.Fatal("local environment lost change model")
+	}
+	if isProd, _, _ := unstructured.NestedBool(prod.Object, "spec", "isProduction"); !isProd {
+		t.Fatal("prod-tier environment not marked as production")
 	}
 }

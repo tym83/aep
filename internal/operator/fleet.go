@@ -397,7 +397,7 @@ func fleetDataPlane(o *api.Organization, ec *api.ExternalCluster, ca []byte) *un
 	return obj(ocAPI, "DataPlane", o.Name, fleetDataPlaneName(ec), M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(ca)}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
 }
 func fleetEnvironment(o *api.Organization, ec *api.ExternalCluster) *unstructured.Unstructured {
-	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": fleetDataPlaneName(ec)}})
+	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": fleetDataPlaneName(ec)}, "isProduction": ec.Spec.Tier == "prod"})
 	for _, decl := range o.Spec.Environments {
 		if decl.Name == ec.Spec.Environment {
 			env.SetAnnotations(map[string]string{"aep.aenix.io/change-model": decl.ChangeModel})
