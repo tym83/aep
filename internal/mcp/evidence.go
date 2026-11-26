@@ -13,8 +13,10 @@ import (
 
 	"github.com/tym83/aep/internal/operator"
 	"github.com/tym83/aep/internal/policy"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
@@ -29,8 +31,11 @@ var quotas = resource("", "v1", "resourcequotas")
 var appResources = map[string]string{"Postgres": "postgreses", "Redis": "redises", "Kubernetes": "kuberneteses", "Kafka": "kafkas", "RabbitMQ": "rabbitmqs", "MySQL": "mysqls", "ClickHouse": "clickhouses"}
 
 func (s *Server) list(ctx context.Context, e *Evidence, g schema.GroupVersionResource, ns string) []unstructured.Unstructured {
+	return s.listSelected(ctx, e, g, ns, "")
+}
+func (s *Server) listSelected(ctx context.Context, e *Evidence, g schema.GroupVersionResource, ns, selector string) []unstructured.Unstructured {
 	// Bound backend work as well as output. A partial list is always explicit.
-	list, err := s.Client.Resource(g).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 1000})
+	list, err := s.Client.Resource(g).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 1000, LabelSelector: selector})
 	if err != nil {
 		e.Unavailable = append(e.Unavailable, ns+"/"+g.Resource)
 		return nil
@@ -202,46 +207,63 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 			return e, fmt.Errorf("service must be tier/kind/name within the organization")
 		}
 		ns := operator.TenantNamespace(sc.org, parts[0])
-		service := parts[2]
-		release := strings.ToLower(parts[1]) + "-" + service
-		app, err := s.Client.Resource(resource("apps.cozystack.io", "v1alpha1", appResources[parts[1]])).Namespace(ns).Get(ctx, service, metav1.GetOptions{})
-		if err != nil {
-			return e, fmt.Errorf("service unavailable")
-		}
-		e.Rows = append(e.Rows, project(*app))
-		releaseObj, err := s.Client.Resource(hr).Namespace(ns).Get(ctx, release, metav1.GetOptions{})
+		g := resource("apps.cozystack.io", "v1alpha1", appResources[parts[1]])
+		app, err := s.Client.Resource(g).Namespace(ns).Get(ctx, parts[2], metav1.GetOptions{})
+		var apps []unstructured.Unstructured
 		if err == nil {
-			e.Rows = append(e.Rows, project(*releaseObj))
-		} else {
-			e.Unavailable = append(e.Unavailable, "HelmRelease")
+			apps = []unstructured.Unstructured{*app}
+		} else if apierrors.IsNotFound(err) {
+			if len(validation.IsDNS1123Label(parts[2])) != 0 || len(validation.IsDNS1123Label(sc.org)) != 0 {
+				return e, fmt.Errorf("invalid service label value")
+			}
+			selector := labels.Set{"aep.aenix.io/resource": parts[2], "aep.aenix.io/managed-by": "bridge", "aep.aenix.io/organization": sc.org}.AsSelector().String()
+			apps = s.listSelected(ctx, &e, g, ns, selector)
 		}
-		if parts[1] == "Postgres" {
-			cluster, err := s.Client.Resource(resource("postgresql.cnpg.io", "v1", "clusters")).Namespace(ns).Get(ctx, release, metav1.GetOptions{})
-			if err == nil {
-				e.Rows = append(e.Rows, project(*cluster))
-			} else {
-				e.Unavailable = append(e.Unavailable, "CNPG Cluster")
-			}
-			if s.config.MetricsURL != "" {
-				s.metrics(ctx, &e, sc.org, ns, release)
-			} else {
-				e.Unavailable = append(e.Unavailable, "PVC usage: metrics URL not configured")
-			}
+		if len(apps) == 0 {
+			return e, fmt.Errorf("service unavailable")
 		}
 		backups := s.list(ctx, &e, resource("backups.cozystack.io", "v1alpha1", "backups"), ns)
 		sort.Slice(backups, func(i, j int) bool {
 			return backupTime(backups[j]).Before(backupTime(backups[i]))
 		})
-		foundBackup := false
-		for _, b := range backups {
-			if backupMatches(b, parts[1], service) {
-				foundBackup = true
-				e.Rows = append(e.Rows, project(b))
-				break
+		for _, app := range apps {
+			service := app.GetName()
+			release := strings.ToLower(parts[1]) + "-" + service
+			row := project(app)
+			for _, key := range []string{"project", "environment"} {
+				row[key] = app.GetLabels()["aep.aenix.io/"+key]
 			}
-		}
-		if !foundBackup {
-			e.Unavailable = append(e.Unavailable, "No matching Backup observed")
+			e.Rows = append(e.Rows, row)
+			releaseObj, err := s.Client.Resource(hr).Namespace(ns).Get(ctx, release, metav1.GetOptions{})
+			if err == nil {
+				e.Rows = append(e.Rows, project(*releaseObj))
+			} else {
+				e.Unavailable = append(e.Unavailable, "HelmRelease")
+			}
+			if parts[1] == "Postgres" {
+				cluster, err := s.Client.Resource(resource("postgresql.cnpg.io", "v1", "clusters")).Namespace(ns).Get(ctx, release, metav1.GetOptions{})
+				if err == nil {
+					e.Rows = append(e.Rows, project(*cluster))
+				} else {
+					e.Unavailable = append(e.Unavailable, "CNPG Cluster")
+				}
+				if s.config.MetricsURL != "" {
+					s.metrics(ctx, &e, sc.org, ns, release)
+				} else {
+					e.Unavailable = append(e.Unavailable, "PVC usage: metrics URL not configured")
+				}
+			}
+			foundBackup := false
+			for _, b := range backups {
+				if backupMatches(b, parts[1], service) {
+					foundBackup = true
+					e.Rows = append(e.Rows, project(b))
+					break
+				}
+			}
+			if !foundBackup {
+				e.Unavailable = append(e.Unavailable, "No matching Backup observed")
+			}
 		}
 	case "cluster_health":
 		if !tierOK(a.Tier) {

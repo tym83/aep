@@ -123,7 +123,9 @@ Stateless transport prevents a session from carrying another token's identity.
 | cluster_health(org, tier) | Kamaji TenantControlPlane, KubernetesNodes, VMI conditions and phase, tier quotas, optional guest node pressure |
 | quota_and_denials(org) | ResourceQuota used/hard and recent quota-related FailedCreate/Forbidden events |
 
-`service` is `tier/kind/name`, for example `nonprod/Postgres/orders`. Since/until
+The `managed_service_state` service argument is `tier/Kind/name`. An exact Cozystack application name takes precedence; otherwise `name` resolves an OpenChoreo resource name through bridge labels in the organization’s tier namespace. Resource names and organization selector values must be DNS-1123 labels. Multiple projects or environments may match; each application row includes `project` and `environment` from its labels. Existing evidence limits apply.
+
+Since/until
 are RFC3339, defaulting to the previous day; windows over seven days are rejected.
 Only explicit app kinds are supported. Backend lists are bounded to 1,000 objects
 per resource/namespace and tool work to twenty seconds. Truncated backend lists
