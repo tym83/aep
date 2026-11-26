@@ -246,3 +246,11 @@ of expiration to require a planned trust rotation.
   and Helm rendering do not validate the stand's runtime APIs or CEL admission.
 
 See [known gaps](known-gaps.md) for upstream and credential dependencies.
+
+## External fleet
+
+The optional fleet reconciler runs in the same operator with its own queue.
+See [fleet](fleet.md) for approved assignments, OCM hub isolation, outbound-only
+ManifestWork delivery, bootstrap and readiness gates. Tenant clusters retain the
+existing Flux path. See [VCS](vcs.md) for the optional installation-wide GitLab
+profile; the operator never deploys GitLab per organization.

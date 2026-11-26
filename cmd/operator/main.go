@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"strings"
 )
 
 func main() {
@@ -35,7 +36,10 @@ func run() error {
 	flag.StringVar(&o.RegistryCASecret, "registry-ca-secret", "", "Flux CA Secret in each source namespace")
 	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")
 	flag.StringVar(&o.KyvernoChartURL, "kyverno-chart-url", "oci://ghcr.io/kyverno/charts/kyverno", "Kyverno OCI chart URL; override for air-gap mirror")
-	var mgmt string
+	var mgmt, fleetHub, fleetCharts, fleetGateway string
+	flag.StringVar(&fleetHub, "fleet-hub-config", "", "OCM hub config; empty uses management")
+	flag.StringVar(&fleetCharts, "fleet-chart-dir", "", "Enable fleet using locally staged pinned charts")
+	flag.StringVar(&fleetGateway, "fleet-gateway-url", "", "Externally reachable wss:// OpenChoreo gateway")
 	flag.StringVar(&mgmt, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&o.Namespace, "namespace", "aep-system", "Operator namespace")
 	flag.StringVar(&o.CPSecret, "aepcp-kubeconfig-secret", "", "Management namespace/name Secret, key super-admin.svc")
@@ -91,6 +95,26 @@ func run() error {
 	r.Recorder = mgr.GetEventRecorderFor("aep-operator")
 	if e = r.SetupWithManager(mgr); e != nil {
 		return e
+	}
+	if fleetCharts != "" {
+		if !strings.HasPrefix(fleetGateway, "wss://") {
+			return fmt.Errorf("fleet-gateway-url must use wss://")
+		}
+		hub := r.Management
+		if fleetHub != "" {
+			hc, err := clientcmd.BuildConfigFromFlags("", fleetHub)
+			if err != nil {
+				return err
+			}
+			hub, err = operator.NewCluster(hc)
+			if err != nil {
+				return err
+			}
+		}
+		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: fleetCharts}, Gateway: fleetGateway}
+		if e = ctrl.NewControllerManagedBy(mgr).For(&api.ExternalCluster{}).Complete(fleet); e != nil {
+			return e
+		}
 	}
 	if e = mgr.AddHealthzCheck("healthz", healthz.Ping); e != nil {
 		return e
