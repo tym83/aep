@@ -276,23 +276,12 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			events = append(events, Event{ID: Digest([]string{source, e.AuditID, e.Stage}), Source: source, Time: e.Time, Action: e.Verb, Actor: actor, Resource: fmt.Sprint(e.Object["resource"], "/", e.Object["namespace"], "/", e.Object["name"]), Details: map[string]any{"auditID": e.AuditID, "stage": e.Stage, "user": e.User, "impersonatedUser": e.Impersonated, "objectRef": e.Object, "responseStatus": e.Response, "annotations": e.Annotations}})
 		}
 	case "/openchoreo":
-		// Adapter for the documented structured audit record, not arbitrary pod logs.
-		var e struct {
-			ID       string         `json:"event_id"`
-			Time     string         `json:"event_time"`
-			Action   string         `json:"action"`
-			Result   string         `json:"result"`
-			Actor    map[string]any `json:"actor"`
-			Resource map[string]any `json:"resource"`
-			Request  string         `json:"request_id"`
-		}
-		if json.Unmarshal(b, &e) != nil || e.ID == "" || e.Action == "" || e.Result == "" {
+		e, ok := OpenChoreoRecord(source, b)
+		if !ok {
 			http.Error(w, "expected structured OpenChoreo audit record", 400)
 			return
 		}
-		actor, _ := e.Actor["id"].(string)
-		ns, _ := e.Resource["namespace"].(string)
-		events = append(events, Event{ID: Digest([]string{source, e.ID}), Source: source, Time: e.Time, Action: e.Action, Actor: actor, Organization: ns, Resource: fmt.Sprint(e.Resource["type"], "/", e.Resource["name"]), Details: map[string]any{"actor": e.Actor, "resource": e.Resource, "result": e.Result, "requestID": e.Request}})
+		events = append(events, e)
 	default:
 		w.WriteHeader(404)
 		return

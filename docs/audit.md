@@ -224,10 +224,21 @@ Unauthenticated requests and ordinary reads are not covered. Role changes are
 audited; this does not imply that every internal authorization evaluation emits
 an independent event.
 
-Configure a durable log shipper to extract the JSON audit record and POST it to
-`/openchoreo` with the bearer token, retrying non-2xx responses. The adapter
-accepts `event_id`, `event_time`, `action`, `result`, `actor`, `resource` and
-`request_id`. A shipper deployment is not included. Verify the emitted schema
+OpenChoreo emits these records only with the control-plane value
+`openchoreoApi.config.audit.enabled: true`, which also requires an
+`observabilityPlaneRef`; the records are written to the API pods' stdout with
+the message `AUDIT-LOG`. The forwarder collects them itself: set
+`openchoreoAudit.kubeconfigSecret` to a Secret with key `kubeconfig` for the
+[log-reader identity](../config/audit/openchoreo-log-reader.yaml) on the
+OpenChoreo control-plane cluster. Each newly seen API pod is read from
+`--openchoreo-audit-lookback` (default 10 minutes) before now, reconnects resume
+from the last record, and overlap duplicates are dropped by event ID;
+duplicates across forwarder restarts carry the same ID. Records lost to log
+rotation or pod deletion before collection are not recoverable here.
+Alternatively, a log shipper may POST each record to `/openchoreo` with the
+bearer token. Both paths accept `event_id`, `event_time`, `action`, `result`,
+`actor`, `resource` and `request_id`; `actor.id` carries the human or service
+identity. Verify the emitted schema
 against the stand's pinned **1.4.0-m.3** before enabling: current documentation
 is not a tag-specific emission test. Older wiring gaps are tracked in
 [upstream issue 3343](https://github.com/openchoreo/openchoreo/issues/3343).

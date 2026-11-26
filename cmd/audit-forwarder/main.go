@@ -17,6 +17,7 @@ import (
 	"github.com/tym83/aep/internal/audit"
 	"github.com/tym83/aep/internal/objectstore"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -61,6 +62,12 @@ func run() error {
 	endpoint := flag.String("s3-endpoint", "", "S3 HTTPS URL")
 	bucket := flag.String("s3-bucket", "", "bucket")
 	prefix := flag.String("s3-prefix", "audit", "prefix")
+	ocKubeconfig := flag.String("openchoreo-audit-kubeconfig", "", "kubeconfig of the OpenChoreo control-plane cluster whose API audit records to collect from pod logs; disabled when empty")
+	ocNamespace := flag.String("openchoreo-audit-namespace", "openchoreo-control-plane", "namespace of the OpenChoreo API pods")
+	ocSelector := flag.String("openchoreo-audit-selector", "app.kubernetes.io/component=api-server", "label selector of the OpenChoreo API pods")
+	ocContainer := flag.String("openchoreo-audit-container", "api-server", "OpenChoreo API container")
+	ocSource := flag.String("openchoreo-audit-source", "openchoreo", "event source recorded for collected OpenChoreo records")
+	ocLookback := flag.Duration("openchoreo-audit-lookback", 10*time.Minute, "log window read when a pod is first seen")
 	flag.Parse()
 	if *cert == "" || *key == "" || *credentials == "" || strings.ContainsAny(*stream, "/\\ \t\n") {
 		return fmt.Errorf("TLS certificate, key, credentials file and safe stream ID required")
@@ -118,6 +125,17 @@ func run() error {
 	defer cancel()
 	for _, r := range []string{"changerequests", "organizations"} {
 		go audit.Watch(ctx, c, s, r)
+	}
+	if *ocKubeconfig != "" {
+		ocCfg, e := clientcmd.BuildConfigFromFlags("", *ocKubeconfig)
+		if e != nil {
+			return e
+		}
+		oc, e := kubernetes.NewForConfig(ocCfg)
+		if e != nil {
+			return e
+		}
+		go audit.FollowOpenChoreoAudit(ctx, oc, *ocNamespace, *ocSelector, *ocContainer, *ocSource, *ocLookback, s)
 	}
 	go func() {
 		for ctx.Err() == nil {
