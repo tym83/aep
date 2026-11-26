@@ -77,6 +77,14 @@ gitlab:
   # Not global.pod.labels, which would open the API to every GitLab pod.
   podLabels:
     policy.cozystack.io/allow-to-apiserver: "true"
+  shared-secrets:
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 256Mi}
+  upgradeCheck:
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 500m, memory: 256Mi}
   traefik: {install: false}
   haproxy: {install: false}
   openbao: {install: false}
@@ -97,15 +105,51 @@ gitlab:
     install: false
   registry:
     enabled: false
+  # Explicit limits on every main container: Cozystack tenant LimitRanges give
+  # unset containers small default limits (below GitLab's requests, so Pods are
+  # rejected), and the AEP baseline requires CPU and memory limits.
   gitlab:
     gitaly:
       securityContext:
         seccompProfile: {type: RuntimeDefault}
+      resources:
+        requests: {cpu: 100m, memory: 200Mi}
+        limits: {cpu: "1", memory: 1Gi}
+    gitlab-shell:
+      resources:
+        requests: {cpu: 50m, memory: 64Mi}
+        limits: {cpu: 500m, memory: 256Mi}
+    kas:
+      resources:
+        requests: {cpu: 100m, memory: 256Mi}
+        limits: {cpu: 500m, memory: 512Mi}
+    sidekiq:
+      resources:
+        requests: {cpu: 200m, memory: 1Gi}
+        limits: {cpu: "1500m", memory: 3Gi}
+    migrations:
+      resources:
+        requests: {cpu: 250m, memory: 200Mi}
+        limits: {cpu: "1", memory: 1Gi}
+    gitlab-exporter:
+      resources:
+        requests: {cpu: 50m, memory: 128Mi}
+        limits: {cpu: 500m, memory: 512Mi}
     webservice:
       # Upstream test Pod lacks restricted PSS context. Use external smoke tests.
       helmTests:
         enabled: false
+      resources:
+        requests: {cpu: 300m, memory: 2.5Gi}
+        limits: {cpu: "2", memory: 4Gi}
+      workhorse:
+        resources:
+          requests: {cpu: 100m, memory: 100M}
+          limits: {cpu: "1", memory: 512Mi}
     toolbox:
+      resources:
+        requests: {cpu: 50m, memory: 350M}
+        limits: {cpu: "1", memory: 2Gi}
       backups:
         objectStorage:
           backend: s3
@@ -115,3 +159,6 @@ gitlab:
         cron:
           enabled: true
           schedule: '0 2 * * *'
+          resources:
+            requests: {cpu: 50m, memory: 350M}
+            limits: {cpu: "1", memory: 2Gi}
