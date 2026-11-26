@@ -215,6 +215,10 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 		}
 	}
 	res, e := handler.Apply(ctx, oc, cr)
+	if e == nil && res.Pending {
+		r.setCondition(cr, "Applied", metav1.ConditionFalse, "CleanupPending", res.Message)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, r.save(ctx, cr)
+	}
 	if e == nil {
 		cr.Status.Attempts++
 		reason := res.Reason

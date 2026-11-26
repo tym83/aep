@@ -229,5 +229,5 @@ func (h clusterDetachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *ap
 	if e = h.c.Delete(ctx, ec); client.IgnoreNotFound(e) != nil {
 		return Result{}, e
 	}
-	return Result{}, fmt.Errorf("waiting for ordered assignment cleanup")
+	return Result{Pending: true, Message: "waiting for ordered assignment cleanup"}, nil
 }

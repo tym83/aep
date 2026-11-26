@@ -191,8 +191,8 @@ func TestDetachRequiresMatchingUIDAndSecurity(t *testing.T) {
 		t.Fatal("invalid request deleted assignment")
 	}
 	cr.Spec.Desired = &ext.JSON{Raw: []byte(`{"tier":"prod","uid":"assignment-1"}`)}
-	if _, err := h.Apply(ctx, nil, cr); err == nil {
-		t.Fatal("reported complete before finalization")
+	if r, err := h.Apply(ctx, nil, cr); err != nil || !r.Pending {
+		t.Fatal("reported complete before finalization", r, err)
 	}
 	_ = c.Get(ctx, client.ObjectKeyFromObject(ec), current)
 	if current.DeletionTimestamp.IsZero() {
