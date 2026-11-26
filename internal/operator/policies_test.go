@@ -237,3 +237,27 @@ func TestBaselinePlatformNamespacesAreAdditive(t *testing.T) {
 		}
 	}
 }
+
+// OpenChoreo's own charts run controllers that create openchoreo.dev-labelled
+// pods in platform namespaces; denying them froze data-plane upgrades.
+func TestReservedLabelsExcludePlatformNamespaces(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm not installed")
+	}
+	data, err := exec.Command("helm", "template", "test", "../../policies/app-cluster-baseline", "--set", "organizationUID=00000000-0000-0000-0000-000000000000").CombinedOutput()
+	if err != nil {
+		t.Fatal(string(data))
+	}
+	rendered := string(data)
+	i := strings.Index(rendered, "name: reserved-labels")
+	if i < 0 {
+		t.Fatal("reserved-labels rule not rendered")
+	}
+	rule := rendered[i:]
+	if j := strings.Index(rule, "validate:"); j > 0 {
+		rule = rule[:j]
+	}
+	if !strings.Contains(rule, "openchoreo-data-plane") {
+		t.Fatalf("reserved-labels must exclude platform namespaces:\n%s", rule)
+	}
+}

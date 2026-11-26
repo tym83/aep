@@ -18,6 +18,10 @@ spec:
         any:
           - resources:
               namespaces: ["dp-*"]
+          # Platform controllers (ReplicaSet and Job controllers on behalf of
+          # OpenChoreo's own charts) create labelled objects there.
+          - resources:
+              namespaces: {{ .Values.platformNamespaces | toJson }}
           - subjects:
               - kind: ServiceAccount
                 namespace: {{ index (splitList ":" .Values.agentUsername) 2 }}

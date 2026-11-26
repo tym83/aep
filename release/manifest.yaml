@@ -155,21 +155,21 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-sre-agent
   version: 0.1.3
-- digest: sha256:dbb11a9fbd26c2b53fa990f7a8b6e73f0b21fae3b6e8ef7d8c9f2c6fe40967f4
+- digest: sha256:5e44fb984d188a3709fa8dfd3b3fd726027509b0f6b97d13256d5577340f56fc
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
-  version: 0.1.2
-- digest: sha256:c7d2c90879cc5084688bf23fee6c896352921e822e6265fd7c6d581fc63837a7
+  version: 0.1.3
+- digest: sha256:4a9551c8f150bb9e8104d47f1cd3aa4836c842696077458e1f960f034fd27e45
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-nonprod
-  version: 0.1.2
-- digest: sha256:56281e618382b7e97214f5e77d52ec32bbffafe2ec8b5cf3506df41cf7abe792
+  version: 0.1.3
+- digest: sha256:36bec7e31f794be03c09085aadb761c0a42d7c26284b9cea9af18ef7a7ea1732
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-prod
-  version: 0.1.2
+  version: 0.1.3
 - digest: sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09
   kind: image
   ref: quay.io/argoproj/argocd
@@ -198,5 +198,5 @@ artifacts:
   kind: image
   ref: reg.kyverno.io/kyverno/reports-controller
   version: v1.19.2
-inputs: c319205985693cc5544fc22854c9a56e27a9c23efca2737697dbc3d7b0c3e832
+inputs: eab50a150046b9a2a446da0e3f8028d41601c25aac9f627d5b20b0cd7410e715
 schema: 1
