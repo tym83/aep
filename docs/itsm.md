@@ -50,6 +50,8 @@ Use a dedicated namespace per organization. A configuration example:
   "aepClientId": "aep-itsm-acme",
   "confirmationUrl": "https://portal.example/changes",
   "syncCmdb": true,
+  "standardTemplate": "published_standard_template_sys_id",
+  "companySysId": "existing_core_company_sys_id",
   "services": [{
     "uid": "corporate-catalog-orders-prod-uid",
     "name": "orders",
@@ -75,9 +77,11 @@ Supply credentials through the existing Secret referenced by
 
 | Variable | Purpose |
 |---|---|
-| `ITSM_HMAC_SECRET` | At least 32 random bytes shared with the inbound automation; also signs outgoing generic webhooks. |
+| `ITSM_INBOUND_HMAC_SECRET` / `ITSM_INBOUND_HMAC_KEY_ID` | At least 32 random bytes and a nonempty key ID for trusted inbound automation. |
+| `ITSM_INBOUND_HMAC_PREVIOUS_SECRET` / `ITSM_INBOUND_HMAC_PREVIOUS_KEY_ID` | Optional previous inbound key during rotation; remove after senders switch. |
+| `ITSM_OUTBOUND_HMAC_SECRET` / `ITSM_OUTBOUND_HMAC_KEY_ID` | Separate 32-byte key and ID for the generic outbound webhook; must differ from inbound. |
 | `ITSM_CLIENT_SECRET` | ServiceNow OAuth client secret. |
-| `ITSM_TOKEN` | Jira scoped OAuth access token, renewed externally. |
+| `ITSM_TOKEN` | Jira scoped OAuth token, or API token when `jiraEmail` enables Basic email:token authentication. |
 | `AEP_CLIENT_SECRET` | Keycloak organization service-account secret; only used to read/comment, never decide. |
 
 The AEP client needs an organization membership group for the existing notes
@@ -104,6 +108,14 @@ UID 65532, without capabilities or privilege escalation, with RuntimeDefault
 seccomp and a read-only filesystem. RBAC reads changes in the selected namespace,
 reads one Organization, lists tier applications, and writes ConfigMap cursors in
 the bridge namespace. It cannot write ChangeRequests or execute bindings.
+Install into a **dedicated bridge namespace**, not a shared application namespace:
+Kubernetes RBAC cannot restrict create/list by label or name prefix. Dynamic
+hashed ConfigMap names prevent an exhaustive resourceNames grant. The namespace
+is the write boundary; only bridge configuration and cursors belong there.
+Cursor names start with `itsm-` and reads/retries filter organization labels.
+Set `tiers` in chart values to the actual Organization tier names (no built-in
+tier list). `config.syncCmdb: null` selects true for ServiceNow and false for
+Jira/webhook; an explicit boolean overrides it.
 
 On the stand, root ingress to `aep-system` needs the explicitly configured
 Cozystack network-policy path recorded in the session log. This chart creates
@@ -132,27 +144,32 @@ creation recoverable when the response is lost. Do not rely on the
 | AEP | ServiceNow |
 |---|---|
 | Composite change ID | `correlation_id = aep-<sha256(id)>`; external sys_id retained in durable state. |
-| `normal`, `standard`, `emergency` | `change_request.type`, initially New (`state=-5`). |
-| Justification / confirmation link | `description`; operation and ID in `short_description`. |
+| `normal`, `standard`, `emergency` | Model-specific Change Management creation; standard uses configured `standardTemplate`. |
+| Phase / confirmation link / short revision hash | Bounded `description`; operation and ID in `short_description`. No raw ChangeRequest or justification is sent. |
 | Window | UTC `start_date`, `end_date`. |
-| Applied | Closed (`state=3`), `close_code=successful`. |
+| Approved / Applying | Scheduled (or Implement if already advanced) / Implement. |
+| Applied | Implement → Review → Closed, `close_code=successful`. |
 | Failed | Closed (`state=3`), `close_code=unsuccessful`, result in `close_notes`. |
 | Rejected / Expired / Superseded | Canceled (`state=4`). |
 | ITSM requested / approved / rejected | Read from `sysapproval_approver.state`; approved/rejected automation emits evidence only. |
 
-This adapter uses the **Table API**, not the model-specific Change Management
-API. Instance business rules may require intermediate transitions, mandatory
-fields, or a Standard Change Template. Those customizations must be validated
-in a PDI before production; the adapter never disables business rules. AEP's
-standard rollback eligibility is still checked by the change controller.
+The adapter uses the [Change Management API](https://www.servicenow.com/docs/r/api-reference/rest-apis/change-management-api.html):
+`POST /api/sn_chg_rest/change/{normal|emergency}` or
+`POST /api/sn_chg_rest/change/standard/{standardTemplate}` and model-specific
+PATCH. It never rewrites type or grants ITSM approval. Before each state change,
+`GET /api/sn_chg_rest/change/{id}/nextstates` supplies allowed states and guards;
+unavailable transitions remain pending for CAB/business rules. Normal walks
+Assess/Authorize, then Scheduled/Implement/Review as permitted. Table API is
+used only for correlation lookup and approval evidence. Validate mandatory
+fields and the published standard template on the target PDI.
 
 ### CSDM and IRE
 
 | Neutral kind | ServiceNow class | Ownership |
 |---|---|---|
-| Organization service aggregate | `cmdb_ci_service_discovered` | AEP-owned container for the organization's operational graph. |
-| Application Service per service/environment | `cmdb_ci_service_discovered` | AEP-owned; Runs on cluster, Depends on database. |
-| Tier cluster | `cmdb_ci_kubernetes_cluster` | Actual management application UID. |
+| Organization | Existing `core_company` via `companySysId` | Not a CI; excluded from IRE and linked through Business Application `company`. |
+| Application Service per service/environment | `cmdb_ci_service_discovered` | AEP-owned; Depends on cluster and database. |
+| Tier cluster | `cmdb_ci_kubernetes_cluster` | Actual discovered cluster UID plus management source identity. |
 | Managed Postgres/Redis | `cmdb_ci_db_instance` | Actual managed application UID; database-instance abstraction. |
 | Business Application | `cmdb_ci_business_app` | Customer-owned; reference by existing sys_id only. |
 | Technical Service / Service Offering | `cmdb_ci_service_technical` / `service_offering` | Supported in supplied graphs; catalog population is external. |
@@ -160,9 +177,26 @@ standard rollback eligibility is still checked by the change controller.
 Class names are checked against ServiceNow's [Application Services documentation](https://www.servicenow.com/docs/r/servicenow-platform/configuration-management-database-cmdb/application-services.html),
 [Kubernetes inventory mapping](https://www.servicenow.com/docs/r/yokohama/it-operations-management/discovery/cnov-collected-data.html),
 and [CMDB table descriptions](https://www.servicenow.com/docs/r/servicenow-platform/configuration-management-database-cmdb/cmdb-tables-details.html).
-The organization aggregate is an implementation mapping, not a claim that CSDM
-requires an organization to be an Application Service. Business Applications
-remain under customer ownership as required by design §5.6.
+Company references must identify an existing `core_company`; the bridge does
+not create organizations as Application Services. Business Applications remain
+customer-owned and are never retired.
+
+Populate management application annotations `aep.aenix.io/itsm-k8s-uid` with
+the actual discovered Kubernetes cluster UID (not the management CR UID),
+`aep.aenix.io/itsm-fqdn` with the endpoint FQDN and `aep.aenix.io/itsm-port` with
+the endpoint port. IRE includes cluster `k8s_uid` and database `instance_name`
+(application name), `fqdn`, and `tcp_port`. Missing required identity rejects the
+snapshot rather than producing name-only CIs. Management UID remains the AEP
+source-native key. On the PDI verify OOB identification entries, attribute names,
+and dependent identification/hosting rules for both classes against installed
+CMDB class-model and Discovery versions. In particular, database identification
+may require a hosting CI relation: set `aep.aenix.io/itsm-host-sys-id` to an
+existing discovered `cmdb_ci_server` to include a reference-only host and
+`Runs on::Runs` relation. Verify the appropriate host/class mapping before
+enabling production sync; Kubernetes placement is not inferred. Do not substitute a
+fabricated cluster UID or assume source-native keys satisfy initial OOB matching.
+Use IRE identify-only previews to verify both first creation and reconciliation
+with records from Discovery; confirm no duplicates and correct company ownership.
 
 IRE payloads use `discovery_source=AEP`, `sys_object_source_info.source_name=AEP`,
 and `source_native_key=uid`. Relationship endpoints are array indices:
@@ -194,7 +228,7 @@ request type before enabling the bridge. No follow-up label write is used.
 |---|---|
 | Change | `POST /rest/servicedeskapi/request`, configured service desk/request type. |
 | Stable change ID | `aep-<sha256(id)>` label; issue key in durable state. |
-| Current change view | REST v3 summary and ADF description. |
+| Current change view | Bounded summary; description is set only at creation and never overwritten. |
 | Applied / Failed / other phases | Optional `jiraTransitions` map from phase to workflow transition ID. |
 | Approval evidence | `GET /rest/servicedeskapi/request/{key}/approval`; never answered by the bot. |
 | Raised alert | REST v3 issue of type `Incident`, correlated by alert-key hash. |
@@ -207,10 +241,13 @@ without them the fields update but the workflow status does not close.
 Approval automation signs the same `change.note` envelope described below.
 Human confirmation remains mandatory. Assets CMDB, JSM Operations routing,
 request-type provisioning, and automatic token renewal are not implemented.
-Jira search can lag indexing and does not enforce label uniqueness: recovery
-uses label lookup, but exact duplicate-free creation across an ambiguous crash
-requires an idempotent gateway/plugin on the Jira side. Fakes test lookup
-recovery, not Jira's indexing latency.
+Jira search can lag indexing. After an ambiguous create, a persisted five-minute
+index deadline prevents immediate re-creation; retries use capped exponential
+backoff. Search requests `fields=key` and orders by `created ASC, key ASC` to
+adopt the oldest match. Fakes verify delayed indexing and recovery after restart.
+A create committed just before process death or indexing delayed beyond the
+bounded window still requires an idempotent gateway for strict exactly-once
+creation; Jira labels are not unique constraints.
 
 ## Generic webhook and inbound JSON
 
@@ -221,13 +258,17 @@ acknowledging 2xx and deduplicate it for at least seven days.
 
 Both directions use these headers:
 
+- `X-AEP-Key-ID`: configured directional key ID; unknown IDs are rejected inbound.
 - `X-AEP-Timestamp`: Unix seconds, accepted within five minutes.
 - `X-AEP-Signature`: lowercase hex HMAC-SHA256 over `timestamp + "." + rawBody`.
 - Outbound `Idempotency-Key`: event ID.
 
 Inbound endpoint: `POST /v1/events`, maximum body 512 KiB. It accepts
-`change.note`, `alert.raised`, `alert.resolved`, `cmdb.sync`, `ci.upserted`, and
-`ci.retired`. It rejects change/decision commands. Native vendor webhooks must
+`change.note`, `alert.raised`, and `alert.resolved` only. CMDB is outbound-only;
+all inbound CMDB events and change/decision commands are rejected. Inbound
+alerts are **trusted-sender events**: HMAC identifies authorized automation,
+not independent evidence that an alert occurred. Alerts use event time to ignore
+older updates within the receipt horizon. Native vendor webhooks must
 be translated and signed by customer automation; they are not parsed directly.
 No token, password, database connection secret, or arbitrary URL belongs in data.
 
@@ -254,32 +295,33 @@ No token, password, database connection secret, or arbitrary URL belongs in data
 `source=aep` identifies this normalized contract, including vendor automation
 that produces AEP-compatible envelopes. Inbound subject is derived from the
 organization and payload, not trusted from the request. Alert keys are scoped
-by organization. Graph envelopes carry `{organization, epoch, items,
-relationships}`; each CI has `{uid, kind, name, externalId?, retired?}` and each
-relation has `{parent, child, type}`. `ci.retired` retires all supplied items.
-Use complete `cmdb.sync` graphs for periodic inventory. Do not mix externally
-supplied CMDB graphs with automatic `syncCmdb` polling for the same organization.
+by organization. Note text is limited to 3000 bytes, external/approver IDs to
+255 bytes each, and rendered evidence text to 4000 bytes including JSON escaping.
+Validation occurs before acceptance. Evidence is an external reference, never
+confirmation. Outbound change data is `{id, text}` containing phase, confirmation
+link (up to 1024 characters), and a 12-character hash. Jira summaries are limited
+to 255 characters; ServiceNow short descriptions to 160. No raw ChangeRequest
+JSON is sent to any vendor, including the generic webhook.
 
 ## Delivery, persistence, and limits
 
 Each subject has a ConfigMap containing its pending event, external ID, retry
 count/deadline, completed cursor, and seven-day event receipts. State is scoped
-by organization. A delivery is saved before remote I/O; only remote success
-advances the cursor. Later states cannot overtake a pending delivery. Retries
-back off from 2 seconds to 256 seconds, survive restarts, and stop on context
-cancellation. HTTP failures return 503, so senders retry with the **same ID and
-payload**. Conflicting payload reuse is rejected. Delayed duplicates cannot
-reopen a closed alert during the receipt retention period. A new occurrence
-must use a new event ID, even if its text is identical.
+by organization, with separate AEP-note and vendor queues and retry workers.
+Per-subject locks protect ordering; network I/O never holds the global lock.
+Newer change/CMDB snapshots replace pending state while preserving Ref; alerts
+also reject older event times. Retries back off from 2 to 256 seconds. Permanent
+4xx (except 408/429) are stored as terminal failures and never block later events.
+Inbound permanent AEP failures return the same 4xx on replay; transient failures
+return 503. Reuse the same event ID/payload when retrying.
 
-Change polling reconciles latest persisted state; it is not a seven-day event
-log and may coalesce intermediate phases between polls. Terminal objects must
-remain in Kubernetes until mirrored. ConfigMaps are capped at 700 KB and 2,000
-receipts per subject per seven days; exceeding limits fails explicitly. Receipt
-expiry is lazy. Completed note ConfigMaps are retained until an operator cleans
-them up after the retry/audit horizon. Permanent remote errors also remain
-pending with capped retries, rather than silently dropping a change; correct
-the configuration or repair the remote record and monitor bridge logs.
+`GET /metrics` exposes `aep_itsm_records{status="pending|completed|failed|corrupt"}`.
+Record JSON retains the terminal HTTP status in `failure` and receipt `status`.
+Completed records are removed after the seven-day receipt TTL; corrupt records
+are reported and skipped so other deliveries can progress. Confirmed retired CIs
+are omitted from the next snapshot. Keep terminal ChangeRequests until mirrored.
+The store caps each record at 700 KB and 2,000 receipts per seven days; it is not
+an audit archive. Delayed replay protection is bounded by the receipt TTL.
 
 Remote effects and Kubernetes persistence are not a distributed transaction.
 ServiceNow needs its correlation uniqueness rule; generic receivers need their
@@ -321,10 +363,11 @@ python3 scripts/itsm/servicenow-pdi.py --change acme/chg-example \
   --approval APPROVAL_SYS_ID --execute
 ```
 
-The script verifies that the external approval belongs to this change, submits
+The script treats evidence as a reference, not a confirmation. It verifies that
+the external approval belongs to this change, then submits
 the human decision with If-Match, and waits for Applied and successful closure.
 It never changes Kubernetes directly. Inspect the IRE graph in the PDI for the
-organization aggregate, both tier clusters, service/environment, database,
+core_company reference, configured tier clusters, service/environment, database,
 Business Application link, and all configured relations; verify retirement and
 business rules as a separate PDI acceptance check.
 

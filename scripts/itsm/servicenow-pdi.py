@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise an existing AEP change through a ServiceNow PDI; never uses Kubernetes."""
+"""Exercise a PDI change; evidence is a reference, not human confirmation."""
 import argparse
 import hashlib
 import json
@@ -35,7 +35,7 @@ def request(base, path, token=None, method="GET", body=None, headers=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--change", required=True, help="Existing organization/change-name")
-    parser.add_argument("--approval", help="ServiceNow sysapproval_approver sys_id")
+    parser.add_argument("--approval", help="ServiceNow evidence reference sys_id; this does not confirm an AEP change")
     parser.add_argument("--execute", action="store_true", help="Confirm using the human token; otherwise read-only")
     parser.add_argument("--timeout", type=int, default=600)
     args = parser.parse_args()
@@ -66,7 +66,7 @@ def main():
         approved_change = approved_change.get("value")
     if evidence.get("state") != "approved" or approved_change != record["sys_id"]:
         raise ValueError("approval must be approved and belong to this mirrored change")
-    # The human reviews the view and explicitly opts into confirmation. AEP
+    # Evidence is a reference, not confirmation. The human explicitly opts in. AEP
     # checks the token groups, requester separation and the reviewed version.
     print("Confirming", args.change, "at resourceVersion", view["request"]["metadata"]["resourceVersion"])
     request(aep, "/v1/changes/" + args.change + "/decision", human, "POST",
