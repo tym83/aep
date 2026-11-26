@@ -257,7 +257,7 @@ func TestIntegrationErrorsDoNotGatePhase(t *testing.T) {
 	o := argoOrg()
 	setCondition(o, "ControlPlaneHardened", true, "Verified", "OK")
 	r := &Reconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(o).WithObjects(o).Build()}
-	_, e := r.runSteps(context.Background(), o, []reconcileStep{{"VCSReady", func(context.Context) error { return pending("missing WorkflowPlane") }}, {"ArgoCDReady", func(context.Context) error { return pending("VCS unavailable") }}})
+	_, e := r.runSteps(context.Background(), o, []reconcileStep{{name: "VCSReady", run: func(context.Context) error { return pending("missing WorkflowPlane") }}, {name: "ArgoCDReady", run: func(context.Context) error { return pending("VCS unavailable") }}})
 	if e != nil || o.Status.Phase != "Ready" {
 		t.Fatal(e, o.Status)
 	}

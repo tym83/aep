@@ -1,7 +1,9 @@
 # Application cluster policies
 
 The organization operator installs Kyverno and policy bundles through Flux remote
-HelmReleases after `DataPlanesConnected`. `PoliciesReady` requires the current
+HelmReleases as soon as the tier cluster and its network paths are ready, before
+the OpenChoreo data plane: a policy that blocked the data plane's own pods could
+otherwise never be corrected. `PoliciesReady` requires the current
 Kyverno, baseline and tier bundle releases to be Ready in every physical tier.
 The releases use exactly the data-plane delivery contract: the tenant namespace,
 `kubernetes-apps-admin-kubeconfig`, key `super-admin.svc`, and labels
