@@ -19,3 +19,6 @@ restoreVerification: false
 
 argocdHostTemplate: ""
 vcsWebhookURL: ""
+
+# Mirror the pinned Argo CD chart for disconnected installations.
+argocdChartURL: https://argoproj.github.io/argo-helm

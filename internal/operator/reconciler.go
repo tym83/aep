@@ -17,7 +17,7 @@ import (
 )
 
 type Options struct {
-	ArgoCDHostTemplate, VCSWebhookURL                                                     string
+	ArgoCDHostTemplate, ArgoCDChartURL, VCSWebhookURL                                     string
 	PolicyBundleRepository, KyvernoChartURL                                               string
 	PruneBootstrapBindings                                                                bool
 	BootstrapBindingSystemClients                                                         string
@@ -31,6 +31,7 @@ type Reconciler struct {
 	Management   *Cluster
 	Options      Options
 	Recorder     record.EventRecorder
+	ResolveHost  hostResolver
 	hookMu       sync.Mutex
 	hookAttempts map[string]time.Time
 }

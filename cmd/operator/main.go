@@ -24,6 +24,7 @@ func main() {
 func run() error {
 	r := &operator.Reconciler{}
 	o := &r.Options
+	flag.StringVar(&o.ArgoCDChartURL, "argocd-chart-url", "https://argoproj.github.io/argo-helm", "Argo CD Helm repository mirror URL")
 	flag.StringVar(&o.ArgoCDHostTemplate, "argocd-host-template", "", "Argo CD ingress hostname template with Organization and Tier")
 	flag.StringVar(&o.VCSWebhookURL, "vcs-webhook-url", "", "OpenChoreo HTTPS /api/v1alpha1/autobuild endpoint; empty disables hook registration")
 	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")

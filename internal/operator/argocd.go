@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"net"
 	"net/url"
 	"sort"
 	"strings"
@@ -53,6 +54,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	objects := []any{}
 	namespaces := []string{}
 	policy := "g, aep-" + o.Name + "-platform, role:admin\n"
+	policy += "g, aep-" + o.Name + "-developer, role:readonly\n"
 	for _, action := range []string{"create", "update", "delete"} {
 		policy += fmt.Sprintf("p, role:admin, clusters, %s, *, deny\n", action)
 	}
@@ -61,7 +63,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 		namespaces = append(namespaces, ns)
 		n := obj("v1", "Namespace", "", ns, nil)
 		n.SetAnnotations(map[string]string{"helm.sh/resource-policy": "keep"})
-		n.SetLabels(map[string]string{"aep.aenix.io/argocd": "allowed", "pod-security.kubernetes.io/enforce": "restricted"})
+		n.SetLabels(map[string]string{"aep.aenix.io/organization": string(o.UID), "aep.aenix.io/argocd": "allowed", "pod-security.kubernetes.io/enforce": "restricted"})
 		objects = append(objects, n.Object, argoProject(o, p).Object)
 		role := obj("rbac.authorization.k8s.io/v1", "Role", ns, "aep-argocd", nil)
 		role.Object["rules"] = []any{
@@ -70,8 +72,8 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 			rule("batch", []string{"jobs", "cronjobs"}, []string{"*"}),
 			rule("autoscaling", []string{"horizontalpodautoscalers"}, []string{"*"}),
 			rule("policy", []string{"poddisruptionbudgets"}, []string{"*"}),
-			rule("networking.k8s.io", []string{"ingresses", "networkpolicies"}, []string{"*"}),
-			rule("gateway.networking.k8s.io", []string{"httproutes", "tlsroutes", "grpcroutes"}, []string{"*"}),
+			rule("networking.k8s.io", []string{"networkpolicies"}, []string{"*"}),
+			rule("gateway.networking.k8s.io", []string{"httproutes"}, []string{"*"}),
 		}
 		objects = append(objects, role.Object)
 		binding := obj("rbac.authorization.k8s.io/v1", "RoleBinding", ns, "aep-argocd", nil)
@@ -91,7 +93,13 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 		for _, action := range []string{"get", "create", "update", "delete", "sync"} {
 			policy += fmt.Sprintf("p, %s, applications, %s, %s/*, allow\n", r, action, "aep-"+p)
 		}
-		policy += fmt.Sprintf("p, %s, logs, get, %s/*, allow\ng, aep-%s-developer, %s\n", r, "aep-"+p, o.Name, r)
+		policy += fmt.Sprintf("p, %s, logs, get, %s/*, allow\ng, aep-%s-developer, %s\n", r, "aep-"+p, o.Name+"-"+p, r)
+	}
+	// Keycloak may emit either leaf names or full group paths.
+	for _, line := range strings.Split(policy, "\n") {
+		if strings.HasPrefix(line, "g, aep-") {
+			policy += strings.Replace(line, "g, aep-", "g, /aep-", 1) + "\n"
+		}
 	}
 	// Empty default project prevents implicit access through applications without an assigned project.
 	objects = append(objects, obj("argoproj.io/v1alpha1", "AppProject", "argocd", "default", M{"sourceRepos": []any{}, "destinations": []any{}, "clusterResourceWhitelist": []any{}}).Object)
@@ -107,6 +115,9 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	vap := obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "aep-argocd-projects", M{"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"argoproj.io"}, "apiVersions": []any{"*"}, "resources": []any{"appprojects"}, "operations": []any{"CREATE", "UPDATE", "DELETE"}}}}, "validations": []any{M{"expression": "!request.userInfo.username.startsWith('system:serviceaccount:argocd:')", "message": "AppProjects are managed by the organization operator"}}})
 	objects = append(objects, vap.Object)
 	objects = append(objects, obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "aep-argocd-projects", M{"policyName": "aep-argocd-projects", "validationActions": []any{"Deny"}}).Object)
+	objects = append(objects, argoApplicationPolicy().Object,
+		obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "aep-argocd-repositories", M{"policyName": "aep-argocd-repositories", "validationActions": []any{"Deny"}}).Object)
+	resources := M{"requests": M{"cpu": "100m", "memory": "128Mi"}, "limits": M{"cpu": "1", "memory": "1Gi"}}
 	security := M{"runAsNonRoot": true, "allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": M{"drop": []any{"ALL"}}, "seccompProfile": M{"type": "RuntimeDefault"}}
 	// A namespace-restricted cluster credential prevents cluster-wide cache watches.
 	cluster := obj("v1", "Secret", "argocd", "aep-in-cluster", nil)
@@ -114,11 +125,11 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	cluster.Object["stringData"] = M{"name": "in-cluster", "server": "https://kubernetes.default.svc", "namespaces": strings.Join(append([]string{"argocd"}, namespaces...), ","), "clusterResources": "false", "config": "{}"}
 	objects = append(objects, cluster.Object)
 	return M{"fullnameOverride": "argocd", "createClusterRoles": false, "global": M{"domain": host, "image": M{"tag": ArgoCDAppVersion}, "securityContext": M{"runAsNonRoot": true, "seccompProfile": M{"type": "RuntimeDefault"}}},
-		"dex": M{"enabled": false}, "notifications": M{"enabled": false}, "applicationSet": M{"replicas": int64(0), "containerSecurityContext": security},
-		"controller": M{"containerSecurityContext": security}, "repoServer": M{"containerSecurityContext": security, "automountServiceAccountToken": false},
-		"redis": M{"containerSecurityContext": security}, "redisSecretInit": M{"containerSecurityContext": security, "securityContext": M{"runAsNonRoot": true, "seccompProfile": M{"type": "RuntimeDefault"}}},
-		"server":  M{"containerSecurityContext": security, "ingress": M{"enabled": true, "ingressClassName": "nginx", "hostname": host, "tls": true, "annotations": M{"nginx.ingress.kubernetes.io/backend-protocol": "HTTPS"}}},
-		"configs": M{"cm": M{"url": "https://" + host, "admin.enabled": "false", "exec.enabled": "false", "oidc.config": fmt.Sprintf("name: Keycloak\nissuer: %s\nclientID: aep-%s-argocd\nclientSecret: $aep-oidc:clientSecret\nrequestedScopes: [openid, profile, email, groups]\n", issuer, o.Name)}, "rbac": M{"policy.default": "role:none", "policy.csv": policy, "scopes": "[groups]"}}, "extraObjects": objects}
+		"dex": M{"enabled": false, "resources": resources}, "notifications": M{"enabled": false, "resources": resources}, "applicationSet": M{"replicas": int64(0), "resources": resources, "containerSecurityContext": security},
+		"controller": M{"resources": resources, "containerSecurityContext": security}, "repoServer": M{"resources": resources, "containerSecurityContext": security, "automountServiceAccountToken": false},
+		"redis": M{"resources": resources, "containerSecurityContext": security}, "redisSecretInit": M{"resources": resources, "containerSecurityContext": security, "securityContext": M{"runAsNonRoot": true, "seccompProfile": M{"type": "RuntimeDefault"}}},
+		"server":  M{"resources": resources, "containerSecurityContext": security, "ingress": M{"enabled": true, "ingressClassName": "nginx", "hostname": host, "tls": true, "annotations": M{"nginx.ingress.kubernetes.io/backend-protocol": "HTTPS"}}},
+		"configs": M{"params": M{"reposerver.allow.oob.symlinks": "false"}, "cm": M{"helm.valuesFileSchemes": " ", "url": "https://" + host, "admin.enabled": "false", "exec.enabled": "false", "oidc.config": fmt.Sprintf("name: Keycloak\nissuer: %s\nclientID: aep-%s-argocd\nclientSecret: $aep-oidc:clientSecret\nrequestedScopes: [openid, profile, email, groups]\n", issuer, o.Name)}, "rbac": M{"policy.default": "role:none", "policy.csv": policy, "scopes": "[groups]"}}, "extraObjects": objects}
 }
 func (s *session) argocd(ctx context.Context) error {
 	if !argoEnabled(s.o) {
@@ -147,6 +158,21 @@ func (s *session) argocd(ctx context.Context) error {
 	}
 	sort.Strings(names)
 	values := argoValues(s.o, host, issuer, names)
+	resolve := s.r.ResolveHost
+	if resolve == nil {
+		resolve = net.DefaultResolver.LookupIPAddr
+	}
+	network, e := argoEgress(ctx, s.o.Spec.VCS.URL, opt.KeycloakURL, resolve)
+	if e != nil {
+		return e
+	}
+	values["extraObjects"] = append(values["extraObjects"].([]any), network.Object)
+	oidc, err := s.r.Management.Kube.CoreV1().Secrets(opt.Namespace).Get(ctx, "argocd-"+s.o.Name+"-oidc", metav1.GetOptions{})
+	if err == nil && len(oidc.Data["rootCA"]) > 0 {
+		cm := values["configs"].(M)["cm"].(M)
+		cm["oidc.config"] = cm["oidc.config"].(string) + "rootCA: |\n  " + strings.ReplaceAll(strings.TrimSpace(string(oidc.Data["rootCA"])), "\n", "\n  ") + "\n"
+	}
+
 	ca, e := s.vcsCA(ctx)
 	if e != nil {
 		return e
@@ -156,7 +182,7 @@ func (s *session) argocd(ctx context.Context) error {
 		values["configs"].(M)["tls"] = M{"certificates": M{u.Hostname(): string(ca)}}
 	}
 	ns := TenantNamespace(s.o.Name, "nonprod")
-	source := obj("source.toolkit.fluxcd.io/v1", "HelmRepository", ns, "aep-argocd", M{"interval": "1h", "url": "https://argoproj.github.io/argo-helm"})
+	source := obj("source.toolkit.fluxcd.io/v1", "HelmRepository", ns, "aep-argocd", M{"interval": "1h", "url": argoChartURL(opt)})
 	if e = s.r.Management.apply(ctx, s.o, "helmrepositories", source); e != nil {
 		return e
 	}
@@ -213,4 +239,24 @@ func (s *session) argoCredentials(ctx context.Context, c *Cluster) error {
 	repo := secretObject("argocd", "aep-corporate-vcs", data)
 	repo.SetLabels(map[string]string{"argocd.argoproj.io/secret-type": "repo-creds"})
 	return c.apply(ctx, s.o, "secrets", repo)
+}
+
+func argoChartURL(opt Options) string {
+	if opt.ArgoCDChartURL != "" {
+		return opt.ArgoCDChartURL
+	}
+	return "https://argoproj.github.io/argo-helm"
+}
+
+// HTTPS is the only clone transport: disallow userinfo and all encoded paths.
+const argoRepoExpression = "!url.contains('..') && !url.contains('%') && !url.contains('@') && url.startsWith('https://')"
+
+func argoApplicationPolicy() *unstructured.Unstructured {
+	check := "[object.spec.source].all(s, [s.repoURL].all(url, " + argoRepoExpression + "))"
+	multi := "object.spec.sources.all(s, [s.repoURL].all(url, " + argoRepoExpression + "))"
+	return obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "aep-argocd-repositories", M{
+		"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"argoproj.io"}, "apiVersions": []any{"*"}, "resources": []any{"applications"}, "operations": []any{"CREATE", "UPDATE"}}}},
+		"matchConditions": []any{M{"name": "argocd-namespace", "expression": "request.namespace == 'argocd'"}},
+		"validations":     []any{M{"expression": "(!has(object.spec.source) || " + check + ") && (!has(object.spec.sources) || " + multi + ")", "message": "Repository URLs must use HTTPS without traversal, encoding or userinfo"}},
+	})
 }
