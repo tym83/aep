@@ -13,7 +13,7 @@ import (
 )
 
 func fleetChange(tier, trust string) *api.ChangeRequest {
-	return &api.ChangeRequest{ObjectMeta: metav1.ObjectMeta{Name: "attach", Namespace: "tenant-acme", UID: "change-uid"}, Spec: api.ChangeRequestSpec{Organization: "acme", Operation: api.OperationClusterAttach, Model: api.ModelNormal, Requester: "requester", Justification: "add capacity", Target: api.ChangeTarget{Kind: "Cluster", Name: "aws-east", Environment: "prod"}, Desired: &ext.JSON{Raw: []byte(`{"tier":"` + tier + `","trustLevel":"` + trust + `","provider":"aws","distro":"eks"}`)}}}
+	return &api.ChangeRequest{ObjectMeta: metav1.ObjectMeta{Name: "attach", Namespace: "tenant-acme", UID: "change-uid"}, Spec: api.ChangeRequestSpec{Organization: "acme", Operation: api.OperationClusterAttach, Model: api.ModelNormal, Requester: "requester", Justification: "add capacity", Target: api.ChangeTarget{Kind: "Cluster", Name: "aws-east", Environment: "prod"}, Desired: &ext.JSON{Raw: []byte(`{"tier":"` + tier + `","trustLevel":"` + trust + `","provider":"aws","distro":"eks","gatewayHost":"edge.example.org"}`)}}}
 }
 func fleetApproval(user string, groups ...string) api.ChangeApproval {
 	return api.ChangeApproval{User: user, Groups: groups, Decision: DecisionApprove, Source: "portal"}
@@ -57,7 +57,7 @@ func TestAttachIdempotenceAndApprovalBinding(t *testing.T) {
 	cr := fleetChange("prod", "standard")
 	cr.Status.Phase = api.PhaseApplied
 	cr.Status.Approvals = []api.ChangeApproval{fleetApproval("a", GroupPlatformTeam), fleetApproval("b", GroupSecurity)}
-	o := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod"}}}}
+	o := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod", DataPlane: api.EnvironmentDataPlane{External: "aws-east"}}}}}
 	scheme := runtime.NewScheme()
 	_ = api.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cr, o).Build()
@@ -110,7 +110,7 @@ func TestClusterAttachControllerWaitsForSecurity(t *testing.T) {
 	cr.CreationTimestamp = metav1.NewTime(testNow)
 	h := newHarness(t, cr)
 	h.name = client.ObjectKeyFromObject(cr)
-	org := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod"}}}}
+	org := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod", DataPlane: api.EnvironmentDataPlane{External: "aws-east"}}}}}
 	if e := h.cl.Create(context.Background(), org); e != nil {
 		t.Fatal(e)
 	}
@@ -128,5 +128,37 @@ func TestClusterAttachControllerWaitsForSecurity(t *testing.T) {
 	phaseIs(t, h.run(t, 8), api.PhaseApplied)
 	if e := h.cl.List(context.Background(), &list); e != nil || len(list.Items) != 1 {
 		t.Fatalf("assignments %d: %v", len(list.Items), e)
+	}
+}
+
+func TestFleetEnvironmentDeclarationAndNamespace(t *testing.T) {
+	ctx := context.Background()
+	cr := fleetChange("prod", "standard")
+	cr.Status.Phase = api.PhaseApplied
+	cr.Status.Approvals = []api.ChangeApproval{fleetApproval("a", GroupPlatformTeam), fleetApproval("b", GroupSecurity)}
+	spec, _ := ExternalSpec(cr)
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: cr.Spec.Target.Name, Namespace: cr.Namespace}, Spec: spec}
+	o := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod", DataPlane: api.EnvironmentDataPlane{External: "aws-east"}}}}}
+	scheme := runtime.NewScheme()
+	_ = api.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(o, cr).Build()
+	if err := VerifyExternalApproval(ctx, c, ec); err != nil {
+		t.Fatal(err)
+	}
+	for _, env := range []api.Environment{{Name: "prod", Tier: "prod"}, {Name: "prod", Tier: "nonprod", DataPlane: api.EnvironmentDataPlane{External: "aws-east"}}, {Name: "prod", Tier: "prod", DataPlane: api.EnvironmentDataPlane{External: "other"}}} {
+		o.Spec.Environments = []api.Environment{env}
+		if err := c.Update(ctx, o); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyExternalApproval(ctx, c, ec); err == nil {
+			t.Fatalf("accepted mismatched declaration: %+v", env)
+		}
+	}
+	ec.Namespace = "foreign"
+	cr.Namespace = "foreign"
+	cr.ResourceVersion = ""
+	_ = c.Create(ctx, cr)
+	if err := VerifyExternalApproval(ctx, c, ec); err == nil {
+		t.Fatal("accepted foreign namespace")
 	}
 }

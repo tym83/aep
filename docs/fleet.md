@@ -183,3 +183,22 @@ prod, join, observe all four conditions, deploy a workload, verify policy denial
 interrupt hub access and verify existing service traffic continues. Repeat on the
 supported provider matrix (Cozystack/other distribution/EKS/AKS/GKE). No live
 cluster test or deployment is performed by this repository change.
+
+## Environment ownership
+
+Declare external placement when creating the environment:
+
+```yaml
+spec:
+  environments:
+    - name: edge-dev
+      tier: nonprod
+      changeModel: required
+      dataPlane: {external: edge-west}
+```
+
+The Organization controller never creates this Environment on a Cozystack
+DataPlane, even before attachment or while ExternalCluster approval is invalid.
+OpenChoreo `dataPlaneRef` is immutable: migration requires a new Environment.
+Admission forbids removing an external declaration or changing its tier or
+assignment. Retain the declaration during detach as an audit record.

@@ -6,10 +6,14 @@ import (
 )
 
 type Quotas map[string]string
+type EnvironmentDataPlane struct {
+	External string `json:"external"`
+}
 type Environment struct {
-	Name        string `json:"name"`
-	Tier        string `json:"tier"`
-	ChangeModel string `json:"changeModel"`
+	DataPlane   EnvironmentDataPlane `json:"dataPlane,omitzero"`
+	Name        string               `json:"name"`
+	Tier        string               `json:"tier"`
+	ChangeModel string               `json:"changeModel"`
 }
 type NodeGroup struct {
 	MinReplicas  int32  `json:"minReplicas"`

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	api "github.com/tym83/aep/api/v1alpha1"
-	"github.com/tym83/aep/internal/change"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -35,22 +34,8 @@ func (s *session) openChoreo(ctx context.Context) error {
 			return e
 		}
 	}
-	var external api.ExternalClusterList
-	if err := s.r.List(ctx, &external); err != nil {
-		return err
-	}
 	for _, e := range s.o.Spec.Environments {
-		assigned := false
-		for i := range external.Items {
-			ec := &external.Items[i]
-			if ec.Spec.Organization == s.o.Name && ec.Spec.Environment == e.Name {
-				if err := change.VerifyExternalApproval(ctx, s.r.Client, ec); err != nil {
-					return err
-				}
-				assigned = true
-			}
-		}
-		if assigned {
+		if e.DataPlane.External != "" {
 			continue
 		}
 		u := obj(ocAPI, "Environment", s.o.Name, e.Name, M{"dataPlaneRef": M{"kind": "DataPlane", "name": PhysicalTier(s.o, e.Tier)}})

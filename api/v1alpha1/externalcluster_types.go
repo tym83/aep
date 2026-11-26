@@ -8,6 +8,8 @@ import (
 // ExternalCluster is namespaced with its organization's ChangeRequests. Its
 // immutable spec is an assignment, not a discovery record or an approval flag.
 type ExternalClusterSpec struct {
+	Suspended         bool                    `json:"suspended,omitempty"`
+	GatewayHost       string                  `json:"gatewayHost"`
 	Organization      string                  `json:"organization"`
 	Tier              string                  `json:"tier"`
 	Environment       string                  `json:"environment"`

@@ -142,7 +142,7 @@ func TestValidateSpecOperations(t *testing.T) {
 		{name: "cluster-attach ok", mutate: func(s *api.ChangeRequestSpec) {
 			s.Operation = api.OperationClusterAttach
 			s.Target = api.ChangeTarget{Kind: "Cluster", Name: "eks-1", Environment: "dev"}
-			s.Desired = rawJSON(`{"tier":"nonprod","trustLevel":"standard","provider":"aws","distro":"eks"}`)
+			s.Desired = rawJSON(`{"tier":"nonprod","trustLevel":"standard","provider":"aws","distro":"eks","gatewayHost":"edge.example.org"}`)
 		}},
 		{name: "machine-approve ok", mutate: func(s *api.ChangeRequestSpec) {
 			s.Operation = api.OperationMachineApprove

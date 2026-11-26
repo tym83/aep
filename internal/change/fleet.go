@@ -21,12 +21,12 @@ func requireClusterAttach(s api.ChangeRequestSpec, d map[string]any, _ time.Time
 	}
 	for k := range d {
 		switch k {
-		case "tier", "trustLevel", "provider", "distro":
+		case "tier", "trustLevel", "provider", "distro", "gatewayHost":
 		default:
 			return fmt.Errorf("unknown cluster-attach field %s", k)
 		}
 	}
-	for _, k := range []string{"tier", "trustLevel", "provider", "distro"} {
+	for _, k := range []string{"tier", "trustLevel", "provider", "distro", "gatewayHost"} {
 		if v, ok := d[k].(string); !ok || v == "" {
 			return fmt.Errorf("desired.%s is required", k)
 		}
@@ -97,12 +97,15 @@ func ExternalSpec(cr *api.ChangeRequest) (api.ExternalClusterSpec, error) {
 	if e = requireClusterAttach(cr.Spec, d, time.Now()); e != nil {
 		return api.ExternalClusterSpec{}, e
 	}
-	return api.ExternalClusterSpec{Organization: cr.Spec.Organization, Tier: d["tier"].(string), Environment: cr.Spec.Target.Environment, TrustLevel: d["trustLevel"].(string), Provider: d["provider"].(string), Distro: d["distro"].(string), ChangeRequestRef: cr.Name, ClusterProfileRef: api.ClusterProfileReference{APIVersion: "multicluster.x-k8s.io/v1alpha1", Namespace: "aep-" + cr.Spec.Organization, Name: cr.Spec.Target.Name}}, nil
+	return api.ExternalClusterSpec{GatewayHost: d["gatewayHost"].(string), Organization: cr.Spec.Organization, Tier: d["tier"].(string), Environment: cr.Spec.Target.Environment, TrustLevel: d["trustLevel"].(string), Provider: d["provider"].(string), Distro: d["distro"].(string), ChangeRequestRef: cr.Name, ClusterProfileRef: api.ClusterProfileReference{APIVersion: "multicluster.x-k8s.io/v1alpha1", Namespace: "aep-" + cr.Spec.Organization, Name: cr.Spec.Target.Name}}, nil
 }
 
 // VerifyExternalApproval is shared by the registrar and bootstrap CLI. Neither
 // trusts an ExternalCluster annotation or a caller-supplied approved boolean.
 func VerifyExternalApproval(ctx context.Context, c client.Reader, ec *api.ExternalCluster) error {
+	if ec.Namespace != OrgNamespace("", ec.Spec.Organization) {
+		return fmt.Errorf("assignment namespace does not match organization")
+	}
 	cr := &api.ChangeRequest{}
 	if e := c.Get(ctx, client.ObjectKey{Namespace: ec.Namespace, Name: ec.Spec.ChangeRequestRef}, cr); e != nil {
 		return e
@@ -114,21 +117,24 @@ func VerifyExternalApproval(ctx context.Context, c client.Reader, ec *api.Extern
 	if e != nil {
 		return e
 	}
-	if !reflect.DeepEqual(s, ec.Spec) {
+	actual := ec.Spec
+	actual.Suspended = false
+	actual.ClusterProfileRef.APIVersion = s.ClusterProfileRef.APIVersion
+	if !reflect.DeepEqual(s, actual) {
 		return fmt.Errorf("assignment differs from approved change")
 	}
 	if p, _, _ := EvaluateFleetApprovals(cr.Spec, cr.Status.Approvals); p != api.PhaseApproved {
 		return fmt.Errorf("fleet approvals missing")
 	}
-	return ValidateFleetEnvironment(ctx, c, ec.Spec)
+	return ValidateFleetEnvironment(ctx, c, ec.Spec, ec.Name)
 }
-func ValidateFleetEnvironment(ctx context.Context, c client.Reader, s api.ExternalClusterSpec) error {
+func ValidateFleetEnvironment(ctx context.Context, c client.Reader, s api.ExternalClusterSpec, name string) error {
 	o := &api.Organization{}
 	if e := c.Get(ctx, client.ObjectKey{Name: s.Organization}, o); e != nil {
 		return e
 	}
 	for _, env := range o.Spec.Environments {
-		if env.Name == s.Environment && env.Tier == s.Tier {
+		if env.Name == s.Environment && env.Tier == s.Tier && env.DataPlane.External == name {
 			return nil
 		}
 	}
@@ -151,7 +157,7 @@ func (h clusterAttachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *ap
 	if e != nil {
 		return Result{}, e
 	}
-	if e = ValidateFleetEnvironment(ctx, h.c, s); e != nil {
+	if e = ValidateFleetEnvironment(ctx, h.c, s, cr.Spec.Target.Name); e != nil {
 		return Result{}, e
 	}
 	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: cr.Spec.Target.Name, Namespace: cr.Namespace}, Spec: s}

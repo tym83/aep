@@ -26,13 +26,15 @@ spec:
             metadata: {type: object}
             spec:
               type: object
-              required: [organization, tier, environment, trustLevel, provider, distro, changeRequestRef, clusterProfileRef]
+              required: [organization, tier, environment, trustLevel, provider, distro, changeRequestRef, clusterProfileRef, gatewayHost]
               x-kubernetes-validations:
-                - rule: self == oldSelf
+                - rule: self.organization == oldSelf.organization && self.tier == oldSelf.tier && self.environment == oldSelf.environment && self.trustLevel == oldSelf.trustLevel && self.provider == oldSelf.provider && self.distro == oldSelf.distro && self.changeRequestRef == oldSelf.changeRequestRef && self.gatewayHost == oldSelf.gatewayHost && self.clusterProfileRef.name == oldSelf.clusterProfileRef.name && self.clusterProfileRef.namespace == oldSelf.clusterProfileRef.namespace
                   message: Assignment is immutable; use an approved change
                 - rule: self.tier != 'prod' || self.trustLevel != 'untrusted'
                   message: Untrusted clusters cannot host prod
               properties:
+                suspended: {type: boolean, default: false}
+                gatewayHost: {type: string, minLength: 1, maxLength: 253, pattern: "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"}
                 organization: {type: string, minLength: 1, maxLength: 63}
                 tier: {type: string, enum: [nonprod, prod]}
                 environment: {type: string, minLength: 1, maxLength: 63}
@@ -44,7 +46,7 @@ spec:
                   type: object
                   required: [apiVersion, namespace, name]
                   properties:
-                    apiVersion: {type: string, enum: [multicluster.x-k8s.io/v1alpha1]}
+                    apiVersion: {type: string, enum: [multicluster.x-k8s.io/v1alpha1, multicluster.x-k8s.io/v1alpha2]}
                     namespace: {type: string, minLength: 1}
                     name: {type: string, minLength: 1}
             status:
