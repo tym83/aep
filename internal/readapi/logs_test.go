@@ -80,6 +80,9 @@ func TestLogsAreScopedToTheEnvironment(t *testing.T) {
 			t.Fatal("logs were read before the environment decision")
 		}
 	}
+	if w := call(s, path+"prod/logs", sign([]string{"aep-acme-approver"}, nil)); w.Code != 403 {
+		t.Fatalf("denied caller must not learn whether prod is deployed: %d", w.Code)
+	}
 	if w := call(s, path+"stage/logs", member); w.Code != 404 {
 		t.Fatalf("unknown environment: %d", w.Code)
 	}
@@ -104,7 +107,7 @@ func TestLogsRejectBindingOfAnotherProject(t *testing.T) {
 		t.Fatalf("binding of another project: %d %s", w.Code, w.Body)
 	}
 	for _, request := range *seen {
-		if strings.Contains(request, "evaluates") || strings.Contains(request, "/logs") {
+		if strings.Contains(request, "/k8sresources/") {
 			t.Fatalf("unexpected request %s", request)
 		}
 	}

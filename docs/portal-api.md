@@ -176,10 +176,11 @@ Returns the OpenChoreo pod log response for a deployed component. Query:
 OpenChoreo authorizes its own pod log route
 (`/api/v1/namespaces/{org}/releasebindings/{binding}/k8sresources/logs`) with
 `releasebinding:view` and no environment context, so any organization reader
-could read production pod logs there. This route first checks that the
-release binding belongs to the requested project and component, then evaluates
-`logs:view` for the exact environment through `/api/v1/authz/evaluates` with
-the caller's token, and only then reads the logs as the caller. By default
+could read production pod logs there. This route first evaluates `logs:view`
+for the exact environment through `/api/v1/authz/evaluates` with the caller's
+token (a denied caller learns nothing about which deployments exist), then
+checks that the release binding belongs to the requested project and component,
+and only then reads the logs as the caller. By default
 `developer` and `platform` hold `logs:view` in non-prod environments only;
 granting production logs is an organization decision expressed in its roles.
 

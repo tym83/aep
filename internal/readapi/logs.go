@@ -71,10 +71,19 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request, org *api.Organizat
 		return
 	}
 	token := authn.BearerToken(r.Header.Get("Authorization"))
+	// Decide first, so a denied caller learns nothing about which deployments exist.
+	allowed, err := s.canViewLogs(r.Context(), token, org.Name, project, component, environment)
+	if err != nil {
+		fail(w, 502, "cannot evaluate log access")
+		return
+	}
+	if !allowed {
+		fail(w, 403, "log access denied for this environment")
+		return
+	}
 	binding := component + "-" + environment
 	base := "/api/v1/namespaces/" + org.Name + "/releasebindings/" + binding
-	// The binding must belong to the requested project and component, or the
-	// evaluation below would be made against a hierarchy the logs do not belong to.
+	// The decision covers the requested hierarchy; the binding must belong to it.
 	var rb struct {
 		Spec struct {
 			Environment string
@@ -88,15 +97,6 @@ func (s *Server) logs(w http.ResponseWriter, r *http.Request, org *api.Organizat
 	}
 	if code != 200 || json.Unmarshal(raw, &rb) != nil || rb.Spec.Owner.ProjectName != project || rb.Spec.Owner.ComponentName != component || rb.Spec.Environment != environment {
 		fail(w, 404, "deployment not found")
-		return
-	}
-	allowed, err := s.canViewLogs(r.Context(), token, org.Name, project, component, environment)
-	if err != nil {
-		fail(w, 502, "cannot evaluate log access")
-		return
-	}
-	if !allowed {
-		fail(w, 403, "log access denied for this environment")
 		return
 	}
 	if pod == "" {
