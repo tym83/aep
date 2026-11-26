@@ -32,7 +32,8 @@ policies-package:
 
 .PHONY: charts-lint
 charts-lint:
-	helm lint --strict charts/aep-audit-forwarder charts/aep-cp-backup
+	helm template types charts/aep-component-types > /dev/null
+	helm lint --strict charts/aep-audit-forwarder charts/aep-cp-backup charts/aep-component-types
 	helm template audit charts/aep-audit-forwarder --namespace aep-system > /dev/null
 	helm template backup charts/aep-cp-backup --namespace aep-system > /dev/null
 	cmp config/crd/aep.aenix.io_changerequests.yaml charts/aep-change/crds/aep.aenix.io_changerequests.yaml

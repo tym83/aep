@@ -10,6 +10,9 @@ planes, bridges and access on an existing Cozystack/OpenChoreo installation.
 See [the operator guide](docs/operator.md) for installation, flags, prerequisites
 and the explicit limitations of this stage.
 
+See [AEP component types](docs/component-types.md) for the restricted-compliant
+service, worker, cron and migration golden paths installed on aep-cp.
+
 ## Change service
 
 The change service (`cmd/change-api`, `cmd/change-controller`) governs writes

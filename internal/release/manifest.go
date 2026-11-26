@@ -183,6 +183,11 @@ func Images(data []byte) ([]string, error) {
 		if e != nil {
 			return nil, e
 		}
+		// Component type templates describe developer images supplied at runtime.
+		// They are not executable workloads shipped in the platform inventory.
+		if v["apiVersion"] == "openchoreo.dev/v1alpha1" && (v["kind"] == "ClusterComponentType" || v["kind"] == "ComponentType") {
+			continue
+		}
 		walk(v)
 	}
 	out := []string{}
@@ -665,18 +670,33 @@ func ownRepository(ref string) (string, bool) {
 
 // RefreshLocal rebuilds changed chart layouts without resolving upstream tags.
 func RefreshLocal(root string, m Manifest) (Manifest, error) {
-	for i, a := range m.Artifacts {
-		for _, base := range []string{"charts", "policies"} {
-			prefix := "oci://ghcr.io/tym83/aep/" + base + "/"
-			if a.Kind == "chart" && strings.HasPrefix(a.Ref, prefix) {
-				updated, err := PackageChart(root, filepath.Join(root, base, strings.TrimPrefix(a.Ref, prefix)))
-				if err != nil {
-					return m, err
+	// Discover own source charts, including newly added ones. Repackaged upstream
+	// charts share our registry prefix but have no source under charts/.
+	for _, base := range []string{"charts", "policies"} {
+		paths, err := filepath.Glob(filepath.Join(root, base, "*", "Chart.yaml"))
+		if err != nil {
+			return m, err
+		}
+		for _, path := range paths {
+			updated, err := PackageChart(root, filepath.Dir(path))
+			if err != nil {
+				return m, err
+			}
+			updated.Signature = SignatureRequiredAtPublish
+			found := false
+			for i, a := range m.Artifacts {
+				if a.Kind == "chart" && a.Ref == updated.Ref {
+					m.Artifacts[i] = updated
+					found = true
+					break
 				}
-				m.Artifacts[i] = updated
+			}
+			if !found {
+				m.Artifacts = append(m.Artifacts, updated)
 			}
 		}
 	}
+	sort.Slice(m.Artifacts, func(i, j int) bool { return m.Artifacts[i].Ref < m.Artifacts[j].Ref })
 	var err error
 	m.Inputs, err = Fingerprint(root)
 	if err != nil {
