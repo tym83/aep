@@ -5,6 +5,9 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	api "github.com/tym83/aep/api/v1alpha1"
+	"github.com/tym83/aep/internal/operator"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,8 +42,8 @@ func TestResponseLimitAndRedactedTransportErrors(t *testing.T) {
 		t.Fatal("oversize response accepted")
 	}
 	server.Close()
-	_, _, err := exchange(context.Background(), server.URL, "/secret", "GET", "secret", nil, nil)
-	if err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), server.URL) {
+	_, _, err := exchange(context.Background(), server.URL, "/probe", "GET", "secret", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "/probe") || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), server.URL) {
 		t.Fatal("transport details leaked")
 	}
 }
@@ -177,4 +180,75 @@ func TestTemplateExpansionUsesConfiguredLogFixtures(t *testing.T) {
 	if got := s.expand("{logsPath}", 0, "x"); got != "/namespaces/a/projects/running/components/service?env=prod" {
 		t.Fatalf("incorrect log fixture: %v", got)
 	}
+}
+
+func TestFilteredListDenial(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		deny bool
+	}{
+		{`{"items":[]}`, true}, {`{"items":[{"metadata":{"namespace":"other"}}]}`, true},
+		{`{"items":[{"metadata":{"namespace":"target"}}]}`, false}, {`{"items":[{}]}`, false},
+		{`{}`, false}, {`{"items":null}`, false}, {`{"items":"bad"}`, false},
+	} {
+		if got := emptyTargetList(tc.raw, "target"); got != tc.deny {
+			t.Errorf("%s: %v", tc.raw, got)
+		}
+	}
+}
+
+func TestSecretFixtureValidation(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"data":[]}`, `{"template":{},"data":[{}]}`, `{"template":{},"data":[{"secretKey":"p","remoteRef":{"key":""}}]}`} {
+		var spec map[string]any
+		_ = json.Unmarshal([]byte(raw), &spec)
+		if validateSecretSpec(spec) == nil {
+			t.Errorf("invalid fixture accepted: %s", raw)
+		}
+	}
+}
+
+func TestTransportRetriesWithFreshCredentials(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") != "Bearer fresh" {
+			t.Error("cached token used")
+		}
+		if calls == 1 {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+	s := &suite{t: t, c: config{Endpoints: map[string]string{"change": server.URL}, TokenCommand: []string{"sh", "-c", "printf fresh"}, Organizations: []organization{{Users: map[string]string{"developer": "dev"}}}}, tokens: map[string]string{"0/developer/false": "expired"}}
+	s.require(0, "developer", "change", "POST", "/probe", map[string]any{}, nil, 200)
+	if calls != 2 {
+		t.Fatalf("requests: %d", calls)
+	}
+}
+
+func TestDelegatedBindingUsesRenderedRestrictions(t *testing.T) {
+	org := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "dev", Tier: "nonprod"}, {Name: "stage", Tier: "nonprod"}, {Name: "prod", Tier: "prod"}}}}
+	for _, obj := range operator.RenderAuthz(org) {
+		if obj.GetKind() != "AuthzRoleBinding" || obj.GetName() != "aep-developer" {
+			continue
+		}
+		spec, err := delegatedBinding(obj.Object, "custom", "local")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mappings := spec["roleMappings"].([]any)
+		mapping := mappings[0].(map[string]any)
+		if str(mapping, "roleRef.name") != "custom" || str(mapping, "roleRef.kind") != "AuthzRole" {
+			t.Fatal("delegated role changed")
+		}
+		b, _ := json.Marshal(mapping["conditions"])
+		if !strings.Contains(string(b), `acme/stage`) || strings.Contains(string(b), `acme/prod`) {
+			t.Fatalf("wrong restriction: %s", b)
+		}
+		return
+	}
+	t.Fatal("operator binding missing")
 }

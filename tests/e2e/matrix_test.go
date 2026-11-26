@@ -37,6 +37,12 @@ func (s *suite) matrix() {
 				s.t.Run(role+"/"+name+"/"+s.c.Organizations[target].Name, func(t *testing.T) {
 					x := *s
 					x.t = t
+					if a.Fixture == "self" && (!contains([]string{"developer", "platform", "admin"}, role) || target != 0) {
+						t.Skip("approve-own applies only to creator roles in their own organization")
+					}
+					if strings.Contains(name, "logs") && (x.c.Organizations[target].LogsProject == "" || x.c.Organizations[target].LogsComponent == "") {
+						t.Skip("logsProject and logsComponent are not configured for this organization")
+					}
 					if a.Endpoint == "mcp" && x.c.Endpoints["mcp"] == "" {
 						t.Skip("MCP not configured")
 					}
@@ -104,6 +110,9 @@ func (s *suite) matrix() {
 							// An approval of a decommission for an absent run-owned target cannot
 							// create production data. It still exercises the real Pending/SoD path.
 							creator := "developer"
+							if a.Fixture == "decision" && role == "developer" && !cross {
+								creator = "admin"
+							}
 							if a.Fixture == "self" && contains([]string{"developer", "platform", "admin"}, role) && !cross {
 								creator = role
 							}
@@ -131,14 +140,23 @@ func (s *suite) matrix() {
 						return
 					}
 					code, raw := x.call(0, role, a.Endpoint, a.Method, path, body, headers)
-					ok := false
+					// Pending status can change between the fixture read and decision.
+					for attempt := 0; code == 412 && attempt < 2 && (a.Fixture == "self" || a.Fixture == "decision"); attempt++ {
+						v := x.require(target, "developer", "change", "GET", strings.TrimSuffix(path, "/decision"), nil, nil, 200)
+						headers["If-Match"] = str(v, "request.metadata.resourceVersion")
+						code, raw = x.call(0, role, a.Endpoint, a.Method, path, body, headers)
+					}
+					filtered := !allow && role != "anonymous" && a.Endpoint == "openchoreo" && a.Method == "GET" && a.List && code == 200 && emptyTargetList(raw, x.c.Organizations[target].Name)
+					ok := filtered
 					for _, want := range expected {
 						ok = ok || code == want
 					}
 					if !ok {
 						t.Errorf("%s | %s | %d | %v | %d", role, name, target, expected, code)
 					}
-					if cross && a.Path != "/v1/me" && role != "anonymous" {
+					if filtered {
+						x.noLeaks(raw, target)
+					} else if cross && a.Path != "/v1/me" && role != "anonymous" {
 						x.denied(code, raw, target)
 					}
 					if a.Path == "/v1/me" && role != "anonymous" {
@@ -158,4 +176,26 @@ func (s *suite) matrix() {
 			}
 		}
 	}
+}
+
+// A namespaced list must explicitly contain items; malformed responses never
+// count as denial. Missing namespace on an item belongs to the requested scope.
+func emptyTargetList(raw, organization string) bool {
+	var list struct {
+		Items []map[string]any `json:"items"`
+	}
+	var envelope map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &envelope) != nil || envelope["items"] == nil || string(envelope["items"]) == "null" {
+		return false
+	}
+	if json.Unmarshal([]byte(raw), &list) != nil {
+		return false
+	}
+	for _, item := range list.Items {
+		ns := str(item, "metadata.namespace")
+		if ns == "" || ns == organization {
+			return false
+		}
+	}
+	return true
 }

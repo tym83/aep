@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -58,6 +59,7 @@ type config struct {
 type action struct {
 	Endpoint, Path, Method, Fixture string
 	Allow                           []string
+	List                            bool
 	Success                         []int
 	Body                            map[string]any
 }
@@ -66,12 +68,11 @@ type matrix struct {
 	Actions map[string]action
 }
 type suite struct {
-	t          *testing.T
-	c          config
-	run        string
-	tokens     map[string]string
-	tokenTimes map[string]time.Time
-	fixtures   []fixture
+	t        *testing.T
+	c        config
+	run      string
+	tokens   map[string]string
+	fixtures []fixture
 }
 type fixture struct {
 	project, resource, component, projectRelease, resourceRelease string
@@ -108,6 +109,9 @@ func token(commandLine []string, user string) (string, error) {
 	}
 	return out, nil
 }
+
+var errTransport = errors.New("HTTP transport failed")
+
 func exchange(ctx context.Context, base, path, method, tok string, body any, headers map[string]string) (int, string, error) {
 	var reader io.Reader
 	if body != nil {
@@ -132,14 +136,17 @@ func exchange(ctx context.Context, base, path, method, tok string, body any, hea
 	client := &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, "", fmt.Errorf("HTTP transport failed (details redacted)")
+		return 0, "", fmt.Errorf("%w for %s (details redacted)", errTransport, req.URL.Path)
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, (4<<20)+1))
 	if len(b) > 4<<20 {
 		return 0, "", fmt.Errorf("response exceeds limit")
 	}
-	return resp.StatusCode, string(b), err
+	if err != nil {
+		return 0, "", fmt.Errorf("%w reading response for %s (details redacted)", errTransport, req.URL.Path)
+	}
+	return resp.StatusCode, string(b), nil
 }
 func (s *suite) auth(org int, role string, portal bool) string {
 	if role == "anonymous" {
@@ -150,7 +157,8 @@ func (s *suite) auth(org int, role string, portal bool) string {
 		role = "developer"
 	}
 	key := fmt.Sprintf("%d/%s/%t", org, role, portal)
-	if v := s.tokens[key]; v != "" && (s.tokenTimes == nil || time.Since(s.tokenTimes[key]) < 30*time.Second) {
+	// Static credentials exist only in local fake tests without token helpers.
+	if v := s.tokens[key]; v != "" && len(s.c.TokenCommand) == 0 {
 		return v
 	}
 	user := s.c.Organizations[org].Users[role]
@@ -165,24 +173,30 @@ func (s *suite) auth(org int, role string, portal bool) string {
 	if err != nil {
 		s.t.Fatal(err)
 	}
-	s.tokens[key] = v
-	if s.tokenTimes != nil {
-		s.tokenTimes[key] = time.Now()
-	}
 	return v
 }
 func (s *suite) call(org int, role, endpoint, method, path string, body any, headers map[string]string) (int, string) {
 	s.t.Helper()
-	tok := s.auth(org, role, false)
 	if endpoint == "portal" {
-		if headers == nil {
-			headers = map[string]string{}
-		}
-		headers["x-openchoreo-token"] = tok
-		tok = s.auth(org, role, true)
 		path = "/api/aep" + path
 	}
-	code, raw, err := exchange(context.Background(), s.c.Endpoints[endpoint], path, method, tok, body, headers)
+	var code int
+	var raw string
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		tok := s.auth(org, role, false)
+		if endpoint == "portal" {
+			if headers == nil {
+				headers = map[string]string{}
+			}
+			headers["x-openchoreo-token"] = tok
+			tok = s.auth(org, role, true)
+		}
+		code, raw, err = exchange(context.Background(), s.c.Endpoints[endpoint], path, method, tok, body, headers)
+		if err == nil || !errors.Is(err, errTransport) {
+			break
+		}
+	}
 	if err != nil {
 		s.t.Fatal(err)
 	}
@@ -291,6 +305,9 @@ func loadConfig(path string) (config, error) {
 	if !dns.MatchString(r.Project) || r.ResourceType == "" || r.Environment == "" || r.ProdEnvironment == "" || r.Environment == r.ProdEnvironment || len(r.ComponentSpec) == 0 || len(r.SecretSpec) == 0 || r.LogsPath == "" || r.OutputsPath == "" || len(r.OutputFields) == 0 {
 		return c, fmt.Errorf("complete resource fixtures, log/output routes and distinct environments required")
 	}
+	if err := validateSecretSpec(r.SecretSpec); err != nil {
+		return c, err
+	}
 	if c.TimeoutSeconds == 0 {
 		c.TimeoutSeconds = 900
 	}
@@ -311,7 +328,7 @@ func TestAcceptance(t *testing.T) {
 	if _, err = rand.Read(b); err != nil {
 		t.Fatal(err)
 	}
-	s := &suite{t: t, c: c, run: hex.EncodeToString(b), tokens: map[string]string{}, tokenTimes: map[string]time.Time{}, fixtures: make([]fixture, 2)}
+	s := &suite{t: t, c: c, run: hex.EncodeToString(b), tokens: map[string]string{}, fixtures: make([]fixture, 2)}
 	t.Logf("run id: %s", s.run)
 	for i := range c.Organizations {
 		s.setup(i)
@@ -327,4 +344,21 @@ func sortedActions(m matrix) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+func validateSecretSpec(spec map[string]any) error {
+	data, ok := spec["data"].([]any)
+	if !ok || len(data) == 0 {
+		return fmt.Errorf("resources.secretSpec.data must contain at least one item")
+	}
+	for _, item := range data {
+		m, ok := item.(map[string]any)
+		if !ok || str(m, "secretKey") == "" || str(m, "remoteRef.key") == "" {
+			return fmt.Errorf("resources.secretSpec.data requires secretKey and remoteRef.key on every item")
+		}
+	}
+	if _, ok := spec["template"].(map[string]any); !ok {
+		return fmt.Errorf("resources.secretSpec.template must be an object")
+	}
+	return nil
 }

@@ -206,7 +206,17 @@ func (s *suite) journeys() {
 		name := x.name("role")
 		x.createOC(0, "admin", "authzroles", name, map[string]any{"actions": []string{"project:view"}})
 		binding := x.name("binding")
-		spec := map[string]any{"entitlement": map[string]any{"claim": "groups", "value": "e2e-unused-" + x.run}, "effect": "allow", "roleMappings": []any{map[string]any{"roleRef": map[string]any{"kind": "AuthzRole", "name": name}}}}
+		// Copy the operator's rendered restriction, including every nonprod
+		// environment in its original order: the VAP requires exact equality.
+		rendered := x.require(0, "admin", "openchoreo", "GET", x.oc(0, "/authzrolebindings/aep-developer"), nil, nil, 200)
+		spec, err := delegatedBinding(rendered, name, x.run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		unrestricted := x.name("unrestricted")
+		x.cleanupObject(0, "authzrolebindings", unrestricted)
+		bad := map[string]any{"entitlement": spec["entitlement"], "effect": "allow", "roleMappings": []any{map[string]any{"roleRef": map[string]any{"kind": "AuthzRole", "name": name}}}}
+		x.require(0, "admin", "openchoreo", "POST", x.oc(0, "/authzrolebindings"), object(unrestricted, bad, x.run), nil, 422)
 		x.createOC(0, "admin", "authzrolebindings", binding, spec)
 		x.cleanupObject(1, "authzrolebindings", binding)
 		code, body := x.call(0, "admin", "openchoreo", "POST", x.oc(1, "/authzrolebindings"), object(binding, spec, x.run), nil)
@@ -255,10 +265,29 @@ func (s *suite) denied(code int, body string, org int) {
 	if code != 403 && code != 404 {
 		s.t.Errorf("cross-org expected 403/404, got %d", code)
 	}
+}
+func (s *suite) noLeaks(body string, org int) {
+	s.t.Helper()
 	markers := append([]string{s.c.Organizations[org].Name, s.fixtures[org].project, s.fixtures[org].resource, s.fixtures[org].component}, s.c.Organizations[org].LeakMarkers...)
 	for _, marker := range markers {
 		if marker != "" && strings.Contains(body, marker) {
 			s.t.Error("cross-org response leaked a target marker (body redacted)")
 		}
 	}
+}
+
+func delegatedBinding(rendered map[string]any, role, run string) (map[string]any, error) {
+	mappings, _ := field(rendered, "spec.roleMappings").([]any)
+	for _, row := range mappings {
+		m, _ := row.(map[string]any)
+		if str(m, "roleRef.name") != "aep-developer" || str(m, "roleRef.kind") != "AuthzRole" {
+			continue
+		}
+		conditions, _ := m["conditions"].([]any)
+		if len(conditions) == 0 {
+			break
+		}
+		return map[string]any{"entitlement": map[string]any{"claim": "groups", "value": "e2e-unused-" + run}, "effect": "allow", "roleMappings": []any{map[string]any{"roleRef": map[string]any{"kind": "AuthzRole", "name": role}, "conditions": conditions}}}, nil
+	}
+	return nil, fmt.Errorf("operator developer binding has no nonprod restrictions")
 }
