@@ -1,0 +1,273 @@
+package audit
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/dynamic"
+)
+
+func str(u *unstructured.Unstructured, path ...string) string {
+	v, _, _ := unstructured.NestedString(u.Object, path...)
+	return v
+}
+func val(u *unstructured.Unstructured, path ...string) any {
+	v, _, _ := unstructured.NestedFieldCopy(u.Object, path...)
+	return v
+}
+
+// Normalize retains status evidence, not arbitrary resource specs or Secrets.
+func Normalize(u *unstructured.Unstructured, deleted bool) []Event {
+	action := "changed"
+	if deleted {
+		action = "deleted"
+	}
+	base := Event{Source: "management-watch", Action: strings.ToLower(u.GetKind()) + "." + action, Actor: "unknown", Resource: u.GetKind() + "/" + u.GetNamespace() + "/" + u.GetName(), Details: map[string]any{"uid": string(u.GetUID()), "resourceVersion": u.GetResourceVersion(), "generation": u.GetGeneration()}}
+	if u.GetKind() != "ChangeRequest" {
+		base.Organization = u.GetName()
+		base.Details["specHash"] = Digest(val(u, "spec"))
+		return []Event{base}
+	}
+	base.Actor = str(u, "spec", "requester")
+	base.Organization = str(u, "spec", "organization")
+	base.Details["requester"] = base.Actor
+	base.Details["approvals"] = val(u, "status", "approvals")
+	base.Details["notes"] = val(u, "status", "notes")
+	base.Details["phase"] = str(u, "status", "phase")
+	base.Details["target"] = val(u, "spec", "target")
+	base.Details["conditions"] = val(u, "status", "conditions")
+	before := val(u, "status", "before")
+	base.Details["beforeSnapshotRef"] = fmt.Sprintf("changerequest:%s@%s/status/before#sha256:%s", u.GetUID(), u.GetResourceVersion(), Digest(before))
+	// Keep snapshots alongside their reference so deletion of the CR cannot erase evidence.
+	base.Details["before"] = before
+	base.Action = "changerequest.observed"
+	out := []Event{base}
+	created := base
+	created.Action = "changerequest.created"
+	created.Time = u.GetCreationTimestamp().UTC().Format(time.RFC3339Nano)
+	created.ID = Digest([]any{u.GetUID(), "created"})
+	out = append(out, created)
+	approvals, _, _ := unstructured.NestedSlice(u.Object, "status", "approvals")
+	for _, a := range approvals {
+		m, ok := a.(map[string]any)
+		if !ok {
+			continue
+		}
+		e := base
+		e.Action = "changerequest.decided"
+		e.Actor, _ = m["user"].(string)
+		e.ID = Digest([]any{u.GetUID(), "decision", a})
+		e.Details = map[string]any{}
+		for k, v := range base.Details {
+			e.Details[k] = v
+		}
+		e.Details["decision"] = m
+		out = append(out, e)
+	}
+	phase := str(u, "status", "phase")
+	if phase == "Applied" || phase == "Failed" {
+		e := base
+		e.Action = "changerequest." + strings.ToLower(phase)
+		e.ID = Digest([]any{u.GetUID(), phase})
+		out = append(out, e)
+	}
+	return out
+}
+
+// Watch relists after watch expiry. The API audit webhook is the authoritative
+// history for transitions compacted while the watcher is unavailable.
+func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) {
+	ri := c.Resource(schema.GroupVersionResource{Group: "aep.aenix.io", Version: "v1alpha1", Resource: resource})
+	accept := func(u *unstructured.Unstructured, deleted bool) error {
+		key := string(u.GetUID())
+		rev := u.GetResourceVersion()
+		if deleted {
+			rev += "/deleted"
+		}
+		var checkpoint struct {
+			Revision string
+			IDs      []string
+		}
+		_ = json.Unmarshal([]byte(s.Seen(key)), &checkpoint)
+		if checkpoint.Revision == rev {
+			return nil
+		}
+		seen := map[string]bool{}
+		for _, id := range checkpoint.IDs {
+			seen[id] = true
+		}
+		normalized := Normalize(u, deleted)
+		events := []Event{}
+		for _, e := range normalized {
+			if e.ID != "" && seen[e.ID] {
+				continue
+			}
+			if e.ID != "" {
+				checkpoint.IDs = append(checkpoint.IDs, e.ID)
+			}
+			if u.GetKind() == "Organization" && checkpoint.Revision == "" {
+				e.Action = "organization.created"
+			}
+			events = append(events, e)
+		}
+		checkpoint.Revision = rev
+		encoded, _ := json.Marshal(checkpoint)
+		for ctx.Err() == nil {
+			err := s.Observe(key, string(encoded), events)
+			if err == nil {
+				return nil
+			}
+			log.Printf("audit watch backpressure: %v", err)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+			}
+		}
+		return ctx.Err()
+	}
+	for ctx.Err() == nil {
+		list, err := ri.List(ctx, metav1.ListOptions{})
+		if err == nil {
+			for i := range list.Items {
+				if err = accept(&list.Items[i], false); err != nil {
+					return
+				}
+			}
+			var w watch.Interface
+			w, err = ri.Watch(ctx, metav1.ListOptions{ResourceVersion: list.GetResourceVersion(), AllowWatchBookmarks: true})
+			if err == nil {
+				for ev := range w.ResultChan() {
+					if ev.Type == watch.Error {
+						break
+					}
+					if ev.Type == watch.Bookmark {
+						continue
+					}
+					u, ok := ev.Object.(*unstructured.Unstructured)
+					if ok {
+						if err = accept(u, ev.Type == watch.Deleted); err != nil {
+							w.Stop()
+							return
+						}
+					}
+				}
+				w.Stop()
+			}
+		}
+		if err != nil {
+			log.Printf("audit watch %s: %v", resource, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+type Receiver struct {
+	Spool   *Spool
+	Token   string
+	Cluster string
+}
+
+func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != "POST" {
+		w.WriteHeader(405)
+		return
+	}
+	if r.Token == "" || subtle.ConstantTimeCompare([]byte(req.Header.Get("Authorization")), []byte("Bearer "+r.Token)) != 1 {
+		w.WriteHeader(401)
+		return
+	}
+	b, err := io.ReadAll(http.MaxBytesReader(w, req.Body, 8<<20))
+	if err != nil {
+		http.Error(w, "body too large", 413)
+		return
+	}
+	var events []Event
+	switch req.URL.Path {
+	case "/kubernetes":
+		var list struct {
+			APIVersion string            `json:"apiVersion"`
+			Kind       string            `json:"kind"`
+			Items      []json.RawMessage `json:"items"`
+		}
+		if json.Unmarshal(b, &list) != nil || list.APIVersion != "audit.k8s.io/v1" || list.Kind != "EventList" {
+			http.Error(w, "expected audit.k8s.io/v1 EventList", 400)
+			return
+		}
+		for _, raw := range list.Items {
+			var e struct {
+				AuditID      string         `json:"auditID"`
+				Stage        string         `json:"stage"`
+				Verb         string         `json:"verb"`
+				Time         string         `json:"stageTimestamp"`
+				User         map[string]any `json:"user"`
+				Impersonated map[string]any `json:"impersonatedUser"`
+				Object       map[string]any `json:"objectRef"`
+				Response     map[string]any `json:"responseStatus"`
+				Annotations  map[string]any `json:"annotations"`
+			}
+			if json.Unmarshal(raw, &e) != nil || e.AuditID == "" || e.Stage == "" {
+				http.Error(w, "invalid audit event", 400)
+				return
+			}
+			group, _ := e.Object["apiGroup"].(string)
+			if group != "aep.aenix.io" && group != "apps.cozystack.io" {
+				continue
+			}
+			actor, _ := e.User["username"].(string)
+			events = append(events, Event{ID: Digest([]string{r.Cluster, e.AuditID, e.Stage}), Source: "kubernetes/" + r.Cluster, Time: e.Time, Action: e.Verb, Actor: actor, Resource: fmt.Sprint(e.Object["resource"], "/", e.Object["namespace"], "/", e.Object["name"]), Details: map[string]any{"auditID": e.AuditID, "stage": e.Stage, "user": e.User, "impersonatedUser": e.Impersonated, "objectRef": e.Object, "responseStatus": e.Response, "annotations": e.Annotations}})
+		}
+	case "/openchoreo":
+		// Adapter for the documented structured audit record, not arbitrary pod logs.
+		var e struct {
+			ID       string         `json:"event_id"`
+			Time     string         `json:"event_time"`
+			Action   string         `json:"action"`
+			Result   string         `json:"result"`
+			Actor    map[string]any `json:"actor"`
+			Resource map[string]any `json:"resource"`
+			Request  string         `json:"request_id"`
+		}
+		if json.Unmarshal(b, &e) != nil || e.ID == "" || e.Action == "" || e.Result == "" {
+			http.Error(w, "expected structured OpenChoreo audit record", 400)
+			return
+		}
+		actor, _ := e.Actor["id"].(string)
+		ns, _ := e.Resource["namespace"].(string)
+		events = append(events, Event{ID: Digest([]string{r.Cluster, e.ID}), Source: "openchoreo/" + r.Cluster, Time: e.Time, Action: e.Action, Actor: actor, Organization: ns, Resource: fmt.Sprint(e.Resource["type"], "/", e.Resource["name"]), Details: map[string]any{"actor": e.Actor, "resource": e.Resource, "result": e.Result, "requestID": e.Request}})
+	default:
+		w.WriteHeader(404)
+		return
+	}
+	for _, e := range events {
+		if e.Time != "" {
+			if _, err = time.Parse(time.RFC3339Nano, e.Time); err != nil {
+				http.Error(w, "invalid event timestamp", 400)
+				return
+			}
+		}
+	}
+	if len(events) > 0 {
+		if err = r.Spool.Append(events); err != nil {
+			w.Header().Set("Retry-After", "5")
+			http.Error(w, "durable spool unavailable", 503)
+			return
+		}
+	}
+	w.WriteHeader(204)
+}
