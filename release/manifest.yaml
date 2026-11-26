@@ -167,7 +167,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-llm
   signature: required-at-publish
   version: 0.1.2
-- digest: sha256:e7db2cabd4ae6d8c6c086b06d70234f6fc647c71d97a1d14a48bde72941eef1a
+- digest: sha256:de5a1ee69fe4ed9e64a356ac8264c4610f14abe48092ee4c98a1677181804c9e
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-operator
@@ -303,5 +303,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: b79e727bcbe2c8c81fda23343de6b516a9aa3bcb2420d14491ac5ace6bcf1ec9
+inputs: 44422247810bcf5b3c52be2e1863bcbf943db91147e85af94c6fdb0062f289b3
 schema: 1
