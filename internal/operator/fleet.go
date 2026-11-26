@@ -45,7 +45,8 @@ func (f *FleetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	before := ec.DeepCopy()
+	before := ec
+	ec = ec.DeepCopy()
 	for _, t := range fleetConditions {
 		if meta.FindStatusCondition(ec.Status.Conditions, t) == nil {
 			fleetCondition(ec, t, false, "Pending", "Waiting for observed readiness")

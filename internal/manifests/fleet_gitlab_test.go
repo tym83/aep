@@ -87,3 +87,41 @@ func TestGitLabExternalServiceContract(t *testing.T) {
 		}
 	}
 }
+
+func TestOperatorCanFinalizeFleetResources(t *testing.T) {
+	b, err := exec.Command("helm", "template", "operator", "../../charts/aep-operator", "--set", "aepcpKubeconfigSecret=cp/access").CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v %s", err, b)
+	}
+	needed := map[string]bool{"work.open-cluster-management.io/manifestworks": false, "multicluster.x-k8s.io/clusterprofiles": false, "aep.aenix.io/externalclusters": false, "rbac.authorization.k8s.io/clusterroles": false, "rbac.authorization.k8s.io/clusterrolebindings": false}
+	for _, m := range decode(t, b) {
+		if m["kind"] != "ClusterRole" {
+			continue
+		}
+		rules, _ := m["rules"].([]any)
+		for _, raw := range rules {
+			r := raw.(map[string]any)
+			verbs, _ := r["verbs"].([]any)
+			hasDelete := false
+			for _, v := range verbs {
+				hasDelete = hasDelete || v == "delete"
+			}
+			if !hasDelete {
+				continue
+			}
+			for _, g := range r["apiGroups"].([]any) {
+				for _, resource := range r["resources"].([]any) {
+					key := g.(string) + "/" + resource.(string)
+					if _, ok := needed[key]; ok {
+						needed[key] = true
+					}
+				}
+			}
+		}
+	}
+	for key, allowed := range needed {
+		if !allowed {
+			t.Fatal("finalizer cannot delete", key)
+		}
+	}
+}
