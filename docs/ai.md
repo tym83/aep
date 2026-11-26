@@ -186,3 +186,8 @@ with signed immutable images and review tier RoleBindings before a stand exercis
 Remaining integration gates: observer authentication proxy, installed CRD/metrics
 compatibility, per-org token rotation/report lifecycle, inference compatibility,
 and the complete thirty-case real-failure evaluation.
+
+The alert-router ClusterRole requires `get` on core `namespaces` and on
+`organizations.aep.aenix.io`. It resolves the Organization by namespace name and
+requires the namespace organization label to equal its UID, as set by the operator,
+and `openchoreo.dev/control-plane=true`.

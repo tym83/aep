@@ -1,13 +1,16 @@
 package alertrouter
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 	"math/big"
 	"net/http"
@@ -24,7 +27,7 @@ const payload = `{"namespace":"acme","project":"p","component":"c","environment"
 
 func router(t *testing.T, target string) *Router {
 	t.Helper()
-	c := fake.NewSimpleDynamicClient(runtime.NewScheme(), &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "acme", "labels": map[string]any{"openchoreo.dev/control-plane": "true", "aep.aenix.io/organization": "acme"}}}})
+	c := fake.NewSimpleDynamicClient(runtime.NewScheme(), &unstructured.Unstructured{Object: map[string]any{"apiVersion": "aep.aenix.io/v1alpha1", "kind": "Organization", "metadata": map[string]any{"name": "acme", "uid": "org-uid"}}}, &unstructured.Unstructured{Object: map[string]any{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "acme", "labels": map[string]any{"openchoreo.dev/control-plane": "true", "aep.aenix.io/organization": "org-uid"}}}})
 	r, err := New(c, target+"/{org}", testSecret, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -134,5 +137,29 @@ func TestRedirectRejected(t *testing.T) {
 	s.ServeHTTP(w, signed(payload))
 	if w.Code != 502 {
 		t.Fatal(w.Code)
+	}
+}
+
+func TestNamespaceOwnership(t *testing.T) {
+	for _, labels := range []map[string]string{
+		{"openchoreo.dev/control-plane": "true", "aep.aenix.io/organization": "acme"},
+		{"openchoreo.dev/control-plane": "true", "aep.aenix.io/organization": "stale-uid"},
+		{"aep.aenix.io/organization": "org-uid"},
+	} {
+		s := router(t, "http://agent")
+		resource := s.client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"})
+		ns, err := resource.Get(context.Background(), "acme", metav1.GetOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ns.SetLabels(labels)
+		if _, err := resource.Update(context.Background(), ns, metav1.UpdateOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, signed(payload))
+		if w.Code != 403 {
+			t.Fatal(w.Code)
+		}
 	}
 }

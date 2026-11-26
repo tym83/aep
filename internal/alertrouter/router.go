@@ -164,8 +164,13 @@ func (s *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid analyze payload", 400)
 		return
 	}
+	org, err := s.client.Resource(schema.GroupVersionResource{Group: "aep.aenix.io", Version: "v1alpha1", Resource: "organizations"}).Get(r.Context(), payload.Namespace, metav1.GetOptions{})
+	if err != nil || org.GetUID() == "" {
+		http.Error(w, "organization unavailable", 403)
+		return
+	}
 	ns, err := s.client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}).Get(r.Context(), payload.Namespace, metav1.GetOptions{})
-	if err != nil || ns.GetLabels()["openchoreo.dev/control-plane"] != "true" || ns.GetLabels()["aep.aenix.io/organization"] != payload.Namespace {
+	if err != nil || ns.GetLabels()["openchoreo.dev/control-plane"] != "true" || ns.GetLabels()["aep.aenix.io/organization"] != string(org.GetUID()) {
 		http.Error(w, "namespace is not an AEP organization", 403)
 		return
 	}
