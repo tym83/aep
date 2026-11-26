@@ -98,7 +98,7 @@ func (s *session) delete(ctx context.Context) error {
 	}
 	var e error
 	// Delete one dependency layer at a time; wait for finalizers before advancing.
-	for _, r := range []string{"authzrolebindings", "authzroles", "deploymentpipelines", "environments", "dataplanes"} {
+	for _, r := range []string{"secretreferences", "authzrolebindings", "authzroles", "deploymentpipelines", "environments", "dataplanes"} {
 		if e = s.deleteOwned(ctx, s.cp, ocAPI, r, s.o.Name); e != nil {
 			return e
 		}
@@ -106,9 +106,9 @@ func (s *session) delete(ctx context.Context) error {
 	for i := len(Tiers(s.o)) - 1; i >= 0; i-- {
 		t := Tiers(s.o)[i]
 		ns := TenantNamespace(s.o.Name, t)
-		for _, r := range []string{"helmreleases", "ocirepositories"} {
+		for _, r := range []string{"helmreleases", "ocirepositories", "helmrepositories"} {
 			av := helmAPI
-			if r == "ocirepositories" {
+			if r != "helmreleases" {
 				av = "source.toolkit.fluxcd.io/v1"
 			}
 			if e = s.deleteOwned(ctx, s.r.Management, av, r, ns); e != nil {

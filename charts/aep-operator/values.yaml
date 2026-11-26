@@ -16,3 +16,6 @@ keycloak:
 policyBundleRepository: oci://ghcr.io/tym83/aep/policies
 kyvernoChartURL: oci://ghcr.io/kyverno/charts/kyverno
 restoreVerification: false
+
+argocdHostTemplate: ""
+vcsWebhookURL: ""

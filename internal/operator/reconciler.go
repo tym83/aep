@@ -16,6 +16,7 @@ import (
 )
 
 type Options struct {
+	ArgoCDHostTemplate, VCSWebhookURL                                                     string
 	PolicyBundleRepository, KyvernoChartURL                                               string
 	PruneBootstrapBindings                                                                bool
 	BootstrapBindingSystemClients                                                         string
@@ -31,14 +32,15 @@ type Reconciler struct {
 	Recorder   record.EventRecorder
 }
 type session struct {
-	r       *Reconciler
-	o       *api.Organization
-	cp      *Cluster
-	tiers   map[string]*Cluster
-	gateway string
+	vcsVerified bool
+	r           *Reconciler
+	o           *api.Organization
+	cp          *Cluster
+	tiers       map[string]*Cluster
+	gateway     string
 }
 
-var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "PoliciesReady", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady"}
+var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "PoliciesReady", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady", "VCSReady", "ArgoCDReady"}
 
 func retryLimiter() workqueue.TypedRateLimiter[ctrl.Request] {
 	return workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](5*time.Millisecond, 2*time.Minute)
@@ -93,6 +95,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		{"PoliciesReady", s.policies},
 		{"AccessReady", s.access},
 		{"BridgesReady", s.bridges},
+		{"VCSReady", s.vcs},
+		{"ArgoCDReady", s.argocd},
 	}
 	return r.runSteps(ctx, o, steps)
 }
@@ -120,7 +124,7 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 				reason = "Pending"
 			}
 			setCondition(o, step.name, false, reason, err.Error())
-			if step.name == "PoliciesReady" {
+			if step.name == "PoliciesReady" || step.name == "VCSReady" {
 				policyErr = err
 				if errors.Is(err, errCosignKeyMissing) {
 					setCondition(o, step.name, false, "CosignKeyMissing", err.Error())
@@ -142,7 +146,18 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 			return ctrl.Result{}, fmt.Errorf("%s: %w", step.name, err)
 		}
 		if index != 1 && index != 4 {
-			setCondition(o, step.name, true, "Reconciled", "Desired state verified")
+			message := "Desired state verified"
+			if step.name == "ArgoCDReady" {
+				if o.Status.ArgoCDURL != "" {
+					message = o.Status.ArgoCDURL
+				} else {
+					message = "Argo CD disabled"
+				}
+			}
+			if step.name == "VCSReady" && o.Spec.VCS == nil {
+				message = "Corporate VCS not configured"
+			}
+			setCondition(o, step.name, true, "Reconciled", message)
 		}
 	}
 	if policyErr != nil {

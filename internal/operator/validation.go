@@ -26,6 +26,9 @@ func TenantNamespace(org, tier string) string {
 	return "tenant-" + org + "-" + tier
 }
 func Validate(o *api.Organization) error {
+	if err := validateIntegrations(o); err != nil {
+		return err
+	}
 	for _, ns := range o.Spec.Policy.PlatformNamespaces {
 		if len(validation.IsDNS1123Label(ns)) > 0 || strings.HasPrefix(ns, "dp-") {
 			return fmt.Errorf("platformNamespaces must contain exact namespace names outside dp-*")

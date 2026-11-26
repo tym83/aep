@@ -35,5 +35,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - run: bash tools/check-argocd.sh
       - run: make charts-lint
       - run: go test ./internal/manifests ./charts

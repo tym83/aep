@@ -43,7 +43,7 @@ rules:
     resources: [helmreleases]
     verbs: [get, list, watch, create, patch, delete]
   - apiGroups: [source.toolkit.fluxcd.io]
-    resources: [ocirepositories]
+    resources: [ocirepositories, helmrepositories]
     verbs: [get, list, create, patch, delete]
   - apiGroups: [cilium.io]
     resources: [ciliumclusterwidenetworkpolicies]
