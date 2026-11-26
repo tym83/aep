@@ -92,6 +92,13 @@ func RenderAuthz(o *api.Organization) []*unstructured.Unstructured {
 		entitlement := M{"claim": "groups", "value": "aep-" + o.Name + "-" + role}
 		out = append(out, obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-"+role, M{"entitlement": entitlement, "effect": "allow", "roleMappings": []any{mapping}}), obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-"+role+"-deny-platform", M{"entitlement": entitlement, "effect": "deny", "roleMappings": []any{M{"roleRef": M{"kind": "AuthzRole", "name": "aep-platform-protected"}}}}))
 	}
+	// The change controller is the only identity allowed to write release
+	// bindings in protected environments; it acts after a ChangeRequest is approved.
+	out = append(out, obj(ocAPI, "AuthzRole", o.Name, "aep-change-executor", M{"actions": stringsAny(append(append([]string(nil), reads...), writes...))}),
+		obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-change-executor", M{
+			"entitlement": M{"claim": "client_id", "value": "aep-change-" + o.Name},
+			"effect":      "allow", "roleMappings": []any{M{"roleRef": M{"kind": "AuthzRole", "name": "aep-change-executor"}}},
+		}))
 	out = append(out, obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-workload-publisher", M{
 		"entitlement": M{"claim": "client_id", "value": "aep-" + o.Name + "-publisher"},
 		"effect":      "allow", "roleMappings": []any{M{"roleRef": M{"kind": "ClusterAuthzRole", "name": "workload-publisher"}}},

@@ -53,6 +53,14 @@ its namespace, mapping `client_id=aep-<org>-publisher` to the existing
 `ClusterAuthzRole/workload-publisher`. Provision that distinct IdP client and its
 credentials separately; the operator does not create publisher clients in the IdP.
 
+The change controller acts in protected environments through its own identity.
+The operator creates `AuthzRole/aep-change-executor` (read access plus create,
+update and delete of release bindings in every environment of the organization)
+and binds it to `client_id=aep-change-<org>`, the change service's default
+client ID template. Provision this client in the IdP and store its credentials
+in the `aep-change-<org>` Secret; no user group receives these rights in
+protected environments.
+
 Configure Keycloak as OIDC IdP
 and emit the `groups` claim without a Kubernetes audience in portal tokens.
 The isolated stand realm was `aepdev`; this operator never assumes `cozy`.

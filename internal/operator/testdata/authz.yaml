@@ -397,6 +397,59 @@ spec:
       name: aep-platform-protected
 ---
 apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRole
+metadata:
+  name: aep-change-executor
+  namespace: acme
+spec:
+  actions:
+  - project:view
+  - component:view
+  - resource:view
+  - releasebinding:view
+  - resourcereleasebinding:view
+  - projectreleasebinding:view
+  - endpointreleasebinding:view
+  - environment:view
+  - dataplane:view
+  - deploymentpipeline:view
+  - observabilityplane:view
+  - componenttype:view
+  - trait:view
+  - resourcetype:view
+  - workflow:view
+  - workflowrun:view
+  - authzrole:view
+  - authzrolebinding:view
+  - releasebinding:create
+  - releasebinding:update
+  - releasebinding:delete
+  - resourcereleasebinding:create
+  - resourcereleasebinding:update
+  - resourcereleasebinding:delete
+  - projectreleasebinding:create
+  - projectreleasebinding:update
+  - projectreleasebinding:delete
+  - endpointreleasebinding:create
+  - endpointreleasebinding:update
+  - endpointreleasebinding:delete
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-change-executor
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: client_id
+    value: aep-change-acme
+  roleMappings:
+  - roleRef:
+      kind: AuthzRole
+      name: aep-change-executor
+---
+apiVersion: openchoreo.dev/v1alpha1
 kind: AuthzRoleBinding
 metadata:
   name: aep-workload-publisher
