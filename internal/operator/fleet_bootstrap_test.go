@@ -10,6 +10,8 @@ import (
 	"encoding/pem"
 	api "github.com/tym83/aep/api/v1alpha1"
 	certv1 "k8s.io/api/certificates/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
@@ -47,6 +49,23 @@ func TestFleetOnlyOldestCSRAndBootstrapCleanup(t *testing.T) {
 	case <-recorder.Events:
 	default:
 		t.Fatal("duplicates not alerted")
+	}
+
+	select {
+	case <-recorder.Events:
+		t.Fatal("unchanged duplicates emitted again")
+	default:
+	}
+	got.Status.Conditions = []certv1.CertificateSigningRequestCondition{{Type: certv1.CertificateDenied, Status: corev1.ConditionTrue}}
+	if _, err := k.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, got.Name, got, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.approveFleetCSR(ctx, ec, id); err != nil {
+		t.Fatal(err)
+	}
+	other, _ = k.CertificatesV1().CertificateSigningRequests().Get(ctx, "new", metav1.GetOptions{})
+	if len(other.Status.Conditions) != 1 || !meta.IsStatusConditionTrue(ec.Status.Conditions, "BootstrapRejected") {
+		t.Fatal("denied bootstrap prevented recovery")
 	}
 	if err := f.cleanupBootstrap(ctx, ec); err != nil {
 		t.Fatal(err)

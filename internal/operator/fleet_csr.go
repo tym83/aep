@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sort"
 	"strings"
@@ -74,12 +76,35 @@ func (f *FleetReconciler) approveFleetCSR(ctx context.Context, ec *api.ExternalC
 		}
 		return a.CreationTimestamp.Before(&b.CreationTimestamp)
 	})
-	if len(list.Items) > 1 && f.Recorder != nil {
-		f.Recorder.Event(ec, "Warning", "DuplicateBootstrapCSR", "Multiple bootstrap CSRs; only the oldest request may be approved")
+
+	message := fmt.Sprintf("%d valid bootstrap CSRs", len(candidates))
+	previous := meta.FindStatusCondition(ec.Status.Conditions, "DuplicateBootstrapCSR")
+	if len(candidates) > 1 && f.Recorder != nil && (previous == nil || previous.Message != message || previous.Status != metav1.ConditionTrue) {
+		f.Recorder.Event(ec, "Warning", "DuplicateBootstrapCSR", message)
 	}
+	fleetCondition(ec, "DuplicateBootstrapCSR", len(candidates) > 1, "Observed", message)
+	active := candidates[:0]
+	var rejected string
+	for _, c := range candidates {
+		terminal := false
+		for _, condition := range c.Status.Conditions {
+			if condition.Status == corev1.ConditionTrue && (condition.Type == certificatesv1.CertificateDenied || condition.Type == certificatesv1.CertificateFailed) {
+				terminal = true
+			}
+		}
+		if terminal {
+			if rejected == "" {
+				rejected = c.Name
+			}
+			continue
+		}
+		active = append(active, c)
+	}
+	fleetCondition(ec, "BootstrapRejected", rejected != "", "Observed", "Rejected bootstrap CSR: "+rejected)
+	candidates = active
 	for _, c := range candidates {
 		for _, condition := range c.Status.Conditions {
-			if condition.Type == certificatesv1.CertificateApproved {
+			if condition.Type == certificatesv1.CertificateApproved && condition.Status == corev1.ConditionTrue {
 				return nil
 			}
 		}
