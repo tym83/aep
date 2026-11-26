@@ -1,0 +1,12 @@
+api:
+  tlsSecret: change-backend-tls
+controller:
+  leaseNamespace: change-leases
+  policyConfigMap: change-policy
+orgNamespaceTemplate: org-{org}
+openchoreo:
+  secretNameTemplate: credentials-{org}
+caBundleConfigMap: trusted-roots
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS

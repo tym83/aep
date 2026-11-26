@@ -1,0 +1,8 @@
+ingress:
+  enabled: true
+  className: nginx
+  host: api.example.org
+  tlsSecret: api-tls
+  clusterIssuer: letsencrypt
+  annotations:
+    example.org/check: "true"
