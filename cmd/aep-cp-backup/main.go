@@ -31,6 +31,8 @@ func run() error {
 	bucket := flag.String("s3-bucket", "", "bucket")
 	prefix := flag.String("s3-prefix", "aep-cp", "prefix")
 	key := flag.String("object", "", "object key (required for restore)")
+	merge := flag.Bool("merge", false, "allow restoring into namespaces containing OpenChoreo objects")
+	overwrite := flag.String("allow-overwrite", "", "comma-separated exact kinds allowed to update; newer live objects are always refused")
 	dry := flag.Bool("dry-run", false, "restore plan without API writes")
 	diff := flag.Bool("diff", false, "print restore differences without API writes")
 	ack := flag.Bool("acknowledge-new-uids", false, "confirm controllers and gateway are stopped and UID reconciliation is planned")
@@ -79,7 +81,13 @@ func run() error {
 		if e != nil {
 			return e
 		}
-		return cpbackup.Restore(ctx, client, resources, a, *dry || *diff, os.Stdout)
+		allowed := map[string]bool{}
+		for _, kind := range strings.Split(*overwrite, ",") {
+			if kind = strings.TrimSpace(kind); kind != "" {
+				allowed[kind] = true
+			}
+		}
+		return cpbackup.Restore(ctx, client, resources, a, *dry || *diff, os.Stdout, cpbackup.RestoreOptions{Merge: *merge, AllowOverwrite: allowed})
 	}
 	var namespaces []string
 	if *orgs != "" {

@@ -35,7 +35,7 @@ it discovers preferred served APIs in `openchoreo.dev` and subgroups ending in
   authorization resources. These may affect organizations outside the allowlist;
   use this archive only for full control-plane recovery, not tenant import.
 
-Discovery/list errors fail the whole export; nothing partial is uploaded.
+OpenChoreo discovery/list errors fail the whole export. Unrelated partial discovery failures are tolerated. Organization namespaces not yet provisioned on aep-cp are recorded as absent. Runs (any kind ending in Run), Resource and RenderedRelease are excluded; objects with a controller ownerReference and ServiceAccount tokens are recorded as skipped.
 Pagination is supported. UID, resourceVersion, timestamps, generation,
 managedFields, status, ownerReferences and finalizers are stripped. Namespace
 labels/annotations and desired object fields remain. Old owner UIDs/finalizers
@@ -132,7 +132,7 @@ explicit `--object` key for unrelated backups. Retention comes from the bucket.
      --object="$ARCHIVE_KEY" --dry-run --diff restore
    ```
 
-   Dry-run/diff only GETs target objects; it prints create/update/unchanged,
+   Dry-run/diff only GETs and LISTs target objects; it prints create/update/unchanged,
    resource identities and before/after hashes, never Secret bodies. It is a
    client-side plan, not admission-server validation. All archived API kinds and
    scope must match target discovery. Review global authz objects against the
@@ -150,7 +150,15 @@ explicit `--object` key for unrelated backups. Retention comes from the bucket.
    traits/workflows/SecretReferences, projects, components, resources/workloads,
    other objects, releases, bindings. Unknown future kinds sort into the
    `other` group; review new dependencies before upgrading OpenChoreo. Restore
-   uses create or resourceVersion-guarded updates, preserves target status and
+   defaults to create-only. An occupied OpenChoreo namespace requires --merge,
+   including on reruns after partial success. Identical objects remain unchanged;
+   each changed kind requires an explicit --allow-overwrite=Kind,OtherKind
+   (including Secrets, *Binding and *Release). Live creation timestamps and
+   managedFields timestamps newer than the archive prohibit updates even with
+   that flag. Kubernetes has no universal last-modified timestamp: freeze all
+   writers and retain managedFields; timestamps cannot prove absence of changes
+   when that evidence was removed. Policy is preflighted before any writes.
+   Updates use resourceVersion preconditions, preserve target status and
    unrelated metadata, never deletes target objects and can be rerun after a
    partial failure. Conflicts/admission failures stop execution; resolve the
    cause and rerun. Matching desired objects are unchanged on subsequent runs.

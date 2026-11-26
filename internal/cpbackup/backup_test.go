@@ -53,18 +53,22 @@ func TestRestoreOrderDryRunIdempotent(t *testing.T) {
 	entries := []Entry{{Resource: g.WithResource("releasebindings"), Object: obj(g.String(), "ReleaseBinding", "acme", "b")}, {Resource: g.WithResource("components"), Object: obj(g.String(), "Component", "acme", "c")}, {Resource: ns, Object: obj("v1", "Namespace", "", "acme")}, {Resource: g.WithResource("environments"), Object: obj(g.String(), "Environment", "acme", "dev")}}
 	a := New([]string{"acme"}, entries)
 	resources := []Resource{{g.WithResource("releasebindings"), "ReleaseBinding", true}, {g.WithResource("components"), "Component", true}, {g.WithResource("environments"), "Environment", true}}
-	c := fake.NewSimpleDynamicClient(runtime.NewScheme())
+	kinds := map[schema.GroupVersionResource]string{}
+	for _, r := range resources {
+		kinds[r.GVR] = r.Kind + "List"
+	}
+	c := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), kinds)
 	var b bytes.Buffer
 	if e := Restore(context.Background(), c, resources, a, true, &b); e != nil {
 		t.Fatal(e)
 	}
 	for _, act := range c.Actions() {
-		if act.GetVerb() != "get" {
+		if act.GetVerb() != "get" && act.GetVerb() != "list" {
 			t.Fatal("dry-run mutated API")
 		}
 	}
 	c.ClearActions()
-	if e := Restore(context.Background(), c, resources, a, false, &b); e != nil {
+	if e := Restore(context.Background(), c, resources, a, false, &b, RestoreOptions{Merge: true, AllowOverwrite: map[string]bool{"Component": true}}); e != nil {
 		t.Fatal(e)
 	}
 	var created []string
@@ -78,11 +82,11 @@ func TestRestoreOrderDryRunIdempotent(t *testing.T) {
 	}
 	c.ClearActions()
 	b.Reset()
-	if e := Restore(context.Background(), c, resources, a, false, &b); e != nil {
+	if e := Restore(context.Background(), c, resources, a, false, &b, RestoreOptions{Merge: true, AllowOverwrite: map[string]bool{"Component": true}}); e != nil {
 		t.Fatal(e)
 	}
 	for _, act := range c.Actions() {
-		if act.GetVerb() != "get" {
+		if act.GetVerb() != "get" && act.GetVerb() != "list" {
 			t.Fatal("second restore wrote identical object")
 		}
 	}
@@ -102,7 +106,7 @@ func TestRestoreOrderDryRunIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.Reset()
-	if err = Restore(context.Background(), c, resources, a, false, &b); err != nil {
+	if err = Restore(context.Background(), c, resources, a, false, &b, RestoreOptions{Merge: true, AllowOverwrite: map[string]bool{"Component": true}}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(b.String(), "update ") {
@@ -134,9 +138,9 @@ func TestExportOrganizationSecretsAndClusterScope(t *testing.T) {
 	if len(a.Payload.Entries) != 4 {
 		t.Fatal(len(a.Payload.Entries))
 	}
-	// A denied/missing namespace fails the entire backup, never uploads a partial archive.
-	if _, e = Export(context.Background(), c, []Resource{{p, "Project", true}}, []string{"missing"}); e == nil {
-		t.Fatal("partial backup accepted")
+	// Missing organizations may not yet have been provisioned on aep-cp.
+	if absent, e := Export(context.Background(), c, []Resource{{p, "Project", true}}, []string{"missing"}); e != nil || len(absent.Payload.Skipped) != 1 || absent.Payload.Skipped[0].Reason != "absent" {
+		t.Fatal("missing namespace not recorded", e)
 	}
 	_, _ = c.Resource(s).Namespace("acme").Get(context.Background(), "credentials", metav1.GetOptions{})
 }

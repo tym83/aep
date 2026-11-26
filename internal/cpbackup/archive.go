@@ -21,11 +21,18 @@ type Entry struct {
 	Object   *unstructured.Unstructured  `json:"object"`
 	SHA256   string                      `json:"sha256"`
 }
+type Skipped struct {
+	Resource  schema.GroupVersionResource `json:"resource"`
+	Namespace string                      `json:"namespace,omitempty"`
+	Name      string                      `json:"name,omitempty"`
+	Reason    string                      `json:"reason"`
+}
 type Payload struct {
-	Version       string   `json:"version"`
-	Created       string   `json:"created"`
-	Organizations []string `json:"organizations"`
-	Entries       []Entry  `json:"entries"`
+	Skipped       []Skipped `json:"skipped,omitempty"`
+	Version       string    `json:"version"`
+	Created       string    `json:"created"`
+	Organizations []string  `json:"organizations"`
+	Entries       []Entry   `json:"entries"`
 }
 type Archive struct {
 	Payload Payload `json:"payload"`
@@ -124,6 +131,12 @@ func rank(kind string) int {
 	case "Secret":
 		return 1
 	}
+	if strings.HasSuffix(kind, "Binding") {
+		return 11
+	}
+	if strings.HasSuffix(kind, "Release") {
+		return 10
+	}
 	if strings.Contains(kind, "Plane") {
 		return 2
 	}
@@ -133,7 +146,7 @@ func rank(kind string) int {
 	if strings.Contains(kind, "Pipeline") {
 		return 4
 	}
-	if strings.Contains(kind, "Type") || strings.Contains(kind, "Trait") || strings.Contains(kind, "Workflow") || strings.Contains(kind, "SecretReference") {
+	if strings.Contains(kind, "Type") || strings.Contains(kind, "Trait") || (kind == "Workflow" || kind == "ComponentWorkflow" || kind == "ClusterWorkflow" || kind == "ClusterComponentWorkflow") || strings.Contains(kind, "SecretReference") {
 		return 5
 	}
 	if kind == "Project" {

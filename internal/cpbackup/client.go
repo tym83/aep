@@ -3,10 +3,12 @@ package cpbackup
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"strings"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,7 +27,15 @@ type Resource struct {
 func Discover(d discovery.DiscoveryInterface) ([]Resource, error) {
 	lists, e := d.ServerPreferredResources()
 	if e != nil {
-		return nil, fmt.Errorf("incomplete discovery: %w", e)
+		var partial *discovery.ErrGroupDiscoveryFailed
+		if !errors.As(e, &partial) {
+			return nil, fmt.Errorf("incomplete discovery: %w", e)
+		}
+		for gv := range partial.Groups {
+			if IsOpenChoreo(gv.Group) {
+				return nil, fmt.Errorf("incomplete OpenChoreo discovery: %w", e)
+			}
+		}
 	}
 	var out []Resource
 	for _, l := range lists {
@@ -37,7 +47,7 @@ func Discover(d discovery.DiscoveryInterface) ([]Resource, error) {
 			continue
 		}
 		for _, r := range l.APIResources {
-			if strings.Contains(r.Name, "/") {
+			if strings.Contains(r.Name, "/") || excludedKind(r.Kind) {
 				continue
 			}
 			list := false
@@ -76,7 +86,23 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 		return Archive{}, fmt.Errorf("explicit organization scope required")
 	}
 	entries := []Entry{}
+	skipped := []Skipped{}
+	absent := map[string]bool{}
 	add := func(r schema.GroupVersionResource, u *unstructured.Unstructured) {
+		reason := ""
+		if excludedKind(u.GetKind()) {
+			reason = "run or controller-rendered kind"
+		}
+		for _, owner := range u.GetOwnerReferences() {
+			if owner.Controller != nil && *owner.Controller {
+				reason = "controller ownerReference"
+				break
+			}
+		}
+		if reason != "" {
+			skipped = append(skipped, Skipped{r, u.GetNamespace(), u.GetName(), reason})
+			return
+		}
 		entries = append(entries, Entry{Resource: r, Object: u})
 	}
 	nsGVR := schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}
@@ -93,6 +119,7 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 				if r == secretGVR {
 					t, _, _ := unstructured.NestedString(u.Object, "type")
 					if t == "kubernetes.io/service-account-token" {
+						skipped = append(skipped, Skipped{r, ns, u.GetName(), "service account token"})
 						continue
 					}
 				}
@@ -106,6 +133,11 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 	}
 	for _, ns := range orgs {
 		u, e := c.Resource(nsGVR).Get(ctx, ns, metav1.GetOptions{})
+		if apierrors.IsNotFound(e) {
+			absent[ns] = true
+			skipped = append(skipped, Skipped{nsGVR, "", ns, "absent"})
+			continue
+		}
 		if e != nil {
 			return Archive{}, e
 		}
@@ -120,6 +152,9 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 		}
 		if r.Namespaced {
 			for _, ns := range orgs {
+				if absent[ns] {
+					continue
+				}
 				if e := list(r.GVR, ns); e != nil {
 					return Archive{}, e
 				}
@@ -131,13 +166,25 @@ func Export(ctx context.Context, c dynamic.Interface, resources []Resource, orgs
 		}
 	}
 	a := New(orgs, entries)
+	a.Payload.Skipped = skipped
+	a.SHA256 = hash(a.Payload)
 	return a, a.Validate()
 }
 
 // Restore changes only archived fields, preserves target status and server
 // metadata, and uses resourceVersion preconditions. It never deletes objects.
 // Dry-run/diff is a client-side plan; it performs no API writes.
-func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a Archive, dryRun bool, out io.Writer) error {
+type RestoreOptions struct {
+	Merge          bool
+	AllowOverwrite map[string]bool
+}
+
+func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a Archive, dryRun bool, out io.Writer, options ...RestoreOptions) error {
+	var opts RestoreOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
 	if e := a.Validate(); e != nil {
 		return e
 	}
@@ -155,6 +202,31 @@ func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a A
 			return fmt.Errorf("target API missing or incompatible: %s", e.Resource)
 		}
 	}
+	// Check namespace occupancy even for kinds absent from the archive.
+	if !opts.Merge {
+		for _, ns := range a.Payload.Organizations {
+			for _, r := range resources {
+				if !r.Namespaced {
+					continue
+				}
+				l, err := c.Resource(r.GVR).Namespace(ns).List(ctx, metav1.ListOptions{Limit: 1})
+				if err != nil {
+					return err
+				}
+				if len(l.Items) > 0 {
+					return fmt.Errorf("namespace %s contains OpenChoreo objects; --merge required", ns)
+				}
+			}
+		}
+	}
+	// Plan the entire operation before writing; policy failures cannot partially restore.
+	type planned struct {
+		entry  Entry
+		object *unstructured.Unstructured
+		action string
+	}
+	var plan []planned
+	created, _ := time.Parse(time.RFC3339Nano, a.Payload.Created)
 	for _, e := range Ordered(a) {
 		u := e.Object.DeepCopy()
 		ri := c.Resource(e.Resource).Namespace(u.GetNamespace())
@@ -198,6 +270,14 @@ func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a A
 				action = "update"
 			}
 		}
+		if action == "update" {
+			if !opts.AllowOverwrite[u.GetKind()] {
+				return fmt.Errorf("create-only restore: %s requires --allow-overwrite=%s", identity(e), u.GetKind())
+			}
+			if liveNewer(old, created) {
+				return fmt.Errorf("live object newer than archive: %s", identity(e))
+			}
+		}
 		// Never print bodies: Secrets and confidential CR fields may be present.
 		before := "absent"
 		if old != nil {
@@ -210,6 +290,13 @@ func Restore(ctx context.Context, c dynamic.Interface, resources []Resource, a A
 		if _, err = fmt.Fprintf(out, "%s %s before=%s after=%s\n", action, identity(e), before, after); err != nil {
 			return err
 		}
+		plan = append(plan, planned{e, updated, action})
+	}
+	for _, p := range plan {
+		e, updated, action := p.entry, p.object, p.action
+		u := e.Object.DeepCopy()
+		ri := c.Resource(e.Resource).Namespace(u.GetNamespace())
+		var err error
 		if dryRun || action == "unchanged" {
 			continue
 		}
@@ -233,4 +320,23 @@ func Encode(a Archive) ([]byte, error) {
 		return nil, fmt.Errorf("archive exceeds 256 MiB")
 	}
 	return b, err
+}
+
+// Explicit exclusions document generated resources; suffix exclusion also covers future run kinds.
+var excludedKinds = map[string]bool{
+	"WorkflowRun": true, "ComponentWorkflowRun": true,
+	"RenderedRelease": true, "Resource": true,
+}
+
+func excludedKind(kind string) bool { return excludedKinds[kind] || strings.HasSuffix(kind, "Run") }
+func liveNewer(u *unstructured.Unstructured, archive time.Time) bool {
+	if u.GetCreationTimestamp().Time.After(archive) {
+		return true
+	}
+	for _, f := range u.GetManagedFields() {
+		if f.Time != nil && f.Time.Time.After(archive) {
+			return true
+		}
+	}
+	return false
 }
