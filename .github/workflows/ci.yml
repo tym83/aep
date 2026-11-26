@@ -18,7 +18,7 @@ jobs:
       - uses: azure/setup-helm@v4.3.0
         with:
           version: v3.17.3
-      - run: helm dependency build charts/aep-gitlab
+      - run: helm repo add gitlab https://charts.gitlab.io && helm dependency build charts/aep-gitlab
       - name: Stage fleet charts for permission coverage
         run: sh charts/aep-operator/fleet-stage.sh "$RUNNER_TEMP/fleet-charts"
       - run: go test ./...
@@ -44,7 +44,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: bash tools/check-argocd.sh
-      - run: helm dependency build charts/aep-gitlab
+      - run: helm repo add gitlab https://charts.gitlab.io && helm dependency build charts/aep-gitlab
       - run: make charts-lint
       - run: go test ./internal/manifests ./charts
 
