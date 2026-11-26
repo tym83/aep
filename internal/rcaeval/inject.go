@@ -4,6 +4,7 @@ package rcaeval
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/tym83/aep/internal/operator"
 	"os"
@@ -165,7 +166,7 @@ func (QuotaInjector) Inject(ctx context.Context, c dynamic.Interface, t Target, 
 	}
 	undo := func(ctx context.Context) error { return Restore(ctx, c, path) }
 	if err = apply(ctx, c, j); err != nil {
-		return undo, err
+		return injectionFailure(path, undo, err)
 	}
 	// Admission observes status.hard, which is asynchronously reconciled.
 	readyCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -206,5 +207,20 @@ func (SimulatedDiskInjector) Inject(ctx context.Context, c dynamic.Interface, t 
 		return nil, err
 	}
 	undo := func(ctx context.Context) error { return Restore(ctx, c, path) }
-	return undo, apply(ctx, c, j)
+	if err = apply(ctx, c, j); err != nil {
+		return injectionFailure(path, undo, err)
+	}
+	return undo, nil
+}
+
+// An invalid JSON patch (including a failed test) is rejected atomically. No
+// injected state exists to restore. Ambiguous transport errors retain recovery.
+func injectionFailure(path string, undo Undo, err error) (Undo, error) {
+	if apierrors.IsInvalid(err) {
+		if removeErr := os.Remove(path); removeErr != nil {
+			return undo, errors.Join(err, removeErr)
+		}
+		return nil, err
+	}
+	return undo, err
 }

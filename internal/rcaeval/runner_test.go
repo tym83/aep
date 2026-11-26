@@ -3,6 +3,10 @@ package rcaeval
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	ktesting "k8s.io/client-go/testing"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -174,6 +178,64 @@ func TestTargetNamespace(t *testing.T) {
 	for _, tc := range []struct{ tier, want string }{{"", "tenant-acme"}, {"nonprod", "tenant-acme-nonprod"}} {
 		if got := (Target{Organization: "acme", Tier: tc.tier}).Namespace(); got != tc.want {
 			t.Fatalf("%q: %s", tc.tier, got)
+		}
+	}
+}
+
+func TestRejectedInjectionNeedsNoCleanup(t *testing.T) {
+	for _, injector := range []Injector{QuotaInjector{}, SimulatedDiskInjector{}} {
+		for _, code := range []int32{422, 500} {
+			t.Run(fmt.Sprintf("%T/%d", injector, code), func(t *testing.T) {
+				c := quotaClient()
+				app := &unstructured.Unstructured{Object: map[string]any{"apiVersion": "apps.cozystack.io/v1alpha1", "kind": "Postgres", "metadata": map[string]any{"name": "db", "namespace": "tenant-acme-nonprod", "uid": "app-uid", "annotations": map[string]any{"existing": "keep"}}}}
+				if err := c.Tracker().Add(app); err != nil {
+					t.Fatal(err)
+				}
+				c.PrependReactor("patch", "*", func(a ktesting.Action) (bool, runtime.Object, error) {
+					reason := metav1.StatusReasonInternalError
+					if code == 422 {
+						reason = metav1.StatusReasonInvalid
+					}
+					// Simulate an intervening update before the test op is evaluated.
+					obj, err := c.Tracker().Get(a.GetResource(), a.GetNamespace(), a.(ktesting.PatchAction).GetName())
+					if err != nil {
+						t.Fatal(err)
+					}
+					u := obj.(*unstructured.Unstructured)
+					if a.GetResource() == quotaResource {
+						unstructured.SetNestedField(u.Object, "7", "spec", "hard", "pods")
+					} else {
+						u.SetAnnotations(map[string]string{"concurrent": "keep"})
+					}
+					if err := c.Tracker().Update(a.GetResource(), u, a.GetNamespace()); err != nil {
+						t.Fatal(err)
+					}
+					return true, nil, &apierrors.StatusError{ErrStatus: metav1.Status{Code: code, Reason: reason, Message: "JSON patch test failed"}}
+				})
+				path := filepath.Join(t.TempDir(), "journal")
+				r := Runner{Client: c, Target: Target{Organization: "acme", Tier: "nonprod", Quota: "quota", App: "db"}, JournalPath: path, Timeout: time.Second, Injectors: map[string]Injector{"test": injector}}
+				out := r.Run(context.Background(), Case{ID: "race", Injector: "test"})
+				if code == 422 {
+					if out.Status != "failed" || out.Error != "JSON patch test failed" {
+						t.Fatalf("%+v", out)
+					}
+					if _, err := os.Stat(path); !os.IsNotExist(err) {
+						t.Fatal("rejected patch left journal", err)
+					}
+				} else {
+					if out.Status != "cleanup_failed" {
+						t.Fatalf("ambiguous failure discarded recovery: %+v", out)
+					}
+					if _, err := os.Stat(path); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, a := range c.Actions() {
+					if a.GetVerb() == "create" {
+						t.Fatal("created probe after patch rejection")
+					}
+				}
+			})
 		}
 	}
 }
