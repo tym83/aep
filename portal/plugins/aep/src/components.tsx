@@ -795,3 +795,60 @@ export function ResourceCostCard() {
     </InfoCard>
   );
 }
+
+export function IntegrationLinks({
+  argocdUrl,
+  repositoryUrl,
+}: {
+  argocdUrl?: string;
+  repositoryUrl?: string;
+}) {
+  const safe = (value?: string) => {
+    try {
+      const u = new URL(value ?? '');
+      return u.protocol === 'https:' && !u.username && !u.password
+        ? u.href
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const argo = safe(argocdUrl);
+  const repo = safe(repositoryUrl);
+  return (
+    <InfoCard title="Delivery and source code">
+      {argo && (
+        <p>
+          <a href={argo} target="_blank" rel="noopener noreferrer">
+            Open Argo CD
+          </a>
+        </p>
+      )}
+      {repo && (
+        <p>
+          <a href={repo} target="_blank" rel="noopener noreferrer">
+            Open repository
+          </a>
+        </p>
+      )}
+      {!argo && !repo && <p>No delivery links configured.</p>}
+    </InfoCard>
+  );
+}
+export function EntityIntegrationCard() {
+  const { entity } = useEntity();
+  const ctx = useSession();
+  const a = entity.metadata.annotations ?? {};
+  const organization =
+    a['aep.aenix.io/organization'] ?? a['openchoreo.io/namespace'];
+  const member = ctx.session?.organizations.find(o => o.name === organization);
+  const repo =
+    a['backstage.io/source-location']?.replace(/^url:/, '') ??
+    a['aep.aenix.io/repository-url'];
+  return (
+    <IntegrationLinks
+      argocdUrl={member?.argocdUrl}
+      repositoryUrl={member ? repo ?? member.repositoryUrl : undefined}
+    />
+  );
+}

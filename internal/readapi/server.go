@@ -100,8 +100,10 @@ func contains(values []string, value string) bool {
 }
 
 type organizationView struct {
-	Name  string   `json:"name"`
-	Roles []string `json:"roles"`
+	ArgoCDURL     string   `json:"argocdUrl,omitempty"`
+	RepositoryURL string   `json:"repositoryUrl,omitempty"`
+	Name          string   `json:"name"`
+	Roles         []string `json:"roles"`
 }
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, id *authn.Identity) {
@@ -114,7 +116,15 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, id *authn.Identity) 
 	result := []organizationView{}
 	for _, org := range orgs.Items {
 		if rs := groups[org.Name]; len(rs) > 0 {
-			result = append(result, organizationView{org.Name, rs})
+			view := organizationView{Name: org.Name, Roles: rs, ArgoCDURL: org.Status.ArgoCDURL}
+			if org.Spec.VCS != nil {
+				path := org.Spec.VCS.GroupPath
+				if org.Spec.VCS.Provider != "gitlab" {
+					path = org.Spec.VCS.Org
+				}
+				view.RepositoryURL = strings.TrimRight(org.Spec.VCS.URL, "/") + "/" + path
+			}
+			result = append(result, view)
 		}
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })

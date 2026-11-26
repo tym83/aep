@@ -34,7 +34,12 @@ export type Cost = {
 };
 export type Session = {
   username: string;
-  organizations: { name: string; roles: string[] }[];
+  organizations: {
+    name: string;
+    roles: string[];
+    argocdUrl?: string;
+    repositoryUrl?: string;
+  }[];
 };
 export type Service = {
   name: string;

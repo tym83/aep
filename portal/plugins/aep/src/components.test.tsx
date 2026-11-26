@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TestApiProvider, renderInTestApp } from '@backstage/test-utils';
 import { aepApiRef, Service, serviceState } from './api';
 import {
+  IntegrationLinks,
   RequestChange,
   ServiceSummary,
   ChangesPage,
@@ -280,12 +281,10 @@ it('shows coverage and unallocated cost without hiding missing hours', () => {
 });
 it('loads organization costs and changes the grouping', async () => {
   const costs = jest.fn().mockResolvedValue({ items: [] });
-  const session = jest
-    .fn()
-    .mockResolvedValue({
-      username: 'finance',
-      organizations: [{ name: 'acme', roles: ['finance'] }],
-    });
+  const session = jest.fn().mockResolvedValue({
+    username: 'finance',
+    organizations: [{ name: 'acme', roles: ['finance'] }],
+  });
   await renderInTestApp(
     <TestApiProvider apis={[[aepApiRef, { costs, session }]]}>
       <CostPage />
@@ -302,4 +301,28 @@ it('loads organization costs and changes the grouping', async () => {
   expect(
     await screen.findByText('No recorded costs for this period.'),
   ).toBeInTheDocument();
+});
+
+test('delivery links accept HTTPS and reject credentials and script URLs', () => {
+  const { rerender } = render(
+    <IntegrationLinks
+      argocdUrl="https://argo.example"
+      repositoryUrl="https://git.example/acme/repo"
+    />,
+  );
+  expect(screen.getByRole('link', { name: 'Open Argo CD' })).toHaveAttribute(
+    'href',
+    'https://argo.example/',
+  );
+  expect(screen.getByRole('link', { name: 'Open repository' })).toHaveAttribute(
+    'rel',
+    'noopener noreferrer',
+  );
+  rerender(
+    <IntegrationLinks
+      argocdUrl="javascript:alert(1)"
+      repositoryUrl="https://token@git.example"
+    />,
+  );
+  expect(screen.queryByRole('link')).not.toBeInTheDocument();
 });

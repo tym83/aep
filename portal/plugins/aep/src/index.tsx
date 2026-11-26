@@ -20,6 +20,15 @@ const costs = createRouteRef();
 export default createFrontendPlugin({
   pluginId: 'aep',
   extensions: [
+    EntityCardBlueprint.make({
+      name: 'delivery-links',
+      params: {
+        filter: e =>
+          ['component', 'resource', 'system'].includes(e.kind.toLowerCase()),
+        loader: () =>
+          import('./components').then(m => <m.EntityIntegrationCard />),
+      },
+    }),
     ApiBlueprint.make({
       name: 'api',
       params: defineParams =>

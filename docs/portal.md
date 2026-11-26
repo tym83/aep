@@ -169,3 +169,10 @@ values rather than copying names from another version.
 - Live Keycloak sign-in, chart deployment, backend policies and real Cozystack
   state require the corresponding running services. Mock tests do not verify
   these external integrations.
+
+## Tenant delivery links
+
+The AEP entity overview includes a Delivery and source code card. It resolves
+organization membership through `/v1/me`, uses `argocdUrl` from Organization
+status, and links to an entity source annotation or the corporate VCS group.
+See [Argo CD](argocd.md) and [VCS](vcs.md) for provisioning and credential boundaries.
