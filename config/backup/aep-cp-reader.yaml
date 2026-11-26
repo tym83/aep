@@ -1,0 +1,61 @@
+# Read-only aep-cp identity for the aep-cp-backup CronJob, generated from the
+# openchoreo.dev resources served by OpenChoreo 1.4.0-m.3. Regenerate and review
+# on every OpenChoreo upgrade: kinds missing here make backups fail closed.
+# Repeat the Role and RoleBinding for every organization namespace
+# (here: "example"). No write verbs, no wildcards.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aep-cp-backup
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-cp-backup
+rules:
+  - apiGroups: [openchoreo.dev]
+    resources: [clusterauthzrolebindings, clusterauthzroles, clustercomponenttypes, clusterdataplanes, clusterendpointtypes, clusterobservabilityplanes, clusterprojecttypes, clusterresourcetypes, clustertraits, clusterworkflowplanes, clusterworkflows]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-cp-backup
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: aep-cp-backup}
+subjects:
+  - {kind: ServiceAccount, name: aep-cp-backup, namespace: kube-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aep-cp-backup
+  namespace: example
+rules:
+  - apiGroups: [openchoreo.dev]
+    resources: [authzrolebindings, authzroles, componentreleases, components, componenttypes, dataplanes, deploymentpipelines, endpointreleasebindings, endpointreleases, endpoints, endpointtypes, environments, observabilityalertsnotificationchannels, observabilityplanes, projectreleasebindings, projectreleases, projects, projecttypes, releasebindings, releaselines, renderedreleases, resourcereleasebindings, resourcereleases, resources, resourcetypes, secretreferences, traits, workflowplanes, workflowruns, workflows, workloads]
+    verbs: [list]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aep-cp-backup
+  namespace: example
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: aep-cp-backup}
+subjects:
+  - {kind: ServiceAccount, name: aep-cp-backup, namespace: kube-system}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aep-cp-backup
+  namespace: kube-system
+  annotations:
+    kubernetes.io/service-account.name: aep-cp-backup
+type: kubernetes.io/service-account-token
