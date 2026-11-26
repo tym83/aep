@@ -112,7 +112,7 @@ func run() error {
 				return err
 			}
 		}
-		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: fleetCharts}, Gateway: fleetGateway}
+		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: fleetCharts, Mirror: r.Options.ImageRegistryMirror}, Gateway: fleetGateway}
 		if e = ctrl.NewControllerManagedBy(mgr).For(&api.ExternalCluster{}, builder.WithPredicates(operator.FleetPredicate())).Complete(fleet); e != nil {
 			return e
 		}

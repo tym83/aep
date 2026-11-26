@@ -65,7 +65,14 @@ func (f *FleetReconciler) agentLeaf(ctx context.Context, o *api.Organization, id
 		b, _ := pem.Decode(sec.Data["tls.crt"])
 		if b != nil {
 			c, err := x509.ParseCertificate(b.Bytes)
-			if err == nil && time.Until(c.NotAfter) > 30*24*time.Hour {
+			roots := x509.NewCertPool()
+			roots.AppendCertsFromPEM(ca["tls.crt"])
+			valid := false
+			if err == nil {
+				_, verifyErr := c.Verify(x509.VerifyOptions{Roots: roots, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}})
+				valid = verifyErr == nil && c.Subject.CommonName == id
+			}
+			if valid && time.Until(c.NotAfter) > 30*24*time.Hour {
 				return sec.Data, nil
 			}
 		}

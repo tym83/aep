@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/tym83/aep/internal/registrymirror"
+	inventory "github.com/tym83/aep/release"
 	"io"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"os/exec"
@@ -17,9 +19,17 @@ import (
 type FleetRenderer interface {
 	Render(context.Context, string, string, string, M) ([]any, error)
 }
-type HelmFleetRenderer struct{ Directory string }
+type HelmFleetRenderer struct{ Directory, Mirror string }
 
 func (h HelmFleetRenderer) Render(ctx context.Context, name, version, namespace string, values M) ([]any, error) {
+	if values == nil {
+		values = M{}
+	}
+	values = MirrorValues(name, h.Mirror, values)
+	setMap(values, []string{"global", "imageRegistry"}, h.Mirror)
+	if name == "openchoreo-data-plane" && h.Mirror != "" {
+		setMap(values, []string{"global", "imageRegistry"}, h.Mirror+"/cr.openchoreo.dev")
+	}
 	input, e := json.Marshal(values)
 	if e != nil {
 		return nil, e
@@ -68,7 +78,7 @@ func (h HelmFleetRenderer) Render(ctx context.Context, name, version, namespace 
 			stripDescriptions(m)
 		}
 		restrictManifest(m)
-		if e = checkPinnedImages(m); e != nil {
+		if e = mirrorFleetImages(m, h.Mirror); e != nil {
 			return nil, e
 		}
 		out = append(out, m)
@@ -166,4 +176,41 @@ func stripDescriptions(v any) {
 			stripDescriptions(v)
 		}
 	}
+}
+
+// Every concrete Pod image must be present in the embedded release inventory.
+func mirrorFleetImages(v any, mirror string) error {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, value := range x {
+			if k == "containers" || k == "initContainers" {
+				if list, ok := value.([]any); ok {
+					for _, raw := range list {
+						c, _ := raw.(map[string]any)
+						image, _ := c["image"].(string)
+						if image != "" {
+							if mirror != "" {
+								image = strings.TrimPrefix(image, mirror+"/")
+							}
+							pin, err := inventory.Image(image)
+							if err != nil {
+								return err
+							}
+							c["image"] = registrymirror.Rewrite(pin, mirror)
+						}
+					}
+				}
+			}
+			if err := mirrorFleetImages(value, mirror); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for _, value := range x {
+			if err := mirrorFleetImages(value, mirror); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -133,7 +134,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	}
 	mc := obj("cluster.open-cluster-management.io/v1", "ManagedCluster", "", id, M{"hubAcceptsClient": true, "leaseDurationSeconds": int64(60)})
 	mc.SetLabels(map[string]string{"cluster.open-cluster-management.io/clusterset": set, "aep.aenix.io/fleet-id": id, "aep.aenix.io/trust": ec.Spec.TrustLevel})
-	if e := f.Hub.apply(ctx, o, "managedclusters", mc); e != nil {
+	if e := f.applyManagedCluster(ctx, o, mc); e != nil {
 		return e
 	}
 	profileVersion, e := f.profileVersion()
@@ -152,6 +153,11 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	mc, e = f.Hub.get(ctx, mc.GetAPIVersion(), "managedclusters", "", id)
 	if e != nil {
 		return e
+	}
+	if ocmCondition(mc, "ManagedClusterJoined") {
+		if e := f.cleanupBootstrap(ctx, ec); e != nil {
+			return e
+		}
 	}
 	// OCM registration conditions do not carry observedGeneration.
 	joined := ocmCondition(mc, "ManagedClusterJoined") && ocmCondition(mc, "ManagedClusterConditionAvailable")
@@ -217,9 +223,6 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return err
 	}
 	manifests = append(manifests, bridge...)
-	if _, e = f.work(ctx, o, id, "aep-dataplane", manifests); e != nil {
-		return e
-	}
 	values := policyValues(o, ec.Spec.Tier, o.Spec.Policy.CosignPublicKey)
 	if ec.Spec.Tier == "prod" && o.Spec.Policy.CosignPublicKey == "" {
 		return errCosignKeyMissing
@@ -234,13 +237,6 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return e
 	}
 	engine = append([]any{kns.Object}, engine...)
-	engineReady, e := f.work(ctx, o, id, "aep-kyverno", engine)
-	if e != nil {
-		return e
-	}
-	if !engineReady {
-		return nil
-	}
 	var bundle []any
 	for _, name := range []string{"app-cluster-baseline", "app-cluster-" + ec.Spec.Tier} {
 		b, err := f.Renderer.Render(ctx, name, PolicyBundleVersion, "kyverno", values[name])
@@ -249,11 +245,36 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		}
 		bundle = append(bundle, b...)
 	}
+
+	all := append(append(append([]any{}, manifests...), engine...), bundle...)
+	permissions, e := fleetWorkPermissions(all)
+	if e != nil {
+		return e
+	}
+	permissionsReady, e := f.work(ctx, o, id, "aep-permissions", []any{permissions.Object})
+	if e != nil {
+		return e
+	}
+	if !permissionsReady {
+		fleetCondition(ec, "PoliciesReady", false, "PermissionsPending", "Waiting for work-agent aggregate role")
+		return nil
+	}
+	if _, e = f.work(ctx, o, id, "aep-dataplane", manifests); e != nil {
+		return e
+	}
+	engineReady, e := f.work(ctx, o, id, "aep-kyverno", engine)
+	if e != nil {
+		return e
+	}
+	if !engineReady {
+		fleetCondition(ec, "PoliciesReady", false, "EnginePending", "Waiting for Kyverno deployment feedback")
+		return nil
+	}
 	policyReady, e := f.work(ctx, o, id, "aep-policies", bundle)
 	if e != nil {
 		return e
 	}
-	fleetCondition(ec, "PoliciesReady", policyReady, "ManifestWorkObserved", "Policy work Applied and Available at current generation")
+	fleetCondition(ec, "PoliciesReady", policyReady, "ManifestWorkObserved", "Policy work and Ready feedback observed at current generation")
 	live, e := s.cp.get(ctx, ocAPI, "dataplanes", o.Name, id)
 	if e != nil {
 		return e
@@ -317,7 +338,9 @@ func (f *FleetReconciler) work(ctx context.Context, o *api.Organization, id, nam
 	all := len(batches) > 0
 	for i, batch := range batches {
 		workName := fmt.Sprintf("%s-%03d", name, i)
-		u := obj("work.open-cluster-management.io/v1", "ManifestWork", id, workName, M{"workload": M{"manifests": batch}, "deleteOption": M{"propagationPolicy": "Orphan"}})
+		configs := fleetFeedback(batch)
+		u := obj("work.open-cluster-management.io/v1", "ManifestWork", id, workName, M{"manifestConfigs": configs, "workload": M{"manifests": batch}, "deleteOption": M{"propagationPolicy": "Orphan"}})
+		u.SetLabels(map[string]string{"aep.aenix.io/work-batch": name})
 		if e := f.Hub.apply(ctx, o, "manifestworks", u); e != nil {
 			return false, e
 		}
@@ -325,7 +348,29 @@ func (f *FleetReconciler) work(ctx context.Context, o *api.Organization, id, nam
 		if e != nil {
 			return false, e
 		}
-		all = all && observed(live, "Applied") && observed(live, "Available")
+		all = all && observed(live, "Applied") && observed(live, "Available") && fleetFeedbackReady(live, configs)
+	}
+	stale, e := f.Hub.resource("work.open-cluster-management.io/v1", "manifestworks", id).List(ctx, metav1.ListOptions{LabelSelector: "aep.aenix.io/work-batch=" + name})
+	if e != nil {
+		return false, e
+	}
+	for _, w := range stale.Items {
+		keep := false
+		for i := range batches {
+			keep = keep || w.GetName() == fmt.Sprintf("%s-%03d", name, i)
+		}
+		if keep {
+			continue
+		}
+		if w.GetLabels()[OwnerLabel] != string(o.UID) {
+			return false, fmt.Errorf("foreign stale work")
+		}
+		if _, e = f.Hub.resource(w.GetAPIVersion(), "manifestworks", id).Patch(ctx, w.GetName(), types.MergePatchType, []byte(`{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}`), metav1.PatchOptions{}); e != nil {
+			return false, e
+		}
+		if e = f.Hub.resource(w.GetAPIVersion(), "manifestworks", id).Delete(ctx, w.GetName(), metav1.DeleteOptions{}); client.IgnoreNotFound(e) != nil {
+			return false, e
+		}
 	}
 	return all, nil
 }

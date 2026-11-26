@@ -1,8 +1,13 @@
 package operator
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/google/cel-go/cel"
+	errors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"os"
 	"testing"
 )
@@ -55,5 +60,29 @@ func TestExternalEnvironmentAdmission(t *testing.T) {
 				t.Fatalf("accepted=%v", accepted)
 			}
 		})
+	}
+}
+
+// No ExternalCluster reader is configured: pending, invalid or unavailable
+// assignments cannot block this Organization step or cause a local binding.
+func TestOrganizationReservesExternalEnvironmentBeforeAttach(t *testing.T) {
+	ctx := context.Background()
+	o := organization()
+	o.Spec.Environments[0].DataPlane.External = "edge"
+	cp := &Cluster{Dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
+	mgmt := &Cluster{Dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), Kube: kubefake.NewClientset()}
+	s := &session{r: &Reconciler{Management: mgmt, Options: Options{Namespace: "aep-system"}}, o: o, cp: cp}
+	if err := s.openChoreo(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cp.get(ctx, ocAPI, "environments", o.Name, "dev"); !errors.IsNotFound(err) {
+		t.Fatal("external environment created locally", err)
+	}
+	prod, err := cp.get(ctx, ocAPI, "environments", o.Name, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prod.GetAnnotations()["aep.aenix.io/change-model"] != "required" {
+		t.Fatal("local environment lost change model")
 	}
 }

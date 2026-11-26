@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,10 +84,10 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 	if dir == "" {
 		t.Skip("set AEP_FLEET_CHART_TEST_DIR to staged upstream artifacts")
 	}
-	h := HelmFleetRenderer{Directory: dir}
+	h := HelmFleetRenderer{Directory: dir, Mirror: "mirror.example"}
 	o := organization()
 	o.Spec.Policy.CosignPublicKey = "test-public-key"
-	values := policyValues(o, "nonprod", "")
+	values := policyValues(o, "prod", "test-public-key")
 	matrix := []struct {
 		n, v, ns string
 		values   M
@@ -101,7 +102,7 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 			values   M
 		}{ch.name, ch.version, "openchoreo-data-plane", v})
 	}
-	for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-nonprod"} {
+	for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-nonprod", "app-cluster-prod"} {
 		v := PolicyBundleVersion
 		if name == "kyverno" {
 			v = KyvernoChartVersion
@@ -114,13 +115,15 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 	matrix = append(matrix, struct {
 		n, v, ns string
 		values   M
-	}{"aep-bridge-appcluster", "0.1.0", "aep-system", M{}})
+	}{"aep-bridge-appcluster", "0.1.2", "aep-system", M{}})
+	var all []any
 	for _, tc := range matrix {
 		t.Run(tc.n, func(t *testing.T) {
 			out, e := h.Render(context.Background(), tc.n, tc.v, tc.ns, tc.values)
 			if e != nil {
 				t.Fatal(e)
 			}
+			all = append(all, out...)
 			if tc.n == "openchoreo-data-plane" {
 				for _, v := range out {
 					m := v.(map[string]any)
@@ -134,9 +137,43 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 			if _, e := workBatches(out); e != nil {
 				t.Fatal(e)
 			}
+
 			if len(out) == 0 {
 				t.Fatal("empty chart")
 			}
 		})
+	}
+	role, err := fleetWorkPermissions(all)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role.GetLabels()["open-cluster-management.io/aggregate-to-work"] != "true" {
+		t.Fatal("missing aggregation")
+	}
+	mapping := fleetResources(all)
+	for _, raw := range all {
+		m := raw.(map[string]any)
+		av := m["apiVersion"].(string)
+		kind := m["kind"].(string)
+		group := ""
+		if strings.Contains(av, "/") {
+			group = strings.SplitN(av, "/", 2)[0]
+		}
+		covered := false
+		for _, raw := range role.Object["rules"].([]any) {
+			r := raw.(M)
+			if r["apiGroups"].([]any)[0] != group {
+				continue
+			}
+			for _, v := range r["resources"].([]any) {
+				if v == "*" {
+					t.Fatal("wildcard resource")
+				}
+				covered = covered || v == mapping[av+"/"+kind]
+			}
+		}
+		if !covered {
+			t.Fatalf("uncovered %s %s", av, kind)
+		}
 	}
 }

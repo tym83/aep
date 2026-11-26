@@ -6,7 +6,9 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"slices"
@@ -40,9 +42,6 @@ func (f *FleetReconciler) quarantine(ctx context.Context, ec *api.ExternalCluste
 	fleetCondition(ec, "DataPlaneConnected", false, "Quarantined", reason)
 	if err := f.revokeHub(ctx, ec); err != nil {
 		return err
-	}
-	if ec.Status.PlaneID == "" {
-		return nil
 	}
 	id := FleetID(ec)
 	var err error
@@ -130,9 +129,19 @@ func (f *FleetReconciler) finalizeFleet(ctx context.Context, ec *api.ExternalClu
 			return fleetCleanupResult(err)
 		}
 	}
-	if err = s.deleteNamed(ctx, f.Hub, "cluster.open-cluster-management.io/v1", "managedclusters", "", id); err != nil {
-		return fleetCleanupResult(err)
+
+	mc, e := f.Hub.get(ctx, "cluster.open-cluster-management.io/v1", "managedclusters", "", id)
+	if e != nil && !errors.IsNotFound(e) {
+		return ctrl.Result{}, e
 	}
+	if e == nil {
+		uid := mc.GetUID()
+		if err = f.Hub.resource(mc.GetAPIVersion(), "managedclusters", "").Delete(ctx, id, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
 	base := ec.DeepCopy()
 	ec.Finalizers = slices.DeleteFunc(ec.Finalizers, func(v string) bool { return v == fleetFinalizer })
 	return ctrl.Result{}, f.Patch(ctx, ec, client.MergeFrom(base))
@@ -158,4 +167,29 @@ func (f *FleetReconciler) revokeHub(ctx context.Context, ec *api.ExternalCluster
 		return err
 	}
 	return nil
+}
+
+// ManagedCluster metadata is writable by the spoke. Its name, derived from the
+// management assignment UID, is the identity; its labels confer no authority.
+func (f *FleetReconciler) applyManagedCluster(ctx context.Context, o *api.Organization, want *unstructured.Unstructured) error {
+	ri := f.Hub.resource(want.GetAPIVersion(), "managedclusters", "")
+	old, err := ri.Get(ctx, want.GetName(), metav1.GetOptions{})
+	labels := want.GetLabels()
+	labels[OwnerLabel] = string(o.UID)
+	want.SetLabels(labels)
+	if errors.IsNotFound(err) {
+		_, err = ri.Create(ctx, want, metav1.CreateOptions{})
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	next := old.DeepCopy()
+	next.SetLabels(labels)
+	next.Object["spec"] = want.Object["spec"]
+	if reflect.DeepEqual(old.Object, next.Object) {
+		return nil
+	}
+	_, err = ri.Update(ctx, next, metav1.UpdateOptions{})
+	return err
 }
