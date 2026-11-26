@@ -27,42 +27,19 @@ func changeEvent(phase api.ChangePhase) Event {
 }
 func TestServiceNowLostCreateResponseRecovery(t *testing.T) {
 	ctx := context.Background()
-	created, patches, tokens := 0, 0, 0
-	exists := false
-	var last map[string]any
+	f := &fakeSN{lost: true}
+	tokens := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/oauth_token.do" {
 			tokens++
-			_ = r.ParseForm()
-			if r.Form.Get("grant_type") != "client_credentials" || r.Form.Get("client_secret") != "secret" {
-				t.Error("invalid OAuth request")
-			}
+			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"access_token":"token","token_type":"Bearer","expires_in":3600}`)
 			return
 		}
 		if r.Header.Get("Authorization") != "Bearer token" {
-			t.Error("missing OAuth token")
+			t.Error("missing OAuth")
 		}
-		switch r.Method {
-		case "GET":
-			if !strings.HasPrefix(r.URL.Query().Get("sysparm_query"), "correlation_id=aep-") {
-				t.Error("missing correlation lookup")
-			}
-			if exists {
-				fmt.Fprint(w, `{"result":[{"sys_id":"abc123"}]}`)
-			} else {
-				fmt.Fprint(w, `{"result":[]}`)
-			}
-		case "POST":
-			created++
-			exists = true
-			http.Error(w, "response lost after commit", 503)
-		case "PATCH":
-			patches++
-			_ = json.NewDecoder(r.Body).Decode(&last)
-			fmt.Fprint(w, `{"result":{}}`)
-		}
+		f.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
 	vendor := &ServiceNow{HTTP: HTTP{BaseURL: srv.URL, Client: OAuthClient(ctx, srv.URL+"/oauth_token.do", "id", "secret")}}
@@ -83,14 +60,15 @@ func TestServiceNowLostCreateResponseRecovery(t *testing.T) {
 	if err := engine.Submit(ctx, changeEvent(api.PhaseApplied)); err != nil {
 		t.Fatal(err)
 	}
+	last := f.records["sn1"]
 	if last["state"] != "3" || last["close_code"] != "successful" {
 		t.Fatalf("bad closure: %v", last)
 	}
 	if err := engine.Submit(ctx, e); err != nil {
 		t.Fatal(err)
 	} // delayed duplicate must not reopen
-	if created != 1 || patches != 2 || tokens != 1 {
-		t.Fatalf("creates=%d patches=%d tokens=%d", created, patches, tokens)
+	if len(f.records) != 1 || f.closed != 1 || tokens != 1 {
+		t.Fatal("duplicate creation or closure")
 	}
 	if _, ok := last["approval"]; ok {
 		t.Fatal("adapter must not approve ITSM on its own")

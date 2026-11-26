@@ -116,3 +116,21 @@ func ValidateGraph(g Graph) error {
 	}
 	return nil
 }
+
+// ShortText is the only change representation allowed across the vendor boundary.
+// Neither desired state, justification, notes nor credentials leave AEP.
+func ShortText(c Change) string {
+	phase := "unknown"
+	if c.Request != nil {
+		phase = string(c.Request.Status.Phase)
+	}
+	raw, _ := json.Marshal(c.Request)
+	return "AEP result/phase: " + bounded(phase, 64) + "\nConfirm in AEP: " + bounded(c.ConfirmationURL, 1024) + "\nRevision: " + Digest(raw)[:12]
+}
+func bounded(s string, n int) string {
+	r := []rune(s)
+	if len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}

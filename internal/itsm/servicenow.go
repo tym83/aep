@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 )
 
-type ServiceNow struct{ HTTP HTTP }
+type ServiceNow struct {
+	HTTP             HTTP
+	StandardTemplate string
+}
 
 func (s *ServiceNow) Deliver(ctx context.Context, e Event, ref string) (string, error) {
 	switch e.Type {
@@ -114,45 +118,153 @@ func (s *ServiceNow) change(ctx context.Context, e Event, c Change, ref string) 
 			ref = found.Result[0].ID
 		}
 	}
-	fields := map[string]any{"correlation_id": correlation, "type": string(cr.Spec.Model), "short_description": "AEP " + c.ID + " " + string(cr.Spec.Operation), "description": cr.Spec.Justification + "\nConfirm in AEP: " + c.ConfirmationURL}
+
+	base := "/api/sn_chg_rest/change/" + string(cr.Spec.Model)
+	fields := map[string]any{"correlation_id": correlation, "short_description": bounded("AEP "+c.ID+" "+string(cr.Spec.Operation), 160), "description": ShortText(c)}
 	if cr.Spec.Window != nil {
 		fields["start_date"] = cr.Spec.Window.Start.UTC().Format("2006-01-02 15:04:05")
 		fields["end_date"] = cr.Spec.Window.End.UTC().Format("2006-01-02 15:04:05")
 	}
-	// Do not set approval=approved from AEP: CAB/ECAB owns the ITSM approval.
-	switch cr.Status.Phase {
-	case api.PhaseApplied:
-		fields["state"] = "3"
-		fields["close_code"] = "successful"
-		fields["close_notes"] = "AEP applied the change"
-	case api.PhaseFailed:
-		fields["state"] = "3"
-		fields["close_code"] = "unsuccessful"
-		fields["close_notes"] = string(e.Data)
-	case api.PhaseRejected, api.PhaseExpired, api.PhaseSuperseded:
-		fields["state"] = "4"
-		fields["close_notes"] = string(cr.Status.Phase)
-	}
-	if ref != "" {
-		if !validID(ref) {
-			return ref, errors.New("invalid ServiceNow sys_id")
+	if ref == "" {
+		path := base
+		if cr.Spec.Model == api.ModelStandard {
+			if !validID(s.StandardTemplate) {
+				return ref, &HTTPError{400}
+			}
+			path += "/" + s.StandardTemplate
 		}
-		return ref, s.HTTP.Do(ctx, "PATCH", "/api/now/table/change_request/"+ref, e.ID, fields, nil)
+		var out struct {
+			Result snRecord `json:"result"`
+		}
+		if err := s.HTTP.Do(ctx, "POST", path, e.ID, fields, &out); err != nil {
+			return ref, err
+		}
+		ref = string(out.Result.ID)
 	}
-	fields["state"] = "-5"
-	// First create the record, then apply terminal state on the next delivery.
-	var out struct {
-		Result struct {
-			ID string `json:"sys_id"`
-		} `json:"result"`
+	if !validID(ref) {
+		return ref, errors.New("ServiceNow omitted sys_id")
 	}
-	if err := s.HTTP.Do(ctx, "POST", "/api/now/table/change_request", e.ID, fields, &out); err != nil {
-		return "", err
+	path := base + "/" + ref
+	if err := s.HTTP.Do(ctx, "PATCH", path, e.ID+"-text", fields, nil); err != nil {
+		return ref, err
 	}
-	if !validID(out.Result.ID) {
-		return "", errors.New("ServiceNow omitted sys_id")
+	target := ""
+	switch cr.Status.Phase {
+	case api.PhaseApproved:
+		target = "scheduled"
+	case api.PhaseApplying:
+		target = "implement"
+	case api.PhaseApplied, api.PhaseFailed:
+		target = "closed"
+	case api.PhaseRejected, api.PhaseExpired, api.PhaseSuperseded:
+		target = "canceled"
 	}
-	return s.change(ctx, e, c, out.Result.ID)
+	if target == "" {
+		return ref, nil
+	}
+	for range 10 {
+		var current struct {
+			Result snRecord `json:"result"`
+		}
+		if err := s.HTTP.Do(ctx, "GET", path, "", nil, &current); err != nil {
+			return ref, err
+		}
+		var next struct {
+			Result struct {
+				States      []string          `json:"available_states"`
+				Labels      map[string]string `json:"state_label"`
+				Transitions [][]struct {
+					From      string `json:"from_state"`
+					To        string `json:"to_state"`
+					Available bool   `json:"transition_available"`
+				} `json:"state_transitions"`
+			} `json:"result"`
+		}
+		if err := s.HTTP.Do(ctx, "GET", "/api/sn_chg_rest/change/"+ref+"/nextstates", "", nil, &next); err != nil {
+			return ref, err
+		}
+		state := string(current.Result.State)
+		label := strings.ToLower(next.Result.Labels[state])
+		if label == target || (target == "scheduled" && label == "implement") {
+			return ref, nil
+		}
+		rank := map[string]int{"new": 0, "assess": 1, "authorize": 2, "scheduled": 3, "implement": 4, "review": 5, "closed": 6}
+		selected := ""
+		best := 100
+		for _, value := range next.Result.States {
+			name := strings.ToLower(next.Result.Labels[value])
+			if value == state {
+				continue
+			}
+			allowed := len(next.Result.Transitions) == 0
+			for _, group := range next.Result.Transitions {
+				for _, tr := range group {
+					if tr.From == state && tr.To == value && tr.Available {
+						allowed = true
+					}
+				}
+			}
+			if !allowed {
+				continue
+			}
+			if target == "canceled" {
+				if name == target {
+					selected = value
+					break
+				}
+				continue
+			}
+			r, ok := rank[name]
+			cur, known := rank[label]
+			if ok && known && r > cur && r <= rank[target] && r < best {
+				selected = value
+				best = r
+			}
+		}
+		if selected == "" {
+			return ref, errors.New("waiting for allowed ServiceNow transition")
+		}
+		// The Change Management API accepts state names, unlike the Table API.
+		update := map[string]any{"state": strings.ToLower(next.Result.Labels[selected])}
+		if update["state"] == "closed" {
+			update["close_code"] = "successful"
+			if cr.Status.Phase == api.PhaseFailed {
+				update["close_code"] = "unsuccessful"
+			}
+			update["close_notes"] = ShortText(c)
+		}
+		if update["state"] == "canceled" {
+			update["close_notes"] = ShortText(c)
+		}
+		if err := s.HTTP.Do(ctx, "PATCH", path, e.ID+"-"+selected, update, nil); err != nil {
+			return ref, err
+		}
+	}
+	return ref, errors.New("ServiceNow transition limit exceeded")
+}
+
+// Change Management fields are objects; Table API lookup fields are strings.
+type snValue string
+
+func (v *snValue) UnmarshalJSON(raw []byte) error {
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		*v = snValue(value)
+		return nil
+	}
+	var field struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &field); err != nil {
+		return err
+	}
+	*v = snValue(field.Value)
+	return nil
+}
+
+type snRecord struct {
+	ID    snValue `json:"sys_id"`
+	State snValue `json:"state"`
 }
 
 var ciClasses = map[string]string{"organization": "cmdb_ci_service_discovered", "application-service": "cmdb_ci_service_discovered", "cluster": "cmdb_ci_kubernetes_cluster", "database": "cmdb_ci_db_instance", "business-application": "cmdb_ci_business_app", "technical-service": "cmdb_ci_service_technical", "service-offering": "service_offering"}

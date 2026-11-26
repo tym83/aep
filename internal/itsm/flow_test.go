@@ -57,37 +57,20 @@ func TestScenario3ServiceNow(t *testing.T) {
 	defer aep.Close()
 	oc := octest.New(t)
 	reconciler := &change.Reconciler{Client: cl, API: flowFactory{&ocapi.Client{BaseURL: oc.URL, Token: func(context.Context) (string, error) { return "token", nil }}}, Policy: policy.Default(), InstanceID: "scenario3", OrgNamespaceTemplate: "tenant-{org}"}
-	records := map[string]map[string]any{}
-	closed := 0
+	f := &fakeSN{}
 	cmdb := false
 	sn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.URL.Path == "/api/now/identifyreconcile":
+		if r.URL.Path == "/api/now/identifyreconcile" {
 			cmdb = true
+			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"result":{"items":[{},{},{},{}]}}`)
-		case r.Method == "GET":
-			fmt.Fprint(w, `{"result":[]}`)
-		case r.Method == "POST":
-			var b map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&b)
-			id := fmt.Sprintf("sn%d", len(records)+1)
-			records[id] = b
-			fmt.Fprintf(w, `{"result":{"sys_id":%q}}`, id)
-		case r.Method == "PATCH":
-			var b map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&b)
-			if b["state"] == "3" {
-				closed++
-			}
-			fmt.Fprint(w, `{"result":{}}`)
-		default:
-			http.NotFound(w, r)
+			return
 		}
+		f.ServeHTTP(w, r)
 	}))
 	defer sn.Close()
 	hc := oauth2.NewClient(ctx, oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "adapter"}))
-	engine := &Engine{Store: Store{Client: cl, Namespace: "itsm-acme"}, Adapter: &Router{Organization: "acme", Vendor: &ServiceNow{HTTP: HTTP{BaseURL: sn.URL}}, AEP: HTTP{BaseURL: aep.URL, Client: hc}}}
+	engine := &Engine{Store: Store{Client: cl, Namespace: "itsm-acme"}, Adapter: &Router{Organization: "acme", Vendor: &ServiceNow{HTTP: HTTP{BaseURL: sn.URL}, StandardTemplate: "template123"}, AEP: HTTP{BaseURL: aep.URL, Client: hc}}}
 	secret := []byte("01234567890123456789012345678901ab")
 	receiver := &Receiver{Engine: engine, Secret: secret, Organization: "acme"}
 	call := func(method, path, token, key, rv string, body any) (int, Change) {
@@ -214,7 +197,7 @@ func TestScenario3ServiceNow(t *testing.T) {
 	if err := engine.Submit(ctx, NewEvent("cmdb.sync", "cmdb/acme", sampleGraph())); err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 4 || closed != 4 || !cmdb {
-		t.Fatalf("records=%d closed=%d cmdb=%v", len(records), closed, cmdb)
+	if len(f.records) != 4 || f.closed != 4 || !cmdb {
+		t.Fatalf("records=%d closed=%d cmdb=%v", len(f.records), f.closed, cmdb)
 	}
 }
