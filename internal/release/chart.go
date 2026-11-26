@@ -16,7 +16,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/layout"
 	"github.com/google/go-containerregistry/pkg/v1/types"
-	"github.com/tym83/aep/internal/operator"
 	"sigs.k8s.io/yaml"
 )
 
@@ -190,23 +189,23 @@ func compactLayout(root string, m Manifest) error {
 
 // Convert the pinned HTTP chart to OCI so bundle/load and Flux share the same
 // immutable bytes even though upstream does not publish this chart as OCI.
-func packageArgoChart(ctx context.Context, root string) (Artifact, string, func(), error) {
-	dir, err := os.MkdirTemp("", "aep-argocd-")
+func packageHTTPChart(ctx context.Context, root, chart, repo, version, ref string) (Artifact, string, func(), error) {
+	dir, err := os.MkdirTemp("", "aep-chart-")
 	if err != nil {
 		return Artifact{}, "", nil, err
 	}
 	cleanup := func() { os.RemoveAll(dir) }
-	cmd := exec.CommandContext(ctx, "helm", "pull", "argo-cd", "--repo", "https://argoproj.github.io/argo-helm", "--version", operator.ArgoCDChartVersion, "--untar", "--untardir", dir)
+	cmd := exec.CommandContext(ctx, "helm", "pull", chart, "--repo", repo, "--version", version, "--untar", "--untardir", dir)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		cleanup()
-		return Artifact{}, "", nil, fmt.Errorf("fetch Argo CD: %w: %s", err, out)
+		return Artifact{}, "", nil, fmt.Errorf("fetch HTTP chart: %w: %s", err, out)
 	}
-	path := filepath.Join(dir, "argo-cd")
+	path := filepath.Join(dir, chart)
 	a, err := PackageChart(root, path)
 	if err != nil {
 		cleanup()
 		return Artifact{}, "", nil, err
 	}
-	a.Ref = operator.ArgoCDChartOCI
+	a.Ref = ref
 	return a, path, cleanup, nil
 }

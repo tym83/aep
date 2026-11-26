@@ -243,8 +243,12 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 		return nil
 	}
 	for _, c := range operator.DeliveryCharts() {
-		if c.Name == "argo-cd" {
-			a, path, cleanup, err := packageArgoChart(ctx, root)
+		if c.Name == "argo-cd" || c.Name == "klusterlet" {
+			repo := "https://argoproj.github.io/argo-helm"
+			if c.Name == "klusterlet" {
+				repo = "https://open-cluster-management.io/helm-charts"
+			}
+			a, path, cleanup, err := packageHTTPChart(ctx, root, c.Name, repo, c.Version, c.URL)
 			if err != nil {
 				return m, err
 			}
@@ -350,7 +354,7 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 	return m, nil
 }
 func LocalValues(chart string) map[string]any {
-	return map[string]any{"global": map[string]any{"aepVersion": "@build"}, "dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
+	return map[string]any{"gitlab": map[string]any{"global": map[string]any{"ingress": map[string]any{"class": "nginx"}}}, "global": map[string]any{"aepVersion": "@build"}, "dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
 }
 func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifact, error) {
 	raw := strings.TrimPrefix(ref, "oci://")

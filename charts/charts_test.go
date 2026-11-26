@@ -2,9 +2,10 @@ package charts
 
 import (
 	"encoding/json"
+	"github.com/tym83/aep/internal/release"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sigs.k8s.io/yaml"
 	"strings"
 	"testing"
@@ -19,7 +20,16 @@ func render(t *testing.T, chart string, values ...string) (string, error) {
 	for _, v := range values {
 		args = append(args, "--set", v)
 	}
-	b, err := exec.Command("helm", args...).CombinedOutput()
+	cmd := exec.Command("helm", args...)
+	if chart == "aep-gitlab" {
+		cmd.Args = append(cmd.Args, "--post-renderer", "./aep-gitlab/post-render.sh")
+		for _, v := range values {
+			if strings.HasPrefix(v, "global.imageRegistry=") {
+				cmd.Env = append(os.Environ(), "AEP_REGISTRY_MIRROR="+strings.TrimPrefix(v, "global.imageRegistry="))
+			}
+		}
+	}
+	b, err := cmd.CombinedOutput()
 	return string(b), err
 }
 func agentValues() []string {
@@ -160,6 +170,7 @@ func TestChartLint(t *testing.T) {
 
 func TestMirrorAllCharts(t *testing.T) {
 	cases := map[string][]string{
+		"aep-gitlab":            {"gitlab.global.ingress.class=nginx"},
 		"aep-operator":          {"aepcpKubeconfigSecret=cp/access"},
 		"aep-bridge":            {"organization=acme", "clusterID=acme"},
 		"aep-bridge-appcluster": {},
@@ -187,9 +198,13 @@ func TestMirrorAllCharts(t *testing.T) {
 			if err != nil {
 				t.Fatal(out, err)
 			}
-			for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(out, -1) {
-				if !strings.HasPrefix(image[1], "mirror.local/cache/") || (!strings.Contains(image[1], "@sha256:") && !strings.Contains(image[1], "ghcr.io/tym83/aep-")) {
-					t.Fatalf("non-mirrored or mutable image: %s", image[1])
+			images, e := release.Images([]byte(out))
+			if e != nil {
+				t.Fatal(e)
+			}
+			for _, image := range images {
+				if !strings.HasPrefix(image, "mirror.local/cache/") || (!strings.Contains(image, "@sha256:") && !strings.Contains(image, "ghcr.io/tym83/aep-")) {
+					t.Fatalf("non-mirrored or mutable image: %s", image)
 				}
 			}
 			for _, host := range []string{"argoproj.github.io/", "ghcr.io/", "cr.openchoreo.dev/", "docker.io/", "quay.io/", "registry.k8s.io/"} {

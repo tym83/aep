@@ -25,10 +25,21 @@ func run(args []string) error {
 		return fmt.Errorf("subcommand required: manifest, mirror, bundle, load, publish-charts")
 	}
 	if args[0] == "-h" || args[0] == "--help" {
-		fmt.Println("Usage: aep-release <manifest|mirror|bundle|load|publish-charts> [flags]")
+		fmt.Println("Usage: aep-release <manifest|mirror|bundle|load|publish-charts|render-images> [flags]")
 		return nil
 	}
 	cmd := args[0]
+	if cmd == "render-images" {
+		fs := flag.NewFlagSet("aep-release render-images", flag.ContinueOnError)
+		mirror := fs.String("registry-mirror", "", "Mirror prefix")
+		if err := fs.Parse(args[1:]); err != nil {
+			if err == flag.ErrHelp {
+				return nil
+			}
+			return err
+		}
+		return release.RenderImages(os.Stdin, os.Stdout, *mirror)
+	}
 	if cmd != "manifest" && cmd != "mirror" && cmd != "bundle" && cmd != "load" && cmd != "publish-charts" {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
