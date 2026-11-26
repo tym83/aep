@@ -185,10 +185,30 @@ func Watch(ctx context.Context, c dynamic.Interface, s *Spool, resource string) 
 	}
 }
 
+type Credential struct {
+	Token  string `json:"token"`
+	Source string `json:"source"`
+	Path   string `json:"path"`
+}
+
+func ValidateCredentials(credentials []Credential) error {
+	if len(credentials) == 0 {
+		return fmt.Errorf("per-source credentials required")
+	}
+	seen := map[string]bool{}
+	for _, c := range credentials {
+		if len(c.Token) < 32 || c.Source == "" || (c.Path != "/kubernetes" && c.Path != "/openchoreo") || seen[c.Token] {
+			return fmt.Errorf("invalid or duplicate source credential")
+		}
+		seen[c.Token] = true
+	}
+	return nil
+}
+
 type Receiver struct {
-	Spool   *Spool
-	Token   string
-	Cluster string
+	Spool       *Spool
+	Credentials []Credential
+	DeadLetters ObjectWriter
 }
 
 func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -196,7 +216,13 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(405)
 		return
 	}
-	if r.Token == "" || subtle.ConstantTimeCompare([]byte(req.Header.Get("Authorization")), []byte("Bearer "+r.Token)) != 1 {
+	source := ""
+	for _, credential := range r.Credentials {
+		if credential.Token != "" && subtle.ConstantTimeCompare([]byte(req.Header.Get("Authorization")), []byte("Bearer "+credential.Token)) == 1 && req.URL.Path == credential.Path {
+			source = credential.Source
+		}
+	}
+	if source == "" {
 		w.WriteHeader(401)
 		return
 	}
@@ -206,6 +232,7 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	var events []Event
+	var invalid []json.RawMessage
 	switch req.URL.Path {
 	case "/kubernetes":
 		var list struct {
@@ -230,15 +257,23 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				Annotations  map[string]any `json:"annotations"`
 			}
 			if json.Unmarshal(raw, &e) != nil || e.AuditID == "" || e.Stage == "" {
-				http.Error(w, "invalid audit event", 400)
-				return
+				invalid = append(invalid, raw)
+				InvalidWebhookCount.Add(1)
+				continue
+			}
+			if e.Time != "" {
+				if _, err := time.Parse(time.RFC3339Nano, e.Time); err != nil {
+					invalid = append(invalid, raw)
+					InvalidWebhookCount.Add(1)
+					continue
+				}
 			}
 			group, _ := e.Object["apiGroup"].(string)
-			if group != "aep.aenix.io" && group != "apps.cozystack.io" {
+			if group != "aep.aenix.io" && group != "apps.cozystack.io" && group != "openchoreo.dev" && !strings.HasSuffix(group, ".openchoreo.dev") {
 				continue
 			}
 			actor, _ := e.User["username"].(string)
-			events = append(events, Event{ID: Digest([]string{r.Cluster, e.AuditID, e.Stage}), Source: "kubernetes/" + r.Cluster, Time: e.Time, Action: e.Verb, Actor: actor, Resource: fmt.Sprint(e.Object["resource"], "/", e.Object["namespace"], "/", e.Object["name"]), Details: map[string]any{"auditID": e.AuditID, "stage": e.Stage, "user": e.User, "impersonatedUser": e.Impersonated, "objectRef": e.Object, "responseStatus": e.Response, "annotations": e.Annotations}})
+			events = append(events, Event{ID: Digest([]string{source, e.AuditID, e.Stage}), Source: source, Time: e.Time, Action: e.Verb, Actor: actor, Resource: fmt.Sprint(e.Object["resource"], "/", e.Object["namespace"], "/", e.Object["name"]), Details: map[string]any{"auditID": e.AuditID, "stage": e.Stage, "user": e.User, "impersonatedUser": e.Impersonated, "objectRef": e.Object, "responseStatus": e.Response, "annotations": e.Annotations}})
 		}
 	case "/openchoreo":
 		// Adapter for the documented structured audit record, not arbitrary pod logs.
@@ -257,7 +292,7 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		actor, _ := e.Actor["id"].(string)
 		ns, _ := e.Resource["namespace"].(string)
-		events = append(events, Event{ID: Digest([]string{r.Cluster, e.ID}), Source: "openchoreo/" + r.Cluster, Time: e.Time, Action: e.Action, Actor: actor, Organization: ns, Resource: fmt.Sprint(e.Resource["type"], "/", e.Resource["name"]), Details: map[string]any{"actor": e.Actor, "resource": e.Resource, "result": e.Result, "requestID": e.Request}})
+		events = append(events, Event{ID: Digest([]string{source, e.ID}), Source: source, Time: e.Time, Action: e.Action, Actor: actor, Organization: ns, Resource: fmt.Sprint(e.Resource["type"], "/", e.Resource["name"]), Details: map[string]any{"actor": e.Actor, "resource": e.Resource, "result": e.Result, "requestID": e.Request}})
 	default:
 		w.WriteHeader(404)
 		return
@@ -274,6 +309,12 @@ func (r Receiver) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		if err = r.Spool.Append(events); err != nil {
 			w.Header().Set("Retry-After", "5")
 			http.Error(w, "durable spool unavailable", 503)
+			return
+		}
+	}
+	for _, raw := range invalid {
+		if err := deadLetter(req.Context(), r.DeadLetters, "webhook", map[string]any{"source": source, "item": raw}, "invalid_audit_event", "invalid identity or timestamp"); err != nil {
+			http.Error(w, "dead-letter unavailable", 503)
 			return
 		}
 	}

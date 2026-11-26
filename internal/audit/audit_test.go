@@ -129,7 +129,7 @@ func TestAtLeastOnceAndCapacity(t *testing.T) {
 }
 func TestReceiver(t *testing.T) {
 	s := openTest(t)
-	r := Receiver{Spool: s, Token: "token", Cluster: "mgmt"}
+	r := Receiver{Spool: s, Credentials: []Credential{{Token: "token", Source: "mgmt", Path: "/kubernetes"}}}
 	body := `{"apiVersion":"audit.k8s.io/v1","kind":"EventList","items":[{"auditID":"id","stage":"ResponseComplete","verb":"patch","user":{"username":"alice"},"objectRef":{"apiGroup":"aep.aenix.io","resource":"organizations","name":"acme"},"requestObject":{"secret":"do-not-export"}},{"auditID":"ignore","stage":"ResponseComplete","objectRef":{"apiGroup":"other"}}]}`
 	send := func(token string, b string) int {
 		q := httptest.NewRequest("POST", "/kubernetes", strings.NewReader(b))

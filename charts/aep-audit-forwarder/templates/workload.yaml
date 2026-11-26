@@ -68,7 +68,7 @@ spec:
             - --stream={{ .Values.stream }}
             - --tls-cert=/tls/tls.crt
             - --tls-key=/tls/tls.key
-            - --token-file=/token/token
+            - --credentials-file=/token/sources.json
             - --opensearch-url={{ .Values.opensearchURL }}
             - --opensearch-index={{ .Values.opensearchIndex }}
             - --syslog-address={{ .Values.syslogAddress }}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -53,7 +54,7 @@ func run() error {
 	listen := flag.String("listen", ":8443", "HTTPS listen address")
 	cert := flag.String("tls-cert", "", "server certificate")
 	key := flag.String("tls-key", "", "server key")
-	token := flag.String("token-file", "", "webhook bearer token file")
+	credentials := flag.String("credentials-file", "", "JSON per-source token, source and allowed path credentials")
 	osURL := flag.String("opensearch-url", "", "OpenSearch HTTPS URL")
 	index := flag.String("opensearch-index", "aep-audit", "index")
 	sys := flag.String("syslog-address", "", "TLS syslog host:port")
@@ -61,17 +62,29 @@ func run() error {
 	bucket := flag.String("s3-bucket", "", "bucket")
 	prefix := flag.String("s3-prefix", "audit", "prefix")
 	flag.Parse()
-	if *cert == "" || *key == "" || *token == "" || strings.ContainsAny(*stream, "/\\ \t\n") {
-		return fmt.Errorf("TLS certificate, key, token file and safe stream ID required")
+	if *cert == "" || *key == "" || *credentials == "" || strings.ContainsAny(*stream, "/\\ \t\n") {
+		return fmt.Errorf("TLS certificate, key, credentials file and safe stream ID required")
 	}
-	t, err := os.ReadFile(*token)
+	t, err := os.ReadFile(*credentials)
 	if err != nil {
 		return err
 	}
-	if len(strings.TrimSpace(string(t))) < 32 {
-		return fmt.Errorf("webhook token must be at least 32 characters")
+	var sources []audit.Credential
+	if err = json.Unmarshal(t, &sources); err != nil {
+		return err
+	}
+	if err = audit.ValidateCredentials(sources); err != nil {
+		return err
 	}
 	var sinks []audit.Sink
+	var deadLetters audit.ObjectWriter
+	if *endpoint == "" {
+		return fmt.Errorf("S3 required for durable dead letters")
+	}
+	deadLetters, err = objectstore.New(*endpoint, *bucket, *prefix)
+	if err != nil {
+		return err
+	}
 	if *osURL != "" {
 		sinks = append(sinks, audit.OpenSearch{URL: *osURL, Index: *index, Username: os.Getenv("OPENSEARCH_USERNAME"), Password: os.Getenv("OPENSEARCH_PASSWORD")})
 	}
@@ -119,7 +132,7 @@ func run() error {
 		}
 	}()
 	mux := http.NewServeMux()
-	receiver := audit.Receiver{Spool: s, Token: strings.TrimSpace(string(t)), Cluster: *stream}
+	receiver := audit.Receiver{Spool: s, Credentials: sources, DeadLetters: deadLetters}
 	mux.Handle("/kubernetes", receiver)
 	mux.Handle("/openchoreo", receiver)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
@@ -132,6 +145,7 @@ func run() error {
 			}
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		fmt.Fprintf(w, "aep_audit_dead_letters_total %d\naep_audit_invalid_webhook_items_total %d\n", audit.DeadLetterCount.Load(), audit.InvalidWebhookCount.Load())
 		size, cap := s.StateSize()
 		fmt.Fprintf(w, "aep_audit_state_bytes %d\naep_audit_state_capacity_bytes %d\n", size, cap)
 		fmt.Fprintf(w, "aep_audit_pending_events %d\naep_audit_oldest_pending_seconds %f\n", len(p), age)

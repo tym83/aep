@@ -119,7 +119,11 @@ supply its digest to `charts/aep-audit-forwarder`. The default all-zero digest i
 an explicit non-deployable placeholder, not a published artifact. Provide:
 
 - `aep-audit-tls`: `tls.crt` and `tls.key`, with Service DNS in the certificate SAN.
-- `aep-audit-token`: `token`, at least 32 random characters.
+- `aep-audit-token`: `sources.json`, an array of credentials such as
+  `[{"token":"<32+ random characters>","source":"aep-cp","path":"/kubernetes"},{"token":"<different 32+ random characters>","source":"gateway","path":"/openchoreo"}]`.
+  Every credential is bound to one fixed source and path. Use different tokens
+  for management, aep-cp and gateway senders; identity is never read from payloads.
+  Pass the file via `--credentials-file`. S3 is required for durable dead letters.
 - `aep-audit-sinks`: environment variables for configured sinks (may be empty
   for anonymous authenticated-by-network installations).
 - At least one sink URL/address; configure S3 and SIEM in parallel for production.
@@ -150,10 +154,16 @@ use a synthetic API write and confirm its identity in every sink.
 ## Kubernetes audit configuration: Kamaji and Cozystack
 
 The example [policy](../config/audit/policy.yaml) uses Metadata for the two
-management API groups. Mount it with the [webhook kubeconfig](../config/audit/webhook-kubeconfig.example.yaml),
-CA and token in a Secret named `aep-audit-apiserver` in the **management namespace
-hosting the control-plane pods**. Keys: `policy.yaml`, `webhook.yaml`, `ca.crt`,
-`token`. Restrict who can read this Secret.
+management API groups and openchoreo.dev on the aep-cp apiserver. Add each
+served *.openchoreo.dev subgroup explicitly at Metadata level; Kubernetes audit
+policy group matching does not support suffix wildcards. Mount it with the [webhook kubeconfig](../config/audit/webhook-kubeconfig.example.yaml),
+CA and per-source token in a Secret named `aep-audit-apiserver` in a
+**platform namespace tenants cannot read**, never a `tenant-*` namespace.
+Keys: `policy.yaml`, `webhook.yaml`, `ca.crt`, `token`. Control-plane pods
+must be hosted where this protected Secret can be mounted; Kubernetes cannot
+mount a Secret from another namespace. If the installation hosts those pods in
+tenant-readable namespaces, change that isolation before enabling this integration.
+Keep forwarder credentials and sink credentials in the same protected trust boundary.
 
 Kamaji has two different API layouts; do not confuse them:
 
@@ -228,3 +238,27 @@ per-organization routing, SIEM provisioning, and end-to-end scenario 7 tests.
 
 S3 signing uses `AWS_REGION` (default `us-east-1`); set it to the bucket region.
 The configured region avoids requiring bucket-location discovery permissions.
+
+## Delivery and evidence boundaries
+
+The hash chain proves continuity, not sender authenticity. Protect source credentials,
+TLS trust and externally anchored hashes independently. A credential holder can
+submit fabricated events for its assigned source.
+
+EventList requests accept valid items while invalid identities/timestamps are counted
+in `aep_audit_invalid_webhook_items_total` and written under the S3
+`dead-letter/webhook/` prefix. A failed durable write returns 503; retries may
+repeat accepted events. SIEM consumers must deduplicate by event `id` (scoped by
+`source`), not timestamp or delivery count. Preserve chain sequence/hash for
+continuity verification before semantic deduplication.
+
+Monitor `aep_audit_state_bytes` against `aep_audit_state_capacity_bytes`.
+Deletion checkpoints disappear only after delivery acknowledgement. Directory fsync
+failure terminates the process so an uncertain durable head cannot be reused.
+
+Syslog uses RFC5425 octet framing. The implementation does not truncate messages:
+the maximum message is the full JSON event plus RFC5424 header, potentially several
+MiB (webhook request limit 8 MiB; spool default 64 MiB). Configure the collector's
+maximum message size to accommodate the largest accepted event and test it; a
+collector with a typical 8 KiB/64 KiB cap can lose evidence. Use S3 as the durable
+archive for large records.

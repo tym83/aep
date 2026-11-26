@@ -8,4 +8,8 @@ rules:
         resources: ["*"]
       - group: apps.cozystack.io
         resources: ["*"]
+      - group: openchoreo.dev
+        resources: ["*"]
+      # Add each served *.openchoreo.dev subgroup explicitly; audit policy
+      # groups do not support suffix wildcards.
   - level: None
