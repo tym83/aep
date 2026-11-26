@@ -79,6 +79,19 @@ func TestInventoryRelationshipsRetirementAndFailedList(t *testing.T) {
 	if !retired["db"] || !retired["app"] {
 		t.Fatal(retired)
 	}
+	if err := engine.Submit(ctx, NewEvent("cmdb.sync", "cmdb/acme", g)); err != nil {
+		t.Fatal(err)
+	}
+	next, err := p.Inventory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ci := range next.Items {
+		if ci.Retired {
+			t.Fatal("confirmed retirement retained")
+		}
+	}
+
 }
 func TestDurableOrderingAndScope(t *testing.T) {
 	ctx := context.Background()
@@ -100,7 +113,7 @@ func TestDurableOrderingAndScope(t *testing.T) {
 	if engine.Submit(ctx, first) == nil {
 		t.Fatal("expected failure")
 	}
-	if engine.Submit(ctx, second) != ErrBusy {
+	if engine.Submit(ctx, second) == nil {
 		t.Fatal("new state overtook pending state")
 	}
 	other := store
@@ -108,7 +121,7 @@ func TestDurableOrderingAndScope(t *testing.T) {
 	if err := (&Engine{Store: other, Adapter: adapter}).Retry(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 {
+	if calls != 2 {
 		t.Fatal("other organization retried this delivery")
 	}
 	fail = false

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,13 +20,15 @@ import (
 func Digest(raw []byte) string { v := sha256.Sum256(raw); return hex.EncodeToString(v[:]) }
 
 type Receipt struct {
-	Hash  string    `json:"hash"`
-	Until time.Time `json:"until"`
+	Status int       `json:"status,omitempty"`
+	Hash   string    `json:"hash"`
+	Until  time.Time `json:"until"`
 }
 type Record struct {
 	Receipts map[string]Receipt `json:"receipts,omitempty"`
 	Event    Event              `json:"event"`
 	Ref      string             `json:"ref,omitempty"`
+	Failure  int                `json:"failure,omitempty"`
 	Done     bool               `json:"done"`
 	Attempts int                `json:"attempts"`
 	Next     time.Time          `json:"next"`
@@ -74,7 +77,50 @@ type Engine struct {
 	Store   Store
 	Adapter Adapter
 	mu      sync.Mutex
+	locks   map[string]*subjectLock
 	Now     func() time.Time
+}
+
+type subjectLock struct {
+	sync.Mutex
+	users int
+}
+
+func (e *Engine) lock(subject string) func() {
+	e.mu.Lock()
+	if e.locks == nil {
+		e.locks = map[string]*subjectLock{}
+	}
+	l := e.locks[subject]
+	if l == nil {
+		l = &subjectLock{}
+		e.locks[subject] = l
+	}
+	l.users++
+	e.mu.Unlock()
+	l.Lock()
+	return func() {
+		l.Unlock()
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		l.users--
+		if l.users == 0 {
+			delete(e.locks, subject)
+		}
+	}
+}
+func permanent(err error) int {
+	var h *HTTPError
+	if errors.As(err, &h) && h.Status >= 400 && h.Status < 500 && h.Status != 408 && h.Status != 429 {
+		return h.Status
+	}
+	return 0
+}
+func outcome(status int) error {
+	if status != 0 {
+		return &HTTPError{Status: status}
+	}
+	return nil
 }
 
 var ErrBusy = errors.New("previous delivery is pending; retry later")
@@ -89,8 +135,8 @@ func (e *Engine) Submit(ctx context.Context, event Event) error {
 	if err := event.Validate(); err != nil {
 		return err
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	unlock := e.lock(event.Subject)
+	defer unlock()
 	cm, r, err := e.Store.get(ctx, event.Subject)
 	if err != nil {
 		return err
@@ -108,7 +154,7 @@ func (e *Engine) Submit(ctx context.Context, event Event) error {
 		if receipt.Hash != hash {
 			return errors.New("event ID reused with different payload")
 		}
-		return nil
+		return outcome(receipt.Status)
 	}
 	if len(r.Receipts) >= 2000 {
 		return errors.New("receipt capacity reached; wait for seven-day expiry")
@@ -118,11 +164,16 @@ func (e *Engine) Submit(ctx context.Context, event Event) error {
 			return errors.New("event ID reused with different payload")
 		}
 		if r.Done {
-			return nil
+			return outcome(r.Failure)
 		}
 	} else {
-		if r.Event.ID != "" && !r.Done {
-			return ErrBusy
+		if r.Event.ID != "" {
+			if !event.Time.After(r.Event.Time) && (strings.HasPrefix(event.Subject, "change/") || strings.HasPrefix(event.Subject, "cmdb/") || strings.HasPrefix(event.Subject, "alert/")) {
+				return nil
+			}
+			if !r.Done && !(strings.HasPrefix(event.Subject, "change/") || strings.HasPrefix(event.Subject, "cmdb/") || strings.HasPrefix(event.Subject, "alert/")) {
+				return ErrBusy
+			}
 		}
 		r = Record{Event: event, Ref: r.Ref, Receipts: r.Receipts}
 		if err = e.Store.save(ctx, cm, r); err != nil {
@@ -139,12 +190,13 @@ func (e *Engine) deliver(ctx context.Context, cm *corev1.ConfigMap, r Record) er
 	if ref != "" {
 		r.Ref = ref
 	}
-	if err == nil {
+	r.Failure = permanent(err)
+	if err == nil || r.Failure != 0 {
 		r.Done = true
 		if r.Receipts == nil {
 			r.Receipts = map[string]Receipt{}
 		}
-		r.Receipts[r.Event.ID] = Receipt{Hash: Digest(append([]byte(r.Event.Type), r.Event.Data...)), Until: e.now().Add(7 * 24 * time.Hour)}
+		r.Receipts[r.Event.ID] = Receipt{Status: r.Failure, Hash: Digest(append([]byte(r.Event.Type), r.Event.Data...)), Until: e.now().Add(7 * 24 * time.Hour)}
 		r.Attempts = 0
 		r.Next = time.Time{}
 	} else {
@@ -157,8 +209,6 @@ func (e *Engine) deliver(ctx context.Context, cm *corev1.ConfigMap, r Record) er
 	return err
 }
 func (e *Engine) Retry(ctx context.Context) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
 	list := &corev1.ConfigMapList{}
 	if err := e.Store.Client.List(ctx, list, client.InNamespace(e.Store.Namespace), client.MatchingLabels{"aep.aenix.io/itsm-state": "true", "aep.aenix.io/itsm-scope": Digest([]byte(e.Store.Scope))[:32]}); err != nil {
 		return err
@@ -168,11 +218,31 @@ func (e *Engine) Retry(ctx context.Context) error {
 		cm := &list.Items[i]
 		var r Record
 		if err := json.Unmarshal([]byte(cm.Data["state"]), &r); err != nil {
-			return err
+			errs = append(errs, err)
+			continue
+		}
+		unlock := e.lock(r.Event.Subject)
+		cm, r, err := e.Store.get(ctx, r.Event.Subject)
+		if err != nil {
+			unlock()
+			errs = append(errs, err)
+			continue
+		}
+		if r.Done {
+			expired := true
+			for _, receipt := range r.Receipts {
+				if e.now().Before(receipt.Until) {
+					expired = false
+				}
+			}
+			if expired {
+				errs = append(errs, e.Store.Client.Delete(ctx, cm))
+			}
 		}
 		if !r.Done && !e.now().Before(r.Next) {
 			errs = append(errs, e.deliver(ctx, cm, r))
 		}
+		unlock()
 	}
 	return errors.Join(errs...)
 }

@@ -153,7 +153,7 @@ func (p *Poller) Inventory(ctx context.Context) (Graph, error) {
 			present[ci.UID] = true
 		}
 		for _, ci := range old.Items {
-			if !present[ci.UID] && ci.Kind != "business-application" {
+			if !present[ci.UID] && !ci.Retired && ci.Kind != "business-application" {
 				ci.Retired = true
 				g.Items = append(g.Items, ci)
 			}
