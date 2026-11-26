@@ -316,7 +316,7 @@
         }
       }
     },
-    "prod-logs": {
+    "direct-prod-logs": {
       "endpoint": "openchoreo",
       "path": "{logsPath}",
       "method": "GET",
@@ -325,9 +325,27 @@
         200
       ]
     },
-    "nonprod-logs": {
+    "direct-nonprod-logs": {
       "endpoint": "openchoreo",
       "path": "{nonprodLogsPath}",
+      "method": "GET",
+      "allow": [],
+      "success": [
+        200
+      ]
+    },
+    "prod-logs": {
+      "endpoint": "read",
+      "path": "{readProdLogsPath}",
+      "method": "GET",
+      "allow": [],
+      "success": [
+        200
+      ]
+    },
+    "nonprod-logs": {
+      "endpoint": "read",
+      "path": "{readNonprodLogsPath}",
       "method": "GET",
       "allow": [
         "developer",

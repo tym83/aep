@@ -28,6 +28,9 @@ spec:
             - {{ printf "--groups-claim=%s" .Values.oidc.groupsClaim | quote }}
             - {{ printf "--org-namespace-template=%s" .Values.orgNamespaceTemplate | quote }}
             - {{ printf "--console-url-template=%s" .Values.consoleUrlTemplate | quote }}
+            {{- with .Values.openchoreoUrl }}
+            - {{ printf "--openchoreo-url=%s" . | quote }}
+            {{- end }}
           {{- if .Values.costCredentialsSecret }}
           envFrom:
             - secretRef:

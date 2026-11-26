@@ -167,6 +167,31 @@ Snapshots are read from `--namespace` (default `aep-system`), which must match
 the operator namespace. The `charts/aep-read-api` chart configures this through
 `complianceNamespace` and grants ConfigMap get access only in that namespace.
 
+### GET /v1/organizations/{org}/projects/{project}/components/{component}/environments/{environment}/logs
+
+Returns the OpenChoreo pod log response for a deployed component. Query:
+`podName` (optional; a running pod of the binding is chosen when omitted),
+`container`, `sinceSeconds` (1..604800).
+
+OpenChoreo authorizes its own pod log route
+(`/api/v1/namespaces/{org}/releasebindings/{binding}/k8sresources/logs`) with
+`releasebinding:view` and no environment context, so any organization reader
+could read production pod logs there. This route first evaluates `logs:view`
+for the exact environment through `/api/v1/authz/evaluates` with the caller's
+token (a denied caller learns nothing about which deployments exist), then
+checks that the release binding belongs to the requested project and component,
+and only then reads the logs as the caller. By default
+`developer` and `platform` hold `logs:view` in non-prod environments only;
+granting production logs is an organization decision expressed in its roles.
+
+Responses: 200 logs; 400 invalid names or `sinceSeconds`; 403 not a member or
+no `logs:view` for the environment; 404 unknown environment, binding or pod;
+502 OpenChoreo unavailable; 503 `openchoreoUrl` not configured.
+
+Deny the direct OpenChoreo route at the OpenChoreo API entry point (path
+`/api/v1/namespaces/*/releasebindings/*/k8sresources/logs`) so this route is
+the only way to read pod logs.
+
 ## Existing change API
 
 `aep.changeApiUrl` is the change service base URL. The proxy preserves upstream

@@ -14,6 +14,11 @@ complianceNamespace: aep-system
 orgNamespaceTemplate: tenant-{org}
 # Example: https://console.example.org/{{.Namespace}}/{{.Kind}}/{{.Name}}
 consoleUrlTemplate: ""
+# OpenChoreo API URL for environment-scoped log access (logs:view per
+# environment, evaluated with the caller's token). Empty disables the route.
+# Also deny direct access to .../k8sresources/logs on the OpenChoreo API
+# entry point: OpenChoreo authorizes it with releasebinding:view only.
+openchoreoUrl: ""
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {memory: 256Mi}
