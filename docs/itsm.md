@@ -11,7 +11,10 @@ Event Management. All tests run offline with fake vendor HTTP servers.
 Design §5.6 explicitly chooses human confirmation, so this implementation does
 **not** add service-account decisions or trust ITSM-supplied groups. A CAB/ECAB
 approval arrives as `change.note` evidence, including the immutable corporate
-approver ID and external approval reference. It does not approve AEP.
+approver ID and external approval reference. It does not approve AEP. For
+ServiceNow the bridge reads `sysapproval_approver` decisions on mirrored
+pending changes itself and posts each approved or rejected record once; ITSM
+automation may also send signed `change.note` events inbound.
 
 The approver follows `confirmationUrl/<organization>/<change>` to the existing
 AEP approval UI, signs in with Keycloak, reviews the current change, and posts

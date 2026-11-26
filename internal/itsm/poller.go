@@ -37,6 +37,10 @@ type Poller struct {
 	// bridge does not flood the ITSM with an organization's history. Zero
 	// mirrors every change.
 	MirrorSince time.Time
+	// Approvals and Notes, when set, forward CAB decisions on pending changes
+	// to AEP as evidence notes.
+	Approvals ApprovalReader
+	Notes     *Engine
 }
 
 func (p *Poller) Once(ctx context.Context) error {
@@ -57,6 +61,7 @@ func (p *Poller) Once(ctx context.Context) error {
 		id := p.Organization + "/" + cr.Name
 		event := NewEvent("change.updated", "change/"+id, Change{ID: id, Request: &cr, ConfirmationURL: strings.TrimRight(p.ConfirmationURL, "/") + "/" + id})
 		errs = append(errs, p.Engine.Submit(ctx, event))
+		errs = append(errs, p.pollApprovals(ctx, &cr, id))
 	}
 	if p.SyncCMDB {
 		g, err := p.Inventory(ctx)

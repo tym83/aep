@@ -9,8 +9,8 @@ import (
 // API numbers, plain or wrapped in value/display_value objects.
 func TestServiceNowValueShapes(t *testing.T) {
 	for raw, want := range map[string]string{
-		`"-5"`: "-5",
-		`-5`:   "-5",
+		`"-5"`:                                 "-5",
+		`-5`:                                   "-5",
 		`{"value":"-5","display_value":"New"}`: "-5",
 		`{"value":-5,"display_value":"New"}`:   "-5",
 		`{"value":null,"display_value":""}`:    "",
