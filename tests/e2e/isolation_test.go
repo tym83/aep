@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -80,28 +81,28 @@ func (s *suite) isolation() {
 	probe := s.name("probe")
 	kube := []string{"kubectl", "--kubeconfig", a.TierKubeconfig, "--request-timeout=30s", "-n", a.ProbeNamespace}
 	s.t.Cleanup(func() {
-		if _, err := command(kube, "delete", "pod", probe, "--ignore-not-found", "--wait=false"); err != nil {
+		if _, err := isolationCommand(kube, "delete", "pod", probe, "--ignore-not-found", "--wait=false"); err != nil {
 			s.t.Error(err)
 		}
 	})
-	if _, err := command(kube, "run", probe, "--image="+s.c.Network.Image, "--restart=Never", "--labels=aep.aenix.io/e2e-run="+s.run, "--command", "--", "sleep", "600"); err != nil {
+	if _, err := isolationCommand(kube, "run", probe, "--image="+s.c.Network.Image, "--restart=Never", "--override-type=strategic", "--overrides="+probeOverrides(probe), "--labels=aep.aenix.io/e2e-run="+s.run, "--command", "--", "sleep", "600"); err != nil {
 		s.t.Fatal(err)
 	}
-	if _, err := command(kube, "wait", "--for=condition=Ready", "pod/"+probe, "--timeout=30s"); err != nil {
-		s.t.Fatal("probe pod did not become Ready")
+	if _, err := isolationCommand(kube, "wait", "--for=condition=Ready", "pod/"+probe, "--timeout=30s"); err != nil {
+		s.t.Fatalf("probe pod did not become Ready: %v", err)
 	}
 	check := func(address string, want bool) {
 		host, port, _ := net.SplitHostPort(address)
 		// Exit 1 from nc alone is insufficient: missing tools also fail. Emit a
 		// marker only after validating nc and running a bounded TCP check.
 		script := `command -v nc >/dev/null || exit 42; if nc -z -w 5 "$1" "$2"; then echo CONNECTED; else echo BLOCKED; fi`
-		out, err := command(kube, "exec", probe, "--", "sh", "-c", script, "probe", host, port)
+		out, err := isolationCommand(kube, "exec", probe, "--", "sh", "-c", script, "probe", host, port)
 		expected := "BLOCKED"
 		if want {
 			expected = "CONNECTED"
 		}
 		if err != nil || out != expected {
-			s.t.Errorf("network probe expected %s (output redacted)", expected)
+			s.t.Errorf("network probe expected %s: %v (stdout redacted)", expected, err)
 		}
 	}
 	check(s.c.Network.ControlAddress, true)
@@ -111,14 +112,14 @@ func (s *suite) isolation() {
 	// be mistaken for isolation. This pod has the same image and probe command.
 	bkube := []string{"kubectl", "--kubeconfig", b.TierKubeconfig, "--request-timeout=30s", "-n", b.ProbeNamespace}
 	s.t.Cleanup(func() {
-		if _, err := command(bkube, "delete", "pod", probe, "--ignore-not-found", "--wait=false"); err != nil {
+		if _, err := isolationCommand(bkube, "delete", "pod", probe, "--ignore-not-found", "--wait=false"); err != nil {
 			s.t.Error(err)
 		}
 	})
-	if _, err := command(bkube, "run", probe, "--image="+s.c.Network.Image, "--restart=Never", "--labels=aep.aenix.io/e2e-run="+s.run, "--command", "--", "sleep", "600"); err != nil {
+	if _, err := isolationCommand(bkube, "run", probe, "--image="+s.c.Network.Image, "--restart=Never", "--override-type=strategic", "--overrides="+probeOverrides(probe), "--labels=aep.aenix.io/e2e-run="+s.run, "--command", "--", "sleep", "600"); err != nil {
 		s.t.Fatal(err)
 	}
-	if _, err := command(bkube, "wait", "--for=condition=Ready", "pod/"+probe, "--timeout=30s"); err != nil {
+	if _, err := isolationCommand(bkube, "wait", "--for=condition=Ready", "pod/"+probe, "--timeout=30s"); err != nil {
 		s.t.Fatal(err)
 	}
 	kube = bkube
@@ -127,7 +128,7 @@ func (s *suite) isolation() {
 	if s.c.ManagementKubeconfig == "" {
 		s.t.Skip("management kubeconfig not configured; network checks completed, credential isolation skipped")
 	}
-	raw, err := command([]string{"kubectl", "--kubeconfig", s.c.ManagementKubeconfig}, "config", "view", "--raw", "--minify", "--flatten", "-o", "json")
+	raw, err := isolationCommand([]string{"kubectl", "--kubeconfig", s.c.ManagementKubeconfig}, "config", "view", "--raw", "--minify", "--flatten", "-o", "json")
 	if err != nil {
 		s.t.Fatal(err)
 	}
@@ -160,4 +161,39 @@ func (s *suite) isolation() {
 		s.t.Fatal("expected explicit Kubernetes authentication/authorization denial, not a transport failure")
 	}
 	s.t.Log(fmt.Sprintf("network and management credential isolation checked for run %s", s.run))
+}
+
+// Strategic merge retains the generated image, command and run label.
+func probeOverrides(name string) string {
+	v := map[string]any{"spec": map[string]any{
+		"securityContext": map[string]any{"runAsNonRoot": true, "runAsUser": 65534, "seccompProfile": map[string]any{"type": "RuntimeDefault"}},
+		"containers":      []any{map[string]any{"name": name, "securityContext": map[string]any{"allowPrivilegeEscalation": false, "capabilities": map[string]any{"drop": []string{"ALL"}}}}},
+	}}
+	raw, _ := json.Marshal(v)
+	return string(raw)
+}
+
+// Suppress the remainder after a credential marker, including quoted values.
+var diagnosticSecrets = regexp.MustCompile(`(?i)(bearer[ \t]+.*|(?:--)?(?:token|access[_-]?token|refresh[_-]?token|password|client[_-]?secret|authorization)["']?(?:[ \t]*[:=]|[ \t]+).*|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|https?://[^\s/@]+:[^\s/@]+@)`)
+
+func diagnosticLine(stderr string) string {
+	line, _, _ := strings.Cut(stderr, "\n")
+	line = diagnosticSecrets.ReplaceAllString(line, "[REDACTED]")
+	if len(line) > 500 {
+		line = line[:500] + "..."
+	}
+	return strings.TrimSpace(line)
+}
+
+func isolationCommand(command []string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, command[0], append(append([]string{}, command[1:]...), args...)...).Output()
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("command failed: %s", diagnosticLine(string(exit.Stderr)))
+		}
+		return "", fmt.Errorf("command failed: %T", err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
