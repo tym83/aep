@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -60,5 +61,47 @@ func TestITSMChartSecurityBoundary(t *testing.T) {
 	}
 	if deployments != 1 {
 		t.Fatal("missing bridge deployment")
+	}
+}
+
+func TestITSMAdapterDefaultsAndCustomTiers(t *testing.T) {
+	for _, adapter := range []string{"jira", "servicenow"} {
+		docs := renderAPIChart(t, "aep-itsm-bridge", "itsm.yaml", "--set", "config.adapter="+adapter, "--set", "tiers={dev,stage}")
+		namespaces := map[string]bool{}
+		configured := false
+		for _, doc := range docs {
+			if doc["kind"] == "ConfigMap" {
+				var cm corev1.ConfigMap
+				if err := runtime.DefaultUnstructuredConverter.FromUnstructured(doc, &cm); err != nil {
+					t.Fatal(err)
+				}
+				var cfg struct {
+					Sync bool `json:"syncCmdb"`
+				}
+				if err := json.Unmarshal([]byte(cm.Data["config.json"]), &cfg); err != nil {
+					t.Fatal(err)
+				}
+				if cfg.Sync != (adapter == "servicenow") {
+					t.Fatal("wrong CMDB default")
+				}
+				configured = true
+			}
+			if doc["kind"] == "Role" {
+				var role rbacv1.Role
+				_ = runtime.DefaultUnstructuredConverter.FromUnstructured(doc, &role)
+				if strings.HasSuffix(role.Name, "-inventory") {
+					namespaces[role.Namespace] = true
+				}
+			}
+		}
+		if !configured {
+			t.Fatal("missing config")
+		}
+		if adapter == "jira" && len(namespaces) != 0 {
+			t.Fatal(namespaces)
+		}
+		if adapter == "servicenow" && (!namespaces["tenant-acme-dev"] || !namespaces["tenant-acme-stage"] || len(namespaces) != 2) {
+			t.Fatal(namespaces)
+		}
 	}
 }

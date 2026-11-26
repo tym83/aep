@@ -1,3 +1,5 @@
+{{- $sync := eq .Values.config.adapter "servicenow" -}}
+{{- if ne .Values.config.syncCmdb nil -}}{{- $sync = .Values.config.syncCmdb -}}{{- end -}}
 {{- $org := required "config.organization is required" .Values.config.organization -}}
 {{- $changeNS := required "config.changeNamespace is required" .Values.config.changeNamespace -}}
 {{- $digest := required "image.digest is required; use an image workflow digest" .Values.image.digest -}}
@@ -17,6 +19,7 @@ data:
   config.json: |
     {{- $config := deepCopy .Values.config }}
     {{- $_ := set $config "stateNamespace" .Release.Namespace }}
+    {{- $_ := set $config "syncCmdb" $sync }}
     {{ $config | toJson }}
 ---
 apiVersion: apps/v1
@@ -104,7 +107,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: [configmaps]
-    verbs: [get, list, create, update]
+    verbs: [get, list, create, update, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -132,7 +135,7 @@ metadata:
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-changes}
 subjects:
   - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ .Release.Namespace }}}
-{{- if .Values.config.syncCmdb }}
+{{- if $sync }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -151,7 +154,7 @@ metadata:
 roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ $name }}-inventory}
 subjects:
   - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ .Release.Namespace }}}
-{{- range $tier := list "nonprod" "prod" }}
+{{- range $tier := .Values.tiers }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

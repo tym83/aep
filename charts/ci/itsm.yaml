@@ -2,6 +2,7 @@
 image:
   digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 credentialsSecret: itsm-acme
+tiers: [nonprod, prod]
 config:
   organization: acme
   changeNamespace: tenant-acme
