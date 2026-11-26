@@ -41,3 +41,7 @@ tokenProxy:
     repository: ghcr.io/tym83/aep-token-proxy
     tag: main
     digest: ""
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

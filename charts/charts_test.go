@@ -155,3 +155,29 @@ func TestChartLint(t *testing.T) {
 		}
 	}
 }
+
+func TestMirrorAllCharts(t *testing.T) {
+	cases := map[string][]string{
+		"aep-operator":          {"aepcpKubeconfigSecret=cp/access"},
+		"aep-bridge":            {"organization=acme", "clusterID=acme"},
+		"aep-bridge-appcluster": {},
+		"aep-change":            {"organizations[0]=acme", "oidc.issuer=https://id.invalid", "oidc.audience=aep", "openchoreo.apiUrl=https://oc.invalid", "openchoreo.tokenUrl=https://id.invalid/token"},
+		"aep-read-api":          {"oidc.issuer=https://id.invalid", "oidc.audience=aep"},
+		"aep-cost-ledger":       {"credentialsSecret=database"},
+		"aep-llm":               {"model=test", "apiKeySecret=key"},
+		"aep-sre-agent":         append(agentValues(), "dev=true"),
+	}
+	for chart, values := range cases {
+		t.Run(chart, func(t *testing.T) {
+			out, err := render(t, chart, append(values, "global.imageRegistry=mirror.local/cache")...)
+			if err != nil {
+				t.Fatal(out, err)
+			}
+			for _, host := range []string{"ghcr.io/", "cr.openchoreo.dev/", "docker.io/", "quay.io/", "registry.k8s.io/"} {
+				if strings.Contains(strings.ReplaceAll(out, "mirror.local/cache/"+host, ""), host) {
+					t.Fatalf("public reference in %s: %s", chart, out)
+				}
+			}
+		})
+	}
+}

@@ -24,7 +24,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: change-{{ $component }}
-          image: {{ printf "%s:%s" $settings.repository $.Values.image.tag | quote }}
+          image: {{ include "aep.mirror" (dict "root" $ "ref" (printf "%s:%s" $settings.repository $.Values.image.tag)) | quote }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args:
             - {{ printf "--org-namespace-template=%s" $.Values.orgNamespaceTemplate | quote }}

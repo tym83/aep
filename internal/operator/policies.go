@@ -91,10 +91,11 @@ func (s *session) policies(ctx context.Context) error {
 				url = s.r.Options.KyvernoChartURL
 			}
 			source := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", TenantNamespace(s.o.Name, tier), "aep-"+name, M{"interval": "5m", "url": url, "ref": M{"tag": version}})
+			s.r.Options.chartSource(source)
 			if err := s.r.Management.apply(ctx, s.o, "ocirepositories", source); err != nil {
 				return err
 			}
-			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, values[name])); err != nil {
+			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, MirrorValues(name, s.r.Options.ImageRegistryMirror, values[name]))); err != nil {
 				return err
 			}
 		}

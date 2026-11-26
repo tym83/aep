@@ -17,16 +17,20 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: operator
-          image: {{ .Values.image | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
           args:
             - {{ printf "--argocd-chart-url=%s" .Values.argocdChartURL | quote }}
             - {{ printf "--argocd-host-template=%s" .Values.argocdHostTemplate | quote }}
             - {{ printf "--vcs-webhook-url=%s" .Values.vcsWebhookURL | quote }}
-            - {{ printf "--policy-bundle-repository=%s" .Values.policyBundleRepository | quote }}
-            - {{ printf "--kyverno-chart-url=%s" .Values.kyvernoChartURL | quote }}
+            - {{ printf "--image-registry-mirror=%s" .Values.global.imageRegistry | quote }}
+            - {{ printf "--chart-registry-mirror=%s" .Values.global.imageRegistry | quote }}
+            - {{ printf "--registry-secret=%s" .Values.registrySecret | quote }}
+            - {{ printf "--registry-ca-secret=%s" .Values.registryCASecret | quote }}
+            - {{ printf "--policy-bundle-repository=%s" (include "aep.mirror" (dict "root" . "ref" .Values.policyBundleRepository)) | quote }}
+            - {{ printf "--kyverno-chart-url=%s" (include "aep.mirror" (dict "root" . "ref" .Values.kyvernoChartURL)) | quote }}
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
-            - {{ printf "--bridge-image=%s" .Values.bridgeImage | quote }}
+            - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" .Values.bridgeImage)) | quote }}
             - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}
             - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
             - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}

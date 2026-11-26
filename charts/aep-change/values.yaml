@@ -1,5 +1,5 @@
 image:
-  tag: "0.1.0"
+  tag: "main"
   pullPolicy: IfNotPresent
 api:
   repository: ghcr.io/tym83/aep-change-api
@@ -43,3 +43,7 @@ ingress:
   tlsSecret: ""
   clusterIssuer: ""
   annotations: {}
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

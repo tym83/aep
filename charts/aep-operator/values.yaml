@@ -1,5 +1,5 @@
-image: ghcr.io/tym83/aep-operator:0.1.0
-bridgeImage: ghcr.io/tym83/aep-bridge:0.1.0
+image: ghcr.io/tym83/aep-operator:main
+bridgeImage: ghcr.io/tym83/aep-bridge:main
 aepcpKubeconfigSecret: ""
 aepcpTenantNamespace: tenant-aep-cp
 aepcpCluster: aepcp
@@ -22,3 +22,8 @@ vcsWebhookURL: ""
 
 # Mirror the pinned Argo CD chart for disconnected installations.
 argocdChartURL: https://argoproj.github.io/argo-helm
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""
+registrySecret: ""
+registryCASecret: ""

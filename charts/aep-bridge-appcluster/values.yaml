@@ -2,3 +2,7 @@ bridgeNamespace: aep-system
 bridgeServiceAccount: aep-bridge
 agentNamespace: openchoreo-data-plane
 agentServiceAccount: cluster-agent-dataplane
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

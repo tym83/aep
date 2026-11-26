@@ -24,7 +24,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: inference
-          image: {{ printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")))) | quote }}
           securityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

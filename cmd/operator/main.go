@@ -27,6 +27,10 @@ func run() error {
 	flag.StringVar(&o.ArgoCDChartURL, "argocd-chart-url", "https://argoproj.github.io/argo-helm", "Argo CD Helm repository mirror URL")
 	flag.StringVar(&o.ArgoCDHostTemplate, "argocd-host-template", "", "Argo CD ingress hostname template with Organization and Tier")
 	flag.StringVar(&o.VCSWebhookURL, "vcs-webhook-url", "", "OpenChoreo HTTPS /api/v1alpha1/autobuild endpoint; empty disables hook registration")
+	flag.StringVar(&o.ImageRegistryMirror, "image-registry-mirror", "", "Mirror registry prefix for every delivered image")
+	flag.StringVar(&o.ChartRegistryMirror, "chart-registry-mirror", "", "Mirror registry prefix for OCI charts")
+	flag.StringVar(&o.RegistrySecret, "registry-secret", "", "Flux authentication Secret in each source namespace")
+	flag.StringVar(&o.RegistryCASecret, "registry-ca-secret", "", "Flux CA Secret in each source namespace")
 	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")
 	flag.StringVar(&o.KyvernoChartURL, "kyverno-chart-url", "oci://ghcr.io/kyverno/charts/kyverno", "Kyverno OCI chart URL; override for air-gap mirror")
 	var mgmt string

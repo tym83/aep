@@ -25,3 +25,7 @@ ingress:
   tlsSecret: ""
   clusterIssuer: ""
   annotations: {}
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

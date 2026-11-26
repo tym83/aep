@@ -4,7 +4,7 @@ clusterID: ""
 # Install into the tier tenant namespace; all management permissions stay there.
 image:
   repository: ghcr.io/tym83/aep-bridge
-  tag: "0.1.0"
+  tag: "main"
   pullPolicy: IfNotPresent
 replicas: 1
 allowedKinds: [Postgres, Redis]
@@ -27,3 +27,7 @@ policy:
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {memory: 256Mi}
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""
