@@ -15,6 +15,7 @@ spec:
     groupPath: engineering/acme
     ensureGroup: false
     credentialsSecretRef: {name: acme-vcs}
+    readCredentialsSecretRef: {name: acme-vcs-read}
     caBundleSecretRef: {name: corporate-git-ca}
 ```
 
@@ -25,17 +26,26 @@ repository allow-list is `<origin>/<groupPath-or-org>/`, not a string prefix
 that could match an attacker-controlled neighboring group. GitLab subpaths
 in group names are supported; installations hosted below a URL path are not.
 
-Secret references are names in the **operator's management namespace**. A token
+Secret references are names in the **operator's management namespace**. Every
+referenced admin/read/CA Secret must carry `aep.aenix.io/organization=<org name>`;
+missing or foreign labels are rejected. This input ownership contract uses the
+name, while operator-created resources use the Organization UID.
+`readCredentialsSecretRef` is required and must refer to a different Secret from
+`credentialsSecretRef`. Grant its token clone/read permission only. The admin
+token is used solely for verification, group administration and webhooks. A token
 Secret contains `token` and optionally `username`; defaults are `oauth2` for
 GitLab and `x-access-token` for GitHub. A GitHub App Secret instead contains
 `githubAppID`, `githubAppInstallationID`, `githubAppPrivateKey` (RSA PEM).
-App assertions are exchanged for installation tokens; Argo CD receives its
-native App credential fields and refreshes its own tokens. A CA Secret contains
+App assertions are exchanged by the operator for installation tokens. Read
+credentials request only `contents:read`; Argo receives username/password with an
+installation token, never App IDs or a private key. Both token classes are cached
+separately until expiry minus five minutes and refreshed during reconciliation.
+Use a dedicated read-only App installation or read-only token in the read Secret. A CA Secret contains
 `ca.crt`; system roots remain trusted. TLS verification is never disabled,
 redirects are refused, timeouts are bounded, and provider response bodies and
 transport errors are not included in Organization conditions.
 
-Use a dedicated credential limited to the organization. Reading repositories
+Use separate administrative and clone credentials limited to the organization. Reading repositories
 requires Git content read access. GitLab group creation requires appropriate
 group creation privileges; webhook reconciliation needs repository webhook
 administration. GitHub Apps need repository Contents read and Webhooks write
@@ -56,6 +66,8 @@ The operator writes a dedicated `vcs-<org>-build` Secret with `username` and
 tokens are refreshed on reconciliation. Do not grant developers access to
 management Secrets, Argo CD Secrets, or workflow execution namespace Secrets.
 The OpenChoreo SecretReference is protected by the operator admission policy.
+Non-operator SecretReferences cannot read any `remoteRef.key` starting with
+`vcs-`, including references with an otherwise ordinary name.
 
 Provision a namespaced **WorkflowPlane `nonprod`** for the organization, with
 `spec.secretStoreRef` pointing to an ESO Kubernetes ClusterSecretStore in that
@@ -94,17 +106,27 @@ For organization Components with `spec.autoBuild: true`, the operator follows
 the referenced Workflow/ClusterWorkflow schema's
 `x-openchoreo-component-parameter-repository-url` extension to locate the URL
 in workflow parameters. Out-of-allow-list URLs are rejected. Existing hooks
-are updated by target URL (including secret rotation), absent hooks are created,
-and hook lists are paginated. Hooks register push events with TLS verification.
+are compared by target URL, push events, enabled state and TLS settings before
+PUT/PATCH; absent hooks are created, and lists are paginated. Since providers do
+not return webhook secrets, the first matching hook after operator restart is
+updated once to establish the desired secret, then unchanged hooks are left alone.
+Secret rotation triggers an update on the next hook pass. Hook reconciliation
+runs at most once per 15 minutes per organization within an operator process;
+restarts reset this interval. Token refresh and credential delivery continue on
+the regular reconcile interval. Hooks register push events with TLS verification.
 Release-line-specific repository overrides are not enumerated; those need
 explicit hook configuration. Remote hooks are retained on disable/removal to
 avoid deleting customer-managed integrations sharing the endpoint.
 
 `VCSReady` covers credential verification, group lookup/creation, registration
-of the reference, and configured webhook operations. Errors are retried without
-exposing credential values. Separate corporate credentials for API management
-and clone-only use are a future extension; limit current credentials to this
-organization and use trusted platform-controlled build workflows.
+of the reference, and configured webhook operations. It is separate from the
+Organization Phase gate, as is ArgoCDReady. Missing WorkflowPlane is reported
+without blocking other VCS work. Per-component errors emit VCSComponentSkipped
+events and skip only that component. Errors never expose credential values.
+Removing spec.vcs deletes `vcs-<org>-build` and its SecretReference. Explicit
+Argo disable also clears operator-managed Argo Secrets, HelmRepository and build
+credentials; see [cleanup semantics](argocd.md). Input Secrets and remote hooks
+are retained. Use trusted platform-controlled build workflows.
 
 ## Portal and tests
 
