@@ -11,8 +11,7 @@ must be listed in values, Talos configuration is applied using talm, storage poo
 are prepared separately, and retirement is a manual sequence. Cloud tenant
 clusters already use Cluster API/autoscaling. The missing capability is safe,
 repeatable onboarding of physical management-cluster workers and storage nodes.
-This proposal follows the internal `research_notes/node-onboarding.md` and DESIGN
-5.15; discovery behavior and Talos integration need upstream spikes.
+Discovery behavior and Talos integration require the acceptance experiments below.
 
 ## Goals and non-goals
 
@@ -70,9 +69,7 @@ configuration. CRDs use map lists keyed by condition type and stable hardware ID
 States: Discovered → Identified → Approved → Configuring → Joined → StorageReady
 → Ready; unknown/mismatched identities enter Quarantined. A known, independently
 verified allow-listed worker may follow an explicitly approved automatic policy;
-unknown machines receive no cluster configuration. The stage-5 sentence that
-says an unknown machine joins while a known machine is quarantined appears
-reversed relative to the trust model and should be corrected upstream.
+unknown machines receive no cluster configuration. All unknown or mismatched machines remain quarantined.
 
 Run bootbox and the node controller locally per site. Spike Smee auto-proxy,
 Tinkerbell auto-enrollment and permitted-subnet discovery; current reservation
@@ -87,13 +84,29 @@ require TPM endorsement/attestation against supplier keys, measured boot and
 Secure Boot. Replayed evidence, changed disks/identity or failed attestation
 return the machine to quarantine and require a new decision.
 
-Only after identity verification and approval does the local controller render
-Talos configuration with a reusable talm library and the Cozystack release preset.
-Deliver through the Talos API over the protected bootstrap network; never publish
-cluster CA material at a MAC-indexed HTTP URL. Maintenance API's unauthenticated
-window remains a risk; constrain its reachability, bind the decision to verified
-hardware and prefer attested/encrypted bootstrap channels as available. Secrets
-stay local and are fetched for the operation from a secret manager.
+Use the **Keylime agent in the Linux discovery image**, with a site-local registrar
+and verifier. Pin the discovery image, Secure Boot keys and measured-boot policy;
+do not use an accept-all policy. Validate TPM EK provenance, a fresh nonce-bound
+quote and measured-boot log against approved firmware/image measurements, binding
+the TPM identity to the independently collected hardware record.
+
+The proposed controller consumes verifier results over authenticated TLS, never a
+node-written label. It records a short-lived authorization containing Machine UID,
+TPM identity hash, boot nonce, policy digest, pool revision and expiry. A matching
+human approval plus a current passing result is the gate to release a one-use,
+TPM-bound install payload. Failure, timeout, replay or identity drift denies the
+payload and returns Quarantined. Keylime supplies attestation and secure payload
+primitives; this authorization adapter and its Talos installer integration remain
+prototype work, not an existing Cozystack feature.
+
+Only that authorized discovery session may download the signed Talos installer
+and encrypted machine configuration rendered by a talm library. Verify the image
+and configuration digest before installation; discard the token after use. Never
+publish a reusable Talos configuration at a MAC-indexed URL. A reboot into Talos
+ends the discovery attestation session: separately verify the resulting node
+identity and configured boot chain before declaring Joined. Do not claim that a
+discovery quote proves the later Talos runtime. A failed install requires a fresh
+attestation and authorization; secrets remain in the local secret manager.
 
 ## Approval integration
 
@@ -115,14 +128,27 @@ Piraeus `LinstorSatelliteConfiguration.spec.storagePools` selected by pool label
 Wait for satellite, pool and replication health before StorageReady.
 
 Retirement states: DrainRequested → Evacuating → Draining → Decommissioned.
-First fence new placement and check capacity/failure domains for **every** affected
-volume. Start LINSTOR evacuation; wait for replacement replicas to become UpToDate
-and the configured replica count and placement constraints to be satisfied.
-A diskful replica count alone is insufficient: verify synchronization and absence
-of degraded/offline resources. Block on insufficient capacity, disconnected
-satellites, snapshot dependencies or loss of quorum; timeouts raise an alert and
-retain the machine. Respect PDBs while draining workloads. Recheck storage health
-after rescheduling and before removing any replica, resetting Talos or powering off.
+Fence new placement and check capacity/failure domains for every affected volume.
+Use the Piraeus **v2** lifecycle: explicitly configure
+`LinstorSatelliteConfiguration.spec.deletionPolicy: Evacuate` before requesting
+`LinstorSatellite` deletion; recent v2 releases default to Retain. Prevent automatic
+recreation by excluding the retiring node from satellite selection. The machine
+controller must cooperate with Piraeus finalization, not run a second competing
+LINSTOR evacuation or remove finalizers. Coordinate PDB-aware drain and PV
+reattachment with the Piraeus pre-drain/pre-terminate hooks when CAPI is present.
+Without CAPI, implement equivalent checkpoints and wait for successful evacuation
+before reset/power-off; a timeout is not completion.
+
+Check **diskful, diskless and TieBreaker** resources, connections and snapshots.
+For each 2-replica DRBD volume, record the configured quorum policy and verify the
+surviving voting topology. A diskless TieBreaker on a third failure domain may be
+needed to retain majority after one diskful replica fails; diskless does not mean
+irrelevant to quorum. Verify active connections, UpToDate data replicas, replacement
+placement and the intended `on-no-quorum` behavior. Two healthy diskful copies alone
+do not prove that the next removal preserves write availability. Do not disable
+quorum or silently switch to `Delete` to make retirement succeed. Block on degraded
+replicas, unsafe quorum, insufficient space, offline satellites or pending snapshots.
+Recheck after reattachment and before deleting any remaining storage identity.
 For control-plane machines, verify surviving etcd quorum before member removal.
 Then reset, revoke credentials, remove Kubernetes Node membership and optionally
 power off through Rufio/Redfish. Persist checkpoints for restart-safe retries.
@@ -154,3 +180,6 @@ References: [Cozystack scaling](https://cozystack.io/docs/operations/cluster/sca
 [talm](https://github.com/cozystack/talm),
 [Piraeus API](https://piraeus.io/docs/stable/reference/linstorsatelliteconfiguration/),
 [Tinkerbell](https://github.com/tinkerbell/tinkerbell).
+
+Attestation reference: [Keylime agent](https://keylime.readthedocs.io/en/latest/man/keylime_agent.8.html).
+Lifecycle reference: [Piraeus satellite deletion policies](https://piraeus.io/docs/stable/explanation/deletion-policies/).
