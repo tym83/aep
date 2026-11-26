@@ -1,5 +1,14 @@
 # Known gaps
 
+- **Bootstrap authorization cleanup is eventual.** The operator prunes chart-managed
+  broad cluster bindings on Organization reconciliation and reports
+  `ControlPlaneHardened` on every Organization. Helm upgrades can recreate those
+  bindings until the next reconciliation. No Organizations means no cleanup;
+  unlabelled, foreign-managed and AEP-labelled offenders require manual review.
+  Report-only mode never deletes. Verify the condition after upgrades; configure
+  distinct `aep-<org>-publisher` IdP clients separately. See
+  [operator hardening and flags](operator.md#installation).
+
 - **Bridge reads Secrets cluster-wide in the application cluster.** Before writing its connection Secret the bridge reads the object by name to refuse adopting foreign objects, so its ClusterRole carries `get` on all Secrets. The admission policy restricts writes only. Fix options: per-`dp-*` namespace Roles rendered by the operator, or a pure server-side apply flow with ownership checks done through field managers instead of a read. Found on the stand on 2026-11-25.
 
 - **Admin kubeconfig withholding is an upstream dependency.** Cozystack must expose
