@@ -219,3 +219,21 @@ func TestPlatformTrustConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestBaselinePlatformNamespacesAreAdditive(t *testing.T) {
+	o := organization()
+	o.Spec.Policy.PlatformNamespaces = []string{"custom-addon"}
+	values := policyValues(o, "nonprod", "")["app-cluster-baseline"]
+	namespaces := values["platformNamespaces"].([]any)
+	for _, want := range []string{"kube-system", "argocd", "custom-addon"} {
+		found := false
+		for _, got := range namespaces {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("missing platform namespace", want)
+		}
+	}
+}

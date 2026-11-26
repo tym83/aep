@@ -15,3 +15,7 @@
 {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "clusterip", "namespace": "gitops-payments"}, "spec": {"type": "ClusterIP"}}
 ---
 {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "platform", "namespace": "kube-system"}, "spec": {"externalIPs": ["192.0.2.1"]}}
+---
+{"apiVersion": "v1", "kind": "Service", "metadata": {"name": "ordinary-external", "namespace": "ordinary"}, "spec": {"externalIPs": ["192.0.2.10"]}}
+---
+{"apiVersion": "networking.k8s.io/v1", "kind": "Ingress", "metadata": {"name": "reserved-tls-host", "namespace": "ordinary"}, "spec": {"tls": [{"hosts": ["argo.example"]}]}}

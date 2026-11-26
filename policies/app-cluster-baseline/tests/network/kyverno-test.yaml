@@ -92,6 +92,33 @@
       ],
       "kind": "Service",
       "result": "skip"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "external"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "no-external-ips",
+      "resources": [
+        "ordinary-external"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "ingress-boundary",
+      "resources": [
+        "reserved-tls-host"
+      ],
+      "kind": "Ingress",
+      "result": "fail"
     }
   ]
 }
