@@ -47,6 +47,11 @@ func MirrorValues(chart, mirror string, values M) M {
 		return values
 	}
 	switch chart {
+	case "klusterlet":
+		for _, key := range []string{"operatorImage", "registrationImage", "workImage"} {
+			overrides := values["images"].(map[string]any)["overrides"].(map[string]any)
+			overrides[key] = registrymirror.Rewrite(overrides[key].(string), mirror)
+		}
 	case "argo-cd":
 		setMap(values, []string{"global", "image", "repository"}, mirror+"/quay.io/argoproj/argocd")
 		setMap(values, []string{"redis", "image", "repository"}, mirror+"/ecr-public.aws.com/docker/library/redis")
@@ -141,6 +146,14 @@ func PinValues(chart string, values M) M {
 		setMap(values, path, a.Version+"@"+a.Digest)
 	}
 	switch chart {
+	case "klusterlet":
+		for key, image := range map[string]string{"operatorImage": "registration-operator", "registrationImage": "registration", "workImage": "work"} {
+			a, err := inventory.Lookup("image", "quay.io/open-cluster-management/"+image, "v"+KlusterletVersion)
+			if err != nil {
+				panic(err)
+			}
+			setMap(values, []string{"images", "overrides", key}, a.Ref+":"+a.Version+"@"+a.Digest)
+		}
 	case "argo-cd":
 		pin("quay.io/argoproj/argocd", "global", "image", "tag")
 		pin("ecr-public.aws.com/docker/library/redis", "redis", "image", "tag")

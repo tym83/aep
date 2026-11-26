@@ -36,7 +36,9 @@ func render(t *testing.T, chart string, values ...string) (string, error) {
 			cmd.Env = append(cmd.Env, "HELM_PLUGINS="+plugins)
 			cmd.Args = append(cmd.Args, "--post-renderer", "aep-images")
 		} else {
-			cmd.Args = append(cmd.Args, "--post-renderer", "./aep-gitlab/post-render.sh")
+			// Helm 3 excludes hooks from its built-in post-renderer.
+			cmd.Args = append([]string{"./aep-gitlab/render.sh"}, args[1:]...)
+			cmd.Path = "./aep-gitlab/render.sh"
 		}
 		for _, v := range values {
 			if strings.HasPrefix(v, "global.imageRegistry=") {

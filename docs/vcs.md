@@ -229,8 +229,8 @@ and [external services](https://docs.gitlab.com/charts/advanced/external-db/).
 Prepare and inspect without deploying (Helm 4):
 install the local renderer plugin with
 `helm plugin install ./charts/aep-gitlab/postrenderer` and put the reviewed
-`aep-release` binary on PATH. Helm 3 accepts
-`--post-renderer charts/aep-gitlab/post-render.sh` directly.
+`aep-release` binary on PATH. Helm 3 excludes hooks from its built-in
+post-renderer; use the complete-output rendering command below instead.
 
 ```sh
 helm dependency build charts/aep-gitlab
@@ -238,6 +238,17 @@ helm lint charts/aep-gitlab --set gitlab.global.ingress.class=nginx
 helm template gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml \
   --post-renderer aep-images
 ```
+
+For Helm 3, render and pin the complete manifest, including hook Jobs:
+
+```sh
+AEP_REGISTRY_MIRROR=mirror.example/cache charts/aep-gitlab/render.sh \
+  gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml
+```
+
+This prepares manifests for review; it does not install a Helm release. Helm 3
+install/upgrade requires explicit digest-pinned mirror image values for hooks;
+its `--post-renderer` alone cannot enforce that requirement.
 
 Retain Chart.lock; upstream packages are not committed. Validate all rendered
 pods against restricted PSS for the selected site options, including hooks and
@@ -295,7 +306,7 @@ Upgrades must follow the official [upgrade paths](https://docs.gitlab.com/update
 including all required stops and completed background migrations, rather than
 jumping directly from the old 18.6.0 baseline to 19.6.2.
 
-Always use `--post-renderer aep-images` for Helm template,
+With Helm 4, use `--post-renderer aep-images` for Helm template,
 install and upgrade. Set `AEP_REGISTRY_MIRROR` for disconnected installations.
 The renderer pins every container/init image to the reviewed release digest,
 rewrites its registry and rejects images absent from the inventory. It uses the
@@ -303,6 +314,6 @@ installed `aep-release` binary, with a source-checkout fallback for development.
 This is necessary because upstream GitLab subcharts use different image-value
 contracts. Keep the post-renderer and release inventory version with the chart.
 
-Helm 4 requires the `postrenderer/v1` plugin name (`aep-images`), whereas Helm 3
-accepts an executable path. CI tests both invocation contracts according to the
+Helm 4 uses the `postrenderer/v1` plugin name (`aep-images`); Helm 3 uses
+the complete-output wrapper above. CI tests the appropriate path according to the
 installed Helm version; plugin installation is isolated from the user's plugins.
