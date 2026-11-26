@@ -10,6 +10,7 @@ import (
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/authn"
+	"github.com/tym83/aep/internal/cost"
 	"github.com/tym83/aep/internal/readapi"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,6 +30,8 @@ func main() {
 }
 
 func run() error {
+	var dsn string
+	flag.StringVar(&dsn, "cost-dsn", os.Getenv("COST_DSN"), "Read-only cost PostgreSQL DSN")
 	var namespace, kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey, consoleURLTemplate string
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&listen, "listen", ":8080", "Listen address")
@@ -86,6 +89,16 @@ func run() error {
 	handler, e := readapi.New(direct, apps, verifier, orgNamespaceTemplate, consoleURLTemplate, readapi.WithComplianceNamespace(namespace))
 	if e != nil {
 		return e
+	}
+	if dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		store, err := cost.Open(ctx, dsn, false)
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer store.DB.Close()
+		handler.Costs = store
 	}
 	server := &http.Server{
 		Addr:              listen,

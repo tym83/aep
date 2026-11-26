@@ -8,6 +8,12 @@ kind: ClusterRole
 metadata:
   name: aep-operator
 rules:
+  - apiGroups: [backups.cozystack.io]
+    resources: [backupclasses, restorejobs]
+    verbs: [get, list, create, update, patch, delete]
+  - apiGroups: [strategy.backups.cozystack.io]
+    resources: [cnpgs]
+    verbs: [get, list, create, patch]
   - apiGroups: [aep.aenix.io]
     resources: [organizations, organizations/status, organizations/finalizers]
     verbs: [get, list, watch, update, patch]
@@ -21,6 +27,9 @@ rules:
   - apiGroups: [core.cozystack.io]
     resources: [tenantsecrets]
     verbs: [get, list, watch]
+  - apiGroups: [backups.cozystack.io]
+    resources: [plans]
+    verbs: [get, list, watch, create, update, patch]
   - apiGroups: [backups.cozystack.io]
     resources: [backups]
     verbs: [get, list]
@@ -47,7 +56,7 @@ rules:
     verbs: [get, list, create, patch, delete]
   - apiGroups: [""]
     resources: [secrets, configmaps, serviceaccounts]
-    verbs: [get, list, create, patch, delete]
+    verbs: [get, list, create, update, patch, delete]
   - apiGroups: [""]
     resources: [services]
     verbs: [get, list]

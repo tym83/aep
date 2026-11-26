@@ -2,7 +2,13 @@ import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { TestApiProvider, renderInTestApp } from '@backstage/test-utils';
 import { aepApiRef, Service, serviceState } from './api';
-import { RequestChange, ServiceSummary, ChangesPage } from './components';
+import {
+  RequestChange,
+  ServiceSummary,
+  ChangesPage,
+  CostPage,
+  CostTable,
+} from './components';
 const service: Service = {
   name: 'generated-name',
   kind: 'service',
@@ -250,4 +256,50 @@ it('does not show a successful compliance result before the first collection', a
     screen.getByText('Waiting for the first collection.'),
   ).toBeInTheDocument();
   expect(screen.queryByRole('table')).not.toBeInTheDocument();
+});
+
+it('shows coverage and unallocated cost without hiding missing hours', () => {
+  render(
+    <CostTable
+      items={[
+        {
+          day: '2026-11-24',
+          group: 'prod',
+          project: '',
+          currency: 'USD',
+          cost: 12.5,
+          unallocatedCost: 2,
+          sampledHours: 20,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText('12.50 USD')).toBeInTheDocument();
+  expect(screen.getByText('2.00 USD')).toBeInTheDocument();
+  expect(screen.getByText('20/24')).toBeInTheDocument();
+});
+it('loads organization costs and changes the grouping', async () => {
+  const costs = jest.fn().mockResolvedValue({ items: [] });
+  const session = jest
+    .fn()
+    .mockResolvedValue({
+      username: 'finance',
+      organizations: [{ name: 'acme', roles: ['finance'] }],
+    });
+  await renderInTestApp(
+    <TestApiProvider apis={[[aepApiRef, { costs, session }]]}>
+      <CostPage />
+    </TestApiProvider>,
+  );
+  await waitFor(() =>
+    expect(costs).toHaveBeenCalledWith(
+      'acme',
+      expect.any(String),
+      expect.any(String),
+      'project',
+    ),
+  );
+  expect(
+    await screen.findByText('No recorded costs for this period.'),
+  ).toBeInTheDocument();
 });

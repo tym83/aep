@@ -14,3 +14,6 @@ consoleUrlTemplate: ""
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {memory: 256Mi}
+
+# Existing Secret containing COST_DSN for a SELECT-only ledger role.
+costCredentialsSecret: ""

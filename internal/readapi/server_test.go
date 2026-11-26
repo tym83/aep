@@ -244,7 +244,7 @@ func TestMembershipGroupBoundaries(t *testing.T) {
 		groups = append(groups, "aep-team-one-"+role, "/aep-team-one-"+role)
 	}
 	got := memberships(groups)
-	if len(got) != 1 || len(got["team-one"]) != 5 {
+	if len(got) != 1 || len(got["team-one"]) != len(roles) {
 		t.Fatalf("valid roles or hyphenated organization lost: %v", got)
 	}
 }

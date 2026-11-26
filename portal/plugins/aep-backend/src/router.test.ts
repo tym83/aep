@@ -131,3 +131,26 @@ describe('AEP proxy', () => {
     expect(result.text).not.toContain('secret-token');
   });
 });
+
+it('forwards only supported cost query parameters', async () => {
+  const upstream = jest.fn().mockResolvedValue(new Response('{"items":[]}'));
+  const app = express().use(
+    createRouter({
+      readApiUrl: 'http://read',
+      changeApiUrl: 'http://change',
+      fetch: upstream,
+    }),
+  );
+  const result = await request(app)
+    .get(
+      '/v1/organizations/acme/costs?from=2026-11-01&to=2026-12-01&groupBy=project&url=http://evil',
+    )
+    .set('x-openchoreo-token', 'user');
+  expect(result.status).toBe(200);
+  expect(upstream).toHaveBeenCalledWith(
+    'http://read/v1/organizations/acme/costs?from=2026-11-01&to=2026-12-01&groupBy=project',
+    expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer user' }),
+    }),
+  );
+});

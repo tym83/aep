@@ -19,6 +19,7 @@ func bridgeRules() []any {
 		rule("core.cozystack.io", []string{"tenantsecrets"}, []string{"get", "list", "watch"}),
 		rule("helm.toolkit.fluxcd.io", []string{"helmreleases"}, []string{"get", "list", "watch"}),
 		rule("backups.cozystack.io", []string{"backups"}, []string{"get", "list"}),
+		rule("backups.cozystack.io", []string{"plans"}, []string{"get", "list", "watch", "create", "update", "patch"}),
 		rule("", []string{"services"}, []string{"get"}), rule("", []string{"events"}, []string{"create", "patch"}),
 		rule("coordination.k8s.io", []string{"leases"}, []string{"get", "create", "update", "patch"}),
 	}
@@ -78,6 +79,10 @@ func (s *session) bridges(ctx context.Context) error {
 		p := policy.Default()
 		services := s.o.Spec.Tiers[tier].Services
 		p.BackupPolicy = services.BackupPolicy
+		p.Backup, e = s.backupPolicy(ctx, tier)
+		if e != nil {
+			return e
+		}
 		for kind, l := range p.Kinds {
 			if services.MaxPreset != "" {
 				l.MaxPreset = services.MaxPreset

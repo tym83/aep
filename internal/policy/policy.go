@@ -25,8 +25,14 @@ type Limits struct {
 	MaxSize           string   `json:"maxSize"`
 	MaxReplicas       int64    `json:"maxReplicas"`
 }
+type BackupConfig struct {
+	ClassName       string `json:"className"`
+	Schedule        string `json:"schedule"`
+	RetentionPolicy string `json:"retentionPolicy"`
+}
 type Config struct {
-	// BackupPolicy is a reference for backup-plan integration, not an execution guarantee.
+	Backup *BackupConfig `json:"backup,omitempty"`
+	// BackupPolicy names the operator-resolved schedule and class.
 	BackupPolicy string            `json:"backupPolicy,omitempty"`
 	Kinds        map[string]Limits `json:"kinds"`
 }

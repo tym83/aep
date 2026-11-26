@@ -16,6 +16,7 @@ import { AepApi, aepApiRef } from './api';
 const infrastructure = createRouteRef();
 const changes = createRouteRef();
 const compliance = createRouteRef();
+const costs = createRouteRef();
 export default createFrontendPlugin({
   pluginId: 'aep',
   extensions: [
@@ -69,6 +70,25 @@ export default createFrontendPlugin({
         routeRef: compliance,
         loader: () =>
           import('./components').then(m => compatWrapper(<m.CompliancePage />)),
+      },
+    }),
+    PageBlueprint.make({
+      name: 'costs',
+      params: {
+        path: '/aep/costs',
+        title: 'Costs',
+        icon: <StorageIcon />,
+        noHeader: true,
+        routeRef: costs,
+        loader: () =>
+          import('./components').then(m => compatWrapper(<m.CostPage />)),
+      },
+    }),
+    EntityCardBlueprint.make({
+      name: 'resource-cost',
+      params: {
+        filter: e => e.kind.toLowerCase() === 'resource',
+        loader: () => import('./components').then(m => <m.ResourceCostCard />),
       },
     }),
     EntityCardBlueprint.make({

@@ -18,6 +18,8 @@ jobs:
             dockerfile: Dockerfile
           - name: aep-operator
             dockerfile: Dockerfile.operator
+          - name: aep-cost-ledger
+            dockerfile: Dockerfile.cost-ledger
           - name: aep-read-api
             dockerfile: Dockerfile.read-api
           - name: aep-change-api

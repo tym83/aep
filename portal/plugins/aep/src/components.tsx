@@ -16,6 +16,7 @@ import {
   aepApiRef,
   ComplianceTier,
   Change,
+  Cost,
   ChangeInput,
   Service,
   Session,
@@ -633,5 +634,164 @@ export function CompliancePage() {
         ))}
       </Content>
     </Page>
+  );
+}
+
+function costDates() {
+  const to = new Date().toISOString().slice(0, 10);
+  const from = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  return { from, to };
+}
+export function CostTable({ items }: { items: Cost[] }) {
+  return (
+    <>
+      <table aria-label="Daily costs">
+        <thead>
+          <tr>
+            {[
+              'Date',
+              'Group',
+              'Project',
+              'Cost',
+              'Unallocated',
+              'Hours sampled',
+            ].map(h => (
+              <th key={h}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((r, i) => (
+            <tr key={`${r.day}-${r.group}-${r.project}-${r.currency}-${i}`}>
+              <td>{r.day}</td>
+              <td>{r.group || 'Unallocated'}</td>
+              <td>{r.project}</td>
+              <td>
+                {r.cost.toFixed(2)} {r.currency}
+              </td>
+              <td>
+                {r.unallocatedCost.toFixed(2)} {r.currency}
+              </td>
+              <td>{r.sampledHours}/24</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!items.length && <p>No recorded costs for this period.</p>}
+      <p>
+        Provisioned capacity charges. Missing sample hours are not estimated.
+        Dates are UTC; the end date is exclusive.
+      </p>
+    </>
+  );
+}
+export function CostPage() {
+  const api = useApi(aepApiRef);
+  const ctx = useSession();
+  const [from, setFrom] = useState(costDates().from);
+  const [to, setTo] = useState(costDates().to);
+  const [group, setGroup] = useState('project');
+  const [items, setItems] = useState<Cost[]>();
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setItems(undefined);
+    setError('');
+    if (ctx.org && from && to)
+      api
+        .costs(ctx.org, from, to, group)
+        .then(r => {
+          if (active) setItems(r.items);
+        })
+        .catch(e => {
+          if (active) setError(e.message);
+        });
+    return () => {
+      active = false;
+    };
+  }, [api, ctx.org, from, to, group]);
+  return (
+    <Page themeId="tool">
+      <Header title="Costs" />
+      <Content>
+        <OrgSelect session={ctx.session} org={ctx.org} onChange={ctx.setOrg} />
+        <TextField
+          label="From (UTC)"
+          type="date"
+          value={from}
+          onChange={e => setFrom(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          label="To (exclusive, UTC)"
+          type="date"
+          value={to}
+          onChange={e => setTo(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+        />
+        <TextField
+          select
+          label="Group by"
+          value={group}
+          onChange={e => setGroup(e.target.value)}
+        >
+          {['project', 'service', 'tier'].map(g => (
+            <MenuItem key={g} value={g}>
+              {g}
+            </MenuItem>
+          ))}
+        </TextField>
+        <ErrorMessage error={ctx.error || error} />
+        {items ? <CostTable items={items} /> : !error && <p>Loading costs…</p>}
+      </Content>
+    </Page>
+  );
+}
+export function ResourceCostCard() {
+  const { entity } = useEntity();
+  const api = useApi(aepApiRef);
+  const a = entity.metadata.annotations ?? {};
+  const org =
+    a['aep.aenix.io/organization'] ?? a['openchoreo.io/namespace'] ?? '';
+  const project =
+    a['openchoreo.io/project'] ?? a['openchoreo.io/project-name'] ?? '';
+  const name =
+    a['openchoreo.io/resource'] ??
+    a['openchoreo.io/resource-name'] ??
+    entity.metadata.name;
+  const [items, setItems] = useState<Cost[]>();
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setItems(undefined);
+    setError('');
+    const { from, to } = costDates();
+    if (org && project)
+      api
+        .costs(org, from, to, 'service')
+        .then(r => {
+          if (active)
+            setItems(
+              r.items.filter(v => v.group === name && v.project === project),
+            );
+        })
+        .catch(e => {
+          if (active) setError(e.message);
+        });
+    return () => {
+      active = false;
+    };
+  }, [api, org, project, name]);
+  return (
+    <InfoCard title="Resource cost · last 30 complete days">
+      <ErrorMessage error={error} />
+      {!org || !project ? (
+        <p>Organization and project annotations are required.</p>
+      ) : items ? (
+        <CostTable items={items} />
+      ) : (
+        !error && <p>Loading costs…</p>
+      )}
+    </InfoCard>
   );
 }

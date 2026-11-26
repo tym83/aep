@@ -91,8 +91,8 @@ func TestOperatorChart(t *testing.T) {
 		t.Fatalf("%v: %s", e, b)
 	}
 	docs := decode(t, b)
-	if len(docs) != 5 {
-		t.Fatalf("expected CRD, SA, RBAC and Deployment, got %d", len(docs))
+	if len(docs) != 6 {
+		t.Fatalf("expected two CRDs, SA, RBAC and Deployment, got %d", len(docs))
 	}
 	for _, d := range docs {
 		if d["kind"] != "ClusterRole" {
@@ -119,5 +119,32 @@ func TestOperatorChart(t *testing.T) {
 	}
 	if string(source) != string(packaged) {
 		t.Fatal("operator chart CRD drift")
+	}
+}
+
+func TestCostLedgerChartReadOnly(t *testing.T) {
+	if _, e := exec.LookPath("helm"); e != nil {
+		t.Skip("helm unavailable")
+	}
+	b, e := exec.Command("helm", "template", "cost", "../../charts/aep-cost-ledger", "--namespace", "aep-system", "--set", "credentialsSecret=cost").CombinedOutput()
+	if e != nil {
+		t.Fatalf("%v: %s", e, b)
+	}
+	docs := decode(t, b)
+	if len(docs) != 4 {
+		t.Fatalf("expected deployment and RBAC: %d", len(docs))
+	}
+	for _, d := range docs {
+		if d["kind"] != "ClusterRole" {
+			continue
+		}
+		for _, r := range d["rules"].([]any) {
+			rule := r.(map[string]any)
+			for _, v := range rule["verbs"].([]any) {
+				if v != "get" && v != "list" && v != "watch" {
+					t.Fatalf("ledger write permission: %v", v)
+				}
+			}
+		}
 	}
 }
