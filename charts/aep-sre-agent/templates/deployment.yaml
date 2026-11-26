@@ -1,4 +1,3 @@
-{{- if and (not .Values.dev) (not .Values.tokenProxy.image.digest) }}{{ fail "tokenProxy.image.digest is required unless dev is true" }}{{ end }}
 {{- if and (not .Values.dev) (not .Values.image.digest) }}{{ fail "image.digest is required unless dev is true" }}{{ end }}
 {{- $org := required "organization is required" .Values.organization -}}
 {{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $org) }}{{ fail "invalid organization" }}{{ end -}}
@@ -67,7 +66,7 @@ spec:
             - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
             {{- end }}
         - name: token-proxy
-          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.tokenProxy.image.repository (ternary (printf "@%s" .Values.tokenProxy.image.digest) (printf ":%s" .Values.tokenProxy.image.tag) (ne .Values.tokenProxy.image.digest "")))) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.tokenProxy.image))) | quote }}
           args: [{{ printf "--listen=127.0.0.1:%d" (int .Values.tokenProxy.port) | quote }}]
           securityContext:
             allowPrivilegeEscalation: false

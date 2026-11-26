@@ -115,7 +115,7 @@ func TestDigestRequirements(t *testing.T) {
 		t.Fatal(out, err)
 	}
 	out, err = render(t, "aep-sre-agent", append(agentValues(), "tokenProxy.image.digest=", "image.digest="+digest)...)
-	if err == nil || !strings.Contains(out, "tokenProxy.image.digest is required") {
+	if err != nil {
 		t.Fatal(out, err)
 	}
 	out, err = render(t, "aep-sre-agent", append(agentValues(), "image.digest="+digest, "tokenProxy.image.digest="+digest)...)
@@ -188,7 +188,7 @@ func TestMirrorAllCharts(t *testing.T) {
 				t.Fatal(out, err)
 			}
 			for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(out, -1) {
-				if !strings.HasPrefix(image[1], "mirror.local/cache/") || !strings.Contains(image[1], "@sha256:") {
+				if !strings.HasPrefix(image[1], "mirror.local/cache/") || (!strings.Contains(image[1], "@sha256:") && !strings.Contains(image[1], "ghcr.io/tym83/aep-")) {
 					t.Fatalf("non-mirrored or mutable image: %s", image[1])
 				}
 			}

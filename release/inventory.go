@@ -4,6 +4,8 @@ package inventory
 import (
 	_ "embed"
 	"fmt"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/tym83/aep/internal/version"
 	"strings"
 
 	"sigs.k8s.io/yaml"
@@ -13,6 +15,7 @@ import (
 var data []byte
 
 type Artifact struct {
+	Own     bool   `json:"own,omitempty"`
 	Kind    string `json:"kind"`
 	Ref     string `json:"ref"`
 	Version string `json:"version"`
@@ -47,6 +50,33 @@ func Image(ref string) (string, error) {
 		version = repo[pos+1:]
 		repo = repo[:pos]
 	}
+	for _, a := range Artifacts() {
+		if a.Kind != "image" || !a.Own || a.Ref != repo {
+			continue
+		}
+		if pos <= strings.LastIndex(repo, "/") || version == "" {
+			return "", fmt.Errorf("own image requires a tag: %s", ref)
+		}
+		if _, err := name.NewTag(repo+":"+version, name.StrictValidation); err != nil {
+			return "", err
+		}
+		if suffix != "" {
+			if _, err := name.NewDigest(repo + "@" + suffix); err != nil {
+				return "", err
+			}
+			if a.Version == version && a.Digest != "" && a.Digest != suffix {
+				return "", fmt.Errorf("image digest differs from release inventory: %s", ref)
+			}
+			return ref, nil
+		}
+		if version != buildVersion() {
+			return "", fmt.Errorf("own image version differs from operator build: %s", ref)
+		}
+		if a.Version == version && a.Digest != "" {
+			return ref + "@" + a.Digest, nil
+		}
+		return ref, nil
+	}
 	a, err := Lookup("image", repo, version)
 	if err != nil {
 		return "", err
@@ -56,3 +86,5 @@ func Image(ref string) (string, error) {
 	}
 	return a.Ref + ":" + a.Version + "@" + a.Digest, nil
 }
+
+func buildVersion() string { return version.Version }

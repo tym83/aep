@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /itsm-bridge ./cmd/itsm-bridge
+ARG AEP_VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/tym83/aep/internal/version.Version=${AEP_VERSION}" -trimpath -o /itsm-bridge ./cmd/itsm-bridge
 FROM scratch
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build /itsm-bridge /itsm-bridge

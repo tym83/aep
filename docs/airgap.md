@@ -42,7 +42,10 @@ Run from the repository root on a connected machine with Go and Helm 3 installed
 
 ```sh
 go build -o bin/aep-release ./cmd/aep-release
+# Regenerate upstream pins only when the artifact set changes.
 bin/aep-release manifest
+# After publishing all images for this release:
+bin/aep-release manifest --build-version v1.2.3
 # Populate release/.cache with the pinned upstream charts as in ci.yml.
 bin/aep-release manifest --check
 ```
@@ -57,15 +60,58 @@ Run commands from the repository root. `--root` changes inventory input paths;
 manifest and local layout paths resolve relative to --root. Bundle and extraction
 paths are explicit CLI paths relative to the working directory.
 
-`manifest --check` is an offline freshness check over delivery code, charts,
-policies, tooling, the standalone image list and build inventory. It renders local charts and pinned upstream charts from release/.cache without
-network access and rejects missing or surplus runtime images. Run generation for each release after publishing
-its images, then review the manifest diff and promote the exact digests. The
-chart image defaults include verified digests. The operator embeds
-the inventory, renders delivered images as repository:tag@digest, and selects
-Flux OCIRepository sources by ref.digest. Publish images for a new source revision
-and update defaults before generating its inventory. Existing mirror tags cannot
-be replaced accidentally; --allow-retag is an explicit override.
+AEP-owned images are explicitly marked `own: true` in the source inventory,
+with repository and `version: "@build"`, without a stale tag or digest. Ownership
+is an exact repository allowlist, not the `aep-*` prefix. Upstream images always
+retain their reviewed version and digest.
+
+`images.yml` injects `internal/version.Version` through `AEP_VERSION` and Go
+`-ldflags -X`: main builds use `sha-<full commit>`, and `v*` builds use the exact
+Git tag, including `v`. Commit tags let main deploy its matching bridge without
+waiting for an unrelated inventory update. The operator accepts an own image tag
+only when it matches its build version; an explicit `repo:tag@digest` flag is an
+intentional immutable override. Digest-only own references and unknown repositories
+are rejected. If the embedded inventory pins that version, its digest is appended;
+a conflicting explicit digest is rejected. Upstream inventory checks are unchanged.
+
+Chart own-image defaults use `global.aepVersion`, falling back to `.Chart.AppVersion`.
+Set that global value to the operator build version for source-chart installs.
+`image.tag` overrides it; `image.digest` is optional. Release pins are stored in
+`global.aepDigests` by repository and apply only to the matching global version, so
+a different explicit tag does not silently inherit the release digest. The change
+chart shares `image.tag` between API/controller, with optional component digests;
+the SRE chart uses `tokenProxy.image` for its own sidecar. Upstream images keep
+mandatory digests. Full-string image overrides remain supported by charts that
+previously accepted them.
+
+After all `v*` images are published, the release job runs
+`manifest --build-version "$GITHUB_REF_NAME"`: it resolves own digests, writes
+chart values and AppVersion, assigns release chart versions, and rebuilds the local
+OCI packages. It publishes and signs those charts when a signing key is configured, then records
+the published signatures with `manifest --refresh-local --discover-signatures`.
+It uploads the manifest, layouts and
+values as a workflow artifact. The source inventory remains build-independent.
+Main chart publication waits for the image build and uses commit tags with unique
+`0.0.0-sha-<commit>` chart versions. The operator image is built before digest
+resolution; release chart flags provide the frozen bridge reference, avoiding a
+self-referential operator digest.
+
+`manifest --check` is offline: it checks rendered images, local OCI bytes and a
+fingerprint of tracked `charts/`, `policies/`, `release/`, root Dockerfiles,
+`portal/Dockerfile`, and `.github/workflows/images.yml`. The explicit Go inputs for
+upstream chart/image values are `internal/operator/argocd.go`, `delivery.go`,
+`policies.go`, and `mirror.go`. Tests, the generated manifest/layout and
+`release/.cache` are excluded. Ordinary Go implementation edits do not require
+network re-resolution. After local chart changes, use `manifest --refresh-local`
+to rebuild chart layouts while preserving upstream pins; use full generation when
+the upstream artifact set changes. Keep the resulting layout beside the manifest.
+
+For main air-gap transfers, either first freeze inventory with
+`manifest --build-version sha-<commit>`, or pass `--build-version sha-<commit>` to
+`mirror`/`bundle`. Unresolved placeholders require an explicit version. Resolution
+and signature discovery happen on the connected machine, before copying; bundles
+contain resolved digests and loading them does not resolve tags. Existing mirror
+tags cannot be replaced accidentally; `--allow-retag` is an explicit override.
 
 Argo CD 9.7.1 is fetched from `https://argoproj.github.io/argo-helm` and
 packaged as `oci://argoproj.github.io/argo-helm/argo-cd` in the local layout.

@@ -304,7 +304,7 @@ func TestFingerprintTrackedInputs(t *testing.T) {
 		}
 	}
 	git("init", "-q")
-	for _, path := range []string{"internal/bridge/component.go", "resource-types/service.yaml", "config/options.yaml", "Dockerfile.operator"} {
+	for _, path := range []string{"internal/operator/mirror.go", "charts/example/values.yaml", "release/extra-images.yaml", "Dockerfile.operator"} {
 		full := filepath.Join(root, path)
 		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
 			t.Fatal(err)
@@ -318,12 +318,12 @@ func TestFingerprintTrackedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	os.WriteFile(filepath.Join(root, "config/.DS_Store"), []byte("untracked"), 0644)
+	os.WriteFile(filepath.Join(root, "charts/example/.DS_Store"), []byte("untracked"), 0644)
 	after, err := Fingerprint(root)
 	if err != nil || initial != after {
 		t.Fatal("untracked input changed hash", err)
 	}
-	for _, path := range []string{"internal/bridge/component.go", "resource-types/service.yaml", "config/options.yaml", "Dockerfile.operator"} {
+	for _, path := range []string{"internal/operator/mirror.go", "charts/example/values.yaml", "release/extra-images.yaml", "Dockerfile.operator"} {
 		full := filepath.Join(root, path)
 		os.WriteFile(full, []byte("modified"), 0644)
 		got, err := Fingerprint(root)
@@ -381,5 +381,45 @@ func TestHTTPRequiresExactOptIn(t *testing.T) {
 	}
 	if _, err := remote.Get(r, c.options(context.Background())...); err == nil || !strings.Contains(err.Error(), "requires --insecure-registry=") {
 		t.Fatalf("implicit HTTP fallback: %v", err)
+	}
+}
+
+func TestResolveOwnBuild(t *testing.T) {
+	server := httptest.NewServer(registry.New())
+	defer server.Close()
+	host := strings.TrimPrefix(server.URL, "http://")
+	c := &Client{InsecureRegistry: host}
+	if err := c.Init(); err != nil {
+		t.Fatal(err)
+	}
+	ref, err := name.NewTag(host+"/own:sha-1234567", name.Insecure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(ref, empty.Image); err != nil {
+		t.Fatal(err)
+	}
+	upstream := Artifact{Kind: "image", Ref: "unreachable.invalid/upstream", Version: "v1.2.3", Digest: "sha256:" + strings.Repeat("a", 64)}
+	m := Manifest{Schema: 1, Artifacts: []Artifact{{Kind: "image", Own: true, Ref: host + "/own", Version: "@build"}, upstream}}
+	for _, v := range []string{"", "main", "latest"} {
+		if _, err := c.ResolveOwn(context.Background(), m, v); err == nil {
+			t.Fatal("accepted build", v)
+		}
+	}
+	frozen, err := c.ResolveOwn(context.Background(), m, "sha-1234567")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, _ := empty.Image.Digest()
+	if frozen.Artifacts[0].Digest != digest.String() || !frozen.Artifacts[0].Own || frozen.Artifacts[0].Version != "sha-1234567" || frozen.Artifacts[1] != upstream || m.Artifacts[0].Version != "@build" {
+		t.Fatal(frozen, m)
+	}
+	server.Close()
+	if _, err := c.ResolveOwn(context.Background(), frozen, "sha-7654321"); err == nil {
+		t.Fatal("relabelled a frozen digest")
+	}
+	// Frozen inventories never resolve the tag again, including during later transfers.
+	if _, err := c.ResolveOwn(context.Background(), frozen, ""); err != nil {
+		t.Fatal(err)
 	}
 }

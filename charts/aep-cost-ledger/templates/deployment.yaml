@@ -17,7 +17,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: ledger
-          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}
           args:
             - {{ printf "--installation=%s" .Values.installation | quote }}
             - {{ printf "--tier-opencost-url-template=%s" .Values.tierOpenCostURLTemplate | quote }}

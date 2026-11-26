@@ -19,11 +19,13 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/tym83/aep/internal/operator"
+	inventory "github.com/tym83/aep/release"
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 )
 
 type Artifact struct {
+	Own       bool   `json:"own,omitempty"`
 	Kind      string `json:"kind"`
 	Ref       string `json:"ref"`
 	Version   string `json:"version,omitempty"`
@@ -51,6 +53,12 @@ func Read(path string) (Manifest, error) {
 		return m, fmt.Errorf("empty or unsupported manifest")
 	}
 	for _, a := range m.Artifacts {
+		if a.Own && a.Kind != "image" {
+			return m, fmt.Errorf("own artifact must be an image")
+		}
+		if a.Own && a.Version == "@build" && a.Digest == "" {
+			continue
+		}
 		if _, e = name.NewDigest(strings.TrimPrefix(a.Ref, "oci://") + "@" + a.Digest); e != nil {
 			return m, e
 		}
@@ -65,7 +73,9 @@ func Read(path string) (Manifest, error) {
 }
 func Fingerprint(root string) (string, error) {
 	h := sha256.New()
-	cmd := exec.Command("git", "ls-files", "-z", "--", "charts", "policies", "internal/operator", "internal/registrymirror", "internal/release", "internal/bridge", "resource-types", "config", "cmd/operator", "cmd/aep-release", "Dockerfile*", "portal/Dockerfile", ".github/workflows", "release/extra-images.yaml", "release/*.go")
+	// Explicit Go inputs that define rendered upstream charts and image values.
+	cmd := exec.Command("git", "ls-files", "-z", "--", "charts", "policies", "release", "Dockerfile*", "portal/Dockerfile", ".github/workflows/images.yml",
+		"internal/operator/argocd.go", "internal/operator/delivery.go", "internal/operator/policies.go", "internal/operator/mirror.go")
 	cmd.Dir = root
 	tracked, err := cmd.Output()
 	if err != nil {
@@ -74,7 +84,7 @@ func Fingerprint(root string) (string, error) {
 	paths := strings.Split(strings.TrimSuffix(string(tracked), "\x00"), "\x00")
 	sort.Strings(paths)
 	for _, rel := range paths {
-		if rel == "" || strings.HasSuffix(rel, "_test.go") {
+		if rel == "" || strings.HasSuffix(rel, "_test.go") || rel == "release/manifest.yaml" || strings.HasPrefix(rel, "release/artifacts/") || strings.HasPrefix(rel, "release/.cache/") {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(root, rel))
@@ -314,6 +324,10 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 	}
 	sort.Strings(ordered)
 	for _, s := range ordered {
+		if repo, ok := ownRepository(s); ok {
+			artifacts[repo] = Artifact{Kind: "image", Ref: repo, Version: "@build", Own: true}
+			continue
+		}
 		fmt.Fprintln(os.Stderr, "Resolving", s)
 		a, e := client.Resolve(ctx, "image", s, "")
 		if e != nil {
@@ -336,7 +350,7 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 	return m, nil
 }
 func LocalValues(chart string) map[string]any {
-	return map[string]any{"dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
+	return map[string]any{"global": map[string]any{"aepVersion": "@build"}, "dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
 }
 func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifact, error) {
 	raw := strings.TrimPrefix(ref, "oci://")
@@ -441,6 +455,19 @@ func CheckImages(ctx context.Context, root string, m Manifest) error {
 	}
 	used := map[string]bool{}
 	for ref := range actual {
+		if repo, ok := ownRepository(ref); ok {
+			found := false
+			for _, a := range m.Artifacts {
+				if a.Own && a.Ref == repo && (ref == repo+":@build" || ref == repo+":"+a.Version || ref == repo+":"+a.Version+"@"+a.Digest) {
+					found = true
+					used[a.Ref+":"+a.Version] = true
+				}
+			}
+			if !found {
+				return fmt.Errorf("own image missing from inventory: %s", ref)
+			}
+			continue
+		}
 		tagged, _, _ := strings.Cut(ref, "@")
 		if pos := strings.LastIndex(tagged, ":"); pos > strings.LastIndex(tagged, "/") && !immutableVersion(tagged[pos+1:]) {
 			return fmt.Errorf("rendered mutable image tag: %s", ref)
@@ -513,6 +540,125 @@ func CheckCharts(root string, m Manifest) error {
 	}
 	if len(expected) > 0 {
 		return fmt.Errorf("charts missing from inventory: %v", expected)
+	}
+	return nil
+}
+
+// Ownership is an exact repository allowlist, never a registry/prefix wildcard.
+func ownRepository(ref string) (string, bool) {
+	for _, a := range inventory.Artifacts() {
+		if a.Own && (ref == a.Ref || strings.HasPrefix(ref, a.Ref+":") || strings.HasPrefix(ref, a.Ref+"@")) {
+			return a.Ref, true
+		}
+	}
+	return "", false
+}
+
+// RefreshLocal rebuilds changed chart layouts without resolving upstream tags.
+func RefreshLocal(root string, m Manifest) (Manifest, error) {
+	for i, a := range m.Artifacts {
+		for _, base := range []string{"charts", "policies"} {
+			prefix := "oci://ghcr.io/tym83/aep/" + base + "/"
+			if a.Kind == "chart" && strings.HasPrefix(a.Ref, prefix) {
+				updated, err := PackageChart(root, filepath.Join(root, base, strings.TrimPrefix(a.Ref, prefix)))
+				if err != nil {
+					return m, err
+				}
+				m.Artifacts[i] = updated
+			}
+		}
+	}
+	var err error
+	m.Inputs, err = Fingerprint(root)
+	if err != nil {
+		return m, err
+	}
+	return m, compactLayout(root, m)
+}
+
+// ResolveOwn freezes build placeholders before any disconnected transfer.
+func (c *Client) ResolveOwn(ctx context.Context, m Manifest, version string) (Manifest, error) {
+	m.Artifacts = append([]Artifact(nil), m.Artifacts...)
+	for i, a := range m.Artifacts {
+		if !a.Own {
+			continue
+		}
+		if a.Version != "@build" {
+			if version != "" && version != a.Version {
+				return m, fmt.Errorf("own artifact %s is already pinned to %s, requested %s", a.Ref, a.Version, version)
+			}
+			continue
+		}
+		if version == "" || !immutableVersion(version) {
+			return m, fmt.Errorf("--build-version must identify a commit or release to resolve %s", a.Ref)
+		}
+		resolved, err := c.Resolve(ctx, "image", a.Ref, version)
+		if err != nil {
+			return m, err
+		}
+		resolved.Own = true
+		m.Artifacts[i] = resolved
+	}
+	return m, nil
+}
+
+// WriteBuildValues makes packaged charts use the same version and pins as inventory.
+func WriteBuildValues(root string, m Manifest, version string) error {
+	digests := map[string]any{}
+	for _, a := range m.Artifacts {
+		if a.Own {
+			digests[a.Ref] = a.Digest
+		}
+	}
+	paths, err := filepath.Glob(filepath.Join(root, "charts", "*", "values.yaml"))
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		values := map[string]any{}
+		if err = yaml.Unmarshal(b, &values); err != nil {
+			return err
+		}
+		global, _ := values["global"].(map[string]any)
+		if global == nil {
+			global = map[string]any{}
+		}
+		global["aepVersion"], global["aepDigests"] = version, digests
+		values["global"] = global
+		b, err = yaml.Marshal(values)
+		if err != nil {
+			return err
+		}
+		if err = os.WriteFile(path, b, 0644); err != nil {
+			return err
+		}
+		path = filepath.Join(filepath.Dir(path), "Chart.yaml")
+		b, err = os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		meta := map[string]any{}
+		if err = yaml.Unmarshal(b, &meta); err != nil {
+			return err
+		}
+		meta["appVersion"] = version
+		// Release chart versions must not overwrite an earlier chart package.
+		if strings.HasPrefix(version, "v") {
+			meta["version"] = strings.TrimPrefix(version, "v")
+		} else {
+			meta["version"] = "0.0.0-" + version
+		}
+		b, err = yaml.Marshal(meta)
+		if err != nil {
+			return err
+		}
+		if err = os.WriteFile(path, b, 0644); err != nil {
+			return err
+		}
 	}
 	return nil
 }

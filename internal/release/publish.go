@@ -48,3 +48,16 @@ func (c *Client) PublishCharts(ctx context.Context, root string, output io.Write
 	}
 	return nil
 }
+
+// DiscoverSignatures records signatures published after local chart packaging.
+func (c *Client) DiscoverSignatures(ctx context.Context, m *Manifest) error {
+	for i := range m.Artifacts {
+		if m.Artifacts[i].Digest == "" {
+			return fmt.Errorf("resolve build placeholders before discovering signatures")
+		}
+		if err := c.discoverSignature(ctx, &m.Artifacts[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
