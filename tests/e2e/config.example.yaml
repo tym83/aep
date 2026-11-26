@@ -1,0 +1,18 @@
+# Keep actual endpoints, credentials and helper scripts outside the repository.
+endpoints:
+  read: https://read.example.invalid
+  openchoreo: https://openchoreo.example.invalid
+tokenCommand: [/absolute/path/to/token-helper]
+organizations:
+  - name: organization-a
+    users:
+      developer: a-developer
+      platform: a-platform
+      approver: a-approver
+      admin: a-admin
+      auditor: a-auditor
+      finance: a-finance
+      breakglass: a-breakglass
+  - name: organization-b
+    users:
+      developer: b-developer

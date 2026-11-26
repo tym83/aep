@@ -1,0 +1,28 @@
+roles: [developer, platform, approver, admin, auditor, finance, breakglass, other, anonymous]
+actions:
+  services:
+    endpoint: read
+    path: /v1/organizations/{org}/services
+    allow: [developer, platform, approver, admin, auditor, finance]
+  changes:
+    endpoint: read
+    path: /v1/organizations/{org}/changes
+    allow: [approver, auditor]
+  compliance:
+    endpoint: read
+    path: /v1/organizations/{org}/compliance
+    allow: [developer, platform, admin, auditor]
+  costs:
+    endpoint: read
+    path: /v1/organizations/{org}/costs?from=2026-01-01&to=2026-02-01
+    allow: [developer, platform, admin, auditor, finance]
+  projects:
+    endpoint: openchoreo
+    path: /api/v1/namespaces/{org}/projects
+    allow: [developer, platform, approver, admin, auditor]
+  prod-logs:
+    pending: DESIGN delegates production log access to organization policy.
+  finance-openchoreo:
+    pending: Operator does not generate a finance AuthzRole.
+  breakglass-grant:
+    pending: Actual temporary grant is not implemented; recorded changes do not grant access.
