@@ -198,5 +198,5 @@ artifacts:
   kind: image
   ref: reg.kyverno.io/kyverno/reports-controller
   version: v1.19.2
-inputs: eab50a150046b9a2a446da0e3f8028d41601c25aac9f627d5b20b0cd7410e715
+inputs: ae748d07f5bb18b84c5bd6e39606e2f2ebac5a30c08374513043799e070466b2
 schema: 1
