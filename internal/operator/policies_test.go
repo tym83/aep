@@ -178,9 +178,9 @@ func TestPolicyFailureDoesNotGateAccess(t *testing.T) {
 		r := &Reconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(o).WithObjects(o).Build()}
 		accessed := false
 		_, err := r.runSteps(context.Background(), o, []reconcileStep{
-			{"TenantsReady", func(context.Context) error { return nil }},
-			{"PoliciesReady", func(context.Context) error { return policyErr }},
-			{"AccessReady", func(context.Context) error { accessed = true; return nil }},
+			{name: "TenantsReady", run: func(context.Context) error { return nil }},
+			{name: "PoliciesReady", run: func(context.Context) error { return policyErr }},
+			{name: "AccessReady", run: func(context.Context) error { accessed = true; return nil }},
 		})
 		if err != nil || !accessed {
 			t.Fatal("access blocked", err)

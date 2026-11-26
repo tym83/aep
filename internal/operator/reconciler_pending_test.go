@@ -131,3 +131,21 @@ func TestDeletionPendingAndAPIFailure(t *testing.T) {
 		})
 	}
 }
+
+// A policy that blocks the data plane must be correctable: policies are
+// delivered before the data plane, never gated on it.
+func TestPoliciesPrecedeDataPlaneDelivery(t *testing.T) {
+	steps := (&session{}).steps()
+	policies, delivery := -1, -1
+	for i, step := range steps {
+		if step.name == "PoliciesReady" && policies < 0 {
+			policies = i
+		}
+		if step.name == "DataPlanesConnected" && delivery < 0 {
+			delivery = i
+		}
+	}
+	if policies < 0 || delivery < 0 || policies > delivery {
+		t.Fatalf("PoliciesReady at %d must precede DataPlanesConnected at %d", policies, delivery)
+	}
+}

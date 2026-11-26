@@ -89,27 +89,37 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, e
 		}
 	}
-	steps := []reconcileStep{
-		{"TenantsReady", s.tenants},
+	return r.runSteps(ctx, o, s.steps())
+}
+
+// steps lists the organization reconcile steps in dependency order.
+func (s *session) steps() []reconcileStep {
+	return []reconcileStep{
+		{name: "TenantsReady", run: s.tenants},
 		// Root etcd must be reachable before a control plane can become Ready.
-		{"NetworkPathsReady", s.workaround},
-		{"ClustersReady", s.clusters},
-		{"NetworkPathsReady", s.network},
-		{"DataPlanesConnected", s.delivery},
-		{"OpenChoreoNamespaceReady", s.openChoreo},
-		{"DataPlanesConnected", s.connected},
-		{"PoliciesReady", s.policies},
-		{"AccessReady", s.access},
-		{"BridgesReady", s.bridges},
-		{"VCSReady", s.vcs},
-		{"ArgoCDReady", s.argocd},
+		{name: "NetworkPathsReady", run: s.workaround, partial: true},
+		{name: "ClustersReady", run: s.clusters},
+		{name: "NetworkPathsReady", run: s.network},
+		// Policies need only the tier cluster. Delivering them after the data
+		// plane deadlocks when a policy blocks the data plane's own upgrade:
+		// the corrected bundle could never arrive.
+		{name: "PoliciesReady", run: s.policies},
+		{name: "DataPlanesConnected", run: s.delivery, partial: true},
+		{name: "OpenChoreoNamespaceReady", run: s.openChoreo},
+		{name: "DataPlanesConnected", run: s.connected},
+		{name: "AccessReady", run: s.access},
+		{name: "BridgesReady", run: s.bridges},
+		{name: "VCSReady", run: s.vcs},
+		{name: "ArgoCDReady", run: s.argocd},
 	}
-	return r.runSteps(ctx, o, steps)
 }
 
 type reconcileStep struct {
 	name string
 	run  func(context.Context) error
+	// partial steps are the first half of a condition completed by a later
+	// step; success does not mark the condition True.
+	partial bool
 }
 
 // Policy delivery is observable independently of organization access.
@@ -154,7 +164,7 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 			}
 			return ctrl.Result{}, fmt.Errorf("%s: %w", step.name, err)
 		}
-		if index != 1 && index != 4 {
+		if !step.partial {
 			message := "Desired state verified"
 			if step.name == "ArgoCDReady" {
 				if o.Status.ArgoCDURL != "" {
