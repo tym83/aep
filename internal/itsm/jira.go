@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // Jira uses JSM request types for changes and Jira v3 for fields/transitions.
 // Assets and Operations are separate, explicitly unsupported capabilities.
 type Jira struct {
+	Now                               func() time.Time
 	HTTP                              HTTP
 	Project, ServiceDesk, RequestType string
 	Transitions                       map[string]string
@@ -31,43 +35,32 @@ func (j *Jira) Deliver(ctx context.Context, e Event, ref string) (string, error)
 		return ref, errors.New("change required")
 	}
 	label := "aep-" + Digest([]byte(c.ID))
-	if ref == "" {
-		var result struct {
-			Issues []struct {
-				Key string `json:"key"`
-			} `json:"issues"`
-		}
-		if !validID(j.Project) {
-			return ref, errors.New("invalid Jira project")
-		}
-		q := url.QueryEscape(`project = "` + j.Project + `" AND labels = "` + label + `"`)
-		if err := j.HTTP.Do(ctx, "GET", "/rest/api/3/search/jql?jql="+q+"&maxResults=2", "", nil, &result); err != nil {
-			return ref, err
-		}
-		if len(result.Issues) > 1 {
-			return ref, errors.New("duplicate Jira correlation label")
-		}
-		if len(result.Issues) == 1 {
-			ref = result.Issues[0].Key
-		}
+	var err error
+	ref, err = j.lookup(ctx, label, ref)
+	if err != nil {
+		return ref, err
 	}
-	summary := "AEP " + c.ID + " " + string(c.Request.Spec.Operation)
+
+	summary := bounded("AEP "+c.ID+" "+string(c.Request.Spec.Operation)+" "+string(c.Request.Status.Phase), 255)
 	if ref == "" {
 		// Request type must expose labels; set it atomically with creation so a
 		// timeout can be recovered without duplicating the request.
-		fields := map[string]any{"summary": summary, "description": c.Request.Spec.Justification + "\nConfirm in AEP: " + c.ConfirmationURL, "labels": []string{label}}
+		fields := map[string]any{"summary": summary, "description": ShortText(c), "labels": []string{label}}
 		var out struct {
 			Key string `json:"issueKey"`
 		}
 		if err := j.HTTP.Do(ctx, "POST", "/rest/servicedeskapi/request", e.ID, map[string]any{"serviceDeskId": j.ServiceDesk, "requestTypeId": j.RequestType, "requestFieldValues": fields}, &out); err != nil {
-			return ref, err
+			return j.createFailure(err)
+		}
+		if !validID(out.Key) {
+			return j.createFailure(errors.New("Jira omitted issue key"))
 		}
 		ref = out.Key
 	}
 	if !validID(ref) {
 		return ref, errors.New("invalid Jira issue key")
 	}
-	fields := map[string]any{"summary": summary, "description": map[string]any{"type": "doc", "version": 1, "content": []any{map[string]any{"type": "paragraph", "content": []any{map[string]string{"type": "text", "text": string(e.Data)}}}}}}
+	fields := map[string]any{"summary": summary}
 	if err := j.HTTP.Do(ctx, "PUT", "/rest/api/3/issue/"+ref, e.ID, map[string]any{"fields": fields}, nil); err != nil {
 		return ref, err
 	}
@@ -110,24 +103,13 @@ func (j *Jira) alert(ctx context.Context, e Event, ref string) (string, error) {
 		return ref, errors.New("alert key and Jira project required")
 	}
 	label := "aep-alert-" + Digest([]byte(a.Key))
-	if ref == "" {
-		var result struct {
-			Issues []struct {
-				Key string `json:"key"`
-			} `json:"issues"`
-		}
-		q := url.QueryEscape(`project = "` + j.Project + `" AND labels = "` + label + `"`)
-		if err := j.HTTP.Do(ctx, "GET", "/rest/api/3/search/jql?jql="+q+"&maxResults=2", "", nil, &result); err != nil {
-			return ref, err
-		}
-		if len(result.Issues) > 1 {
-			return ref, errors.New("duplicate Jira alert correlation")
-		}
-		if len(result.Issues) == 1 {
-			ref = result.Issues[0].Key
-		}
+	var err error
+	ref, err = j.lookup(ctx, label, ref)
+	if err != nil {
+		return ref, err
 	}
-	fields := map[string]any{"summary": a.Summary, "description": map[string]any{"type": "doc", "version": 1, "content": []any{map[string]any{"type": "paragraph", "content": []any{map[string]string{"type": "text", "text": string(e.Data)}}}}}}
+
+	fields := map[string]any{"summary": bounded(a.Summary, 255), "description": map[string]any{"type": "doc", "version": 1, "content": []any{map[string]any{"type": "paragraph", "content": []any{map[string]string{"type": "text", "text": string(e.Data)}}}}}}
 	if ref == "" {
 		if e.Type == "alert.resolved" {
 			return "", nil
@@ -139,10 +121,14 @@ func (j *Jira) alert(ctx context.Context, e Event, ref string) (string, error) {
 			Key string `json:"key"`
 		}
 		if err := j.HTTP.Do(ctx, "POST", "/rest/api/3/issue", e.ID, map[string]any{"fields": fields}, &result); err != nil {
-			return ref, err
+			return j.createFailure(err)
+		}
+		if !validID(result.Key) {
+			return j.createFailure(errors.New("Jira omitted issue key"))
 		}
 		ref = result.Key
 	} else {
+		delete(fields, "description")
 		if !validID(ref) {
 			return ref, errors.New("invalid Jira issue key")
 		}
@@ -169,4 +155,54 @@ func (j *Jira) alert(ctx context.Context, e Event, ref string) (string, error) {
 		}
 	}
 	return ref, nil
+}
+
+const jiraPending = "jira-index:"
+
+func (j *Jira) now() time.Time {
+	if j.Now != nil {
+		return j.Now()
+	}
+	return time.Now()
+}
+func (j *Jira) createFailure(err error) (string, error) {
+	if permanent(err) != 0 {
+		return "", err
+	}
+	// Persist the ambiguity deadline in Ref so restarts and newer snapshots keep it.
+	return jiraPending + strconv.FormatInt(j.now().Add(5*time.Minute).Unix(), 10), err
+}
+func (j *Jira) lookup(ctx context.Context, label, ref string) (string, error) {
+	pending := strings.HasPrefix(ref, jiraPending)
+	if ref != "" && !pending {
+		return ref, nil
+	}
+	if !validID(j.Project) {
+		return ref, &HTTPError{400}
+	}
+	var result struct {
+		Issues []struct {
+			Key string `json:"key"`
+		} `json:"issues"`
+	}
+	q := url.QueryEscape(`project = "` + j.Project + `" AND labels = "` + label + `" ORDER BY created ASC, key ASC`)
+	if err := j.HTTP.Do(ctx, "GET", "/rest/api/3/search/jql?jql="+q+"&fields=key&maxResults=1", "", nil, &result); err != nil {
+		return ref, err
+	}
+	if len(result.Issues) > 0 {
+		if !validID(result.Issues[0].Key) {
+			return ref, errors.New("invalid Jira search key")
+		}
+		return result.Issues[0].Key, nil
+	}
+	if pending {
+		deadline, err := strconv.ParseInt(strings.TrimPrefix(ref, jiraPending), 10, 64)
+		if err != nil {
+			return ref, err
+		}
+		if j.now().Before(time.Unix(deadline, 0)) {
+			return ref, errors.New("waiting for Jira search index")
+		}
+	}
+	return "", nil
 }
