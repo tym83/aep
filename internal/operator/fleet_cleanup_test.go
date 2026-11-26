@@ -90,10 +90,11 @@ func TestDetachReattachKeepsImmutableEnvironmentReference(t *testing.T) {
 		if err := json.Unmarshal(a.(ktesting.PatchAction).GetPatch(), &u.Object); err != nil {
 			return true, nil, err
 		}
-		old, err := cp.get(ctx, ocAPI, "environments", o.Name, u.GetName())
+		oldObject, err := cp.Dynamic.(*dynamicfake.FakeDynamicClient).Tracker().Get(a.GetResource(), a.GetNamespace(), u.GetName())
 		if err != nil {
 			return true, nil, err
 		}
+		old := oldObject.(*unstructured.Unstructured)
 		before, _, _ := unstructured.NestedString(old.Object, "spec", "dataPlaneRef", "name")
 		after, _, _ := unstructured.NestedString(u.Object, "spec", "dataPlaneRef", "name")
 		if before != after {
