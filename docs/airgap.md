@@ -42,6 +42,7 @@ Run from the repository root on a connected machine with Go and Helm 3 installed
 ```sh
 go build -o bin/aep-release ./cmd/aep-release
 bin/aep-release manifest
+# Populate release/.cache with the pinned upstream charts as in ci.yml.
 bin/aep-release manifest --check
 ```
 
@@ -56,14 +57,14 @@ manifest and local layout paths resolve relative to --root. Bundle and extractio
 paths are explicit CLI paths relative to the working directory.
 
 `manifest --check` is an offline freshness check over delivery code, charts,
-policies, tooling, the standalone image list and build inventory. It does not
-refresh mutable upstream tags. Run generation for each release after publishing
+policies, tooling, the standalone image list and build inventory. It renders local charts and pinned upstream charts from release/.cache without
+network access and rejects missing or surplus runtime images. Run generation for each release after publishing
 its images, then review the manifest diff and promote the exact digests. The
-current chart image defaults use published development tags where historical
-`0.1.0` image tags did not exist. A production release must publish images built
-from its source revision and select those references before generation; this
-branch does not publish images. Mirror repositories must enforce immutable tags,
-since Helm values and Flux sources still select version tags.
+chart image defaults use published commit or release tags. The operator embeds
+the inventory, renders delivered images as repository:tag@digest, and selects
+Flux OCIRepository sources by ref.digest. Publish images for a new source revision
+and update defaults before generating its inventory. Existing mirror tags cannot
+be replaced accidentally; --allow-retag is an explicit override.
 
 Credentials use the standard Docker credential keychain (`docker login` and
 credential helpers). Use `--ca /path/to/registry-ca.pem` for a private registry CA.
@@ -138,7 +139,7 @@ registryInsecure: true (operator --registry-insecure).
 ```sh
 helm upgrade --install aep-operator \
   oci://registry.example.com/aep/ghcr.io/tym83/aep/charts/aep-operator \
-  --version 0.1.1 --namespace aep-system --create-namespace \
+  --version 0.1.2 --namespace aep-system --create-namespace \
   -f operator-values.yaml -f mirror-values.yaml
 ```
 

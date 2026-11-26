@@ -49,8 +49,6 @@ jobs:
       - uses: azure/setup-helm@v4.3.0
         with:
           version: v3.17.3
-      - name: Check immutable release inventory
-        run: go run ./cmd/aep-release manifest --check
       - name: Fetch pinned upstream charts for mirror rendering
         run: |
           mkdir -p release/.cache
@@ -58,6 +56,8 @@ jobs:
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway --version v2.3.11 --untar --untardir release/.cache
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds --version v2.3.11 --untar --untardir release/.cache
           helm pull oci://cr.openchoreo.dev/openchoreo/helm-charts/openchoreo-data-plane --version 1.4.0-m.3 --untar --untardir release/.cache
+      - name: Check immutable release inventory offline
+        run: go run ./cmd/aep-release manifest --check
       - name: Verify mirrored manifests and disconnected transfer
         env:
           AEP_UPSTREAM_CHARTS: ${{ github.workspace }}/release/.cache

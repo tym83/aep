@@ -42,12 +42,12 @@ func TestMirrorBundleLoad(t *testing.T) {
 		t.Fatal(e)
 	}
 	index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{Add: img})
-	r, _ := name.NewTag(host+"/source/image:v1", name.Insecure)
+	r, _ := name.NewTag(host+"/source/image:v1.0.0", name.Insecure)
 	if e = remote.WriteIndex(r, index); e != nil {
 		t.Fatal(e)
 	}
 	h, _ := index.Digest()
-	a := Artifact{Kind: "image", Ref: host + "/source/image", Version: "v1", Digest: h.String()}
+	a := Artifact{Kind: "image", Ref: host + "/source/image", Version: "v1.0.0", Digest: h.String()}
 	// Exercise a chart's non-container config and layer media types too.
 	chart := mutate.ConfigMediaType(empty.Image, types.MediaType("application/vnd.cncf.helm.config.v1+json"))
 	chart, e = mutate.AppendLayers(chart, static.NewLayer([]byte("chart archive"), types.MediaType("application/vnd.cncf.helm.chart.content.v1.tar+gzip")))
@@ -86,6 +86,7 @@ func TestMirrorBundleLoad(t *testing.T) {
 	dest := httptest.NewServer(registry.New())
 	defer dest.Close()
 	to := strings.TrimPrefix(dest.URL, "http://")
+	c.InsecureRegistry = to
 	for i := 0; i < 2; i++ {
 		if e = c.Load(ctx, dir, to); e != nil {
 			t.Fatal(e)
@@ -290,5 +291,95 @@ func TestSignaturePolicy(t *testing.T) {
 	c = &Client{Key: "trusted.pub"}
 	if err := c.Mirror(context.Background(), Manifest{Artifacts: []Artifact{{Ref: "example.org/unsigned"}}}, "mirror.example"); err == nil {
 		t.Fatal("unsigned artifact accepted with --key")
+	}
+}
+
+func TestFingerprintTrackedInputs(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v %s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	for _, path := range []string{"internal/bridge/component.go", "resource-types/service.yaml", "config/options.yaml", "Dockerfile.operator"} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte("original"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("add", ".")
+	initial, err := Fingerprint(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(root, "config/.DS_Store"), []byte("untracked"), 0644)
+	after, err := Fingerprint(root)
+	if err != nil || initial != after {
+		t.Fatal("untracked input changed hash", err)
+	}
+	for _, path := range []string{"internal/bridge/component.go", "resource-types/service.yaml", "config/options.yaml", "Dockerfile.operator"} {
+		full := filepath.Join(root, path)
+		os.WriteFile(full, []byte("modified"), 0644)
+		got, err := Fingerprint(root)
+		if err != nil || got == initial {
+			t.Fatal("missed tracked input", path, err)
+		}
+		os.WriteFile(full, []byte("original"), 0644)
+	}
+}
+func TestOfflineImageInventory(t *testing.T) {
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("Helm required")
+	}
+	root := "../.."
+	m, err := Read(filepath.Join(root, "release/manifest.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "release/.cache/kyverno/Chart.yaml")); err != nil {
+		t.Skip("upstream cache required")
+	}
+	if err := CheckImages(context.Background(), root, m); err != nil {
+		t.Fatal(err)
+	}
+	for i, a := range m.Artifacts {
+		if a.Kind == "image" {
+			m.Artifacts = append(m.Artifacts[:i], m.Artifacts[i+1:]...)
+			break
+		}
+	}
+	if err := CheckImages(context.Background(), root, m); err == nil {
+		t.Fatal("missing image accepted")
+	}
+}
+
+func TestMutableReleaseTagsRejected(t *testing.T) {
+	for _, version := range []string{"main", "latest", "latest-dev", "dev", "master", "v1"} {
+		m := Manifest{Schema: 1, Artifacts: []Artifact{{Kind: "image", Ref: "example.org/image", Version: version, Digest: "sha256:" + strings.Repeat("a", 64)}}}
+		b, _ := yaml.Marshal(m)
+		path := filepath.Join(t.TempDir(), "manifest.yaml")
+		os.WriteFile(path, b, 0600)
+		if _, err := Read(path); err == nil {
+			t.Fatal("mutable tag accepted", version)
+		}
+	}
+}
+
+func TestHTTPRequiresExactOptIn(t *testing.T) {
+	server := httptest.NewServer(registry.New())
+	defer server.Close()
+	c := &Client{InsecureRegistry: "different.example"}
+	r, err := c.ref(strings.TrimPrefix(server.URL, "http://") + "/image:v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := remote.Get(r, c.options(context.Background())...); err == nil || !strings.Contains(err.Error(), "requires --insecure-registry=") {
+		t.Fatalf("implicit HTTP fallback: %v", err)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -53,6 +54,9 @@ func Read(path string) (Manifest, error) {
 		if _, e = name.NewDigest(strings.TrimPrefix(a.Ref, "oci://") + "@" + a.Digest); e != nil {
 			return m, e
 		}
+		if !immutableVersion(a.Version) {
+			return m, fmt.Errorf("mutable release tag for %s: %s", a.Ref, a.Version)
+		}
 		if a.Kind != "image" && a.Kind != "chart" {
 			return m, fmt.Errorf("unknown kind %q", a.Kind)
 		}
@@ -61,28 +65,23 @@ func Read(path string) (Manifest, error) {
 }
 func Fingerprint(root string) (string, error) {
 	h := sha256.New()
-	for _, dir := range []string{"charts", "policies", "internal/operator", "internal/registrymirror", "internal/release", "cmd/operator", "portal/Dockerfile", ".github/workflows", "release/extra-images.yaml"} {
-		err := filepath.Walk(filepath.Join(root, dir), func(p string, i os.FileInfo, e error) error {
-			if e != nil {
-				return e
-			}
-			if i.IsDir() {
-				return nil
-			}
-			if strings.HasSuffix(p, "_test.go") {
-				return nil
-			}
-			b, e := os.ReadFile(p)
-			if e != nil {
-				return e
-			}
-			rel, _ := filepath.Rel(root, p)
-			fmt.Fprintf(h, "%s\x00%s\x00", rel, b)
-			return nil
-		})
+	cmd := exec.Command("git", "ls-files", "-z", "--", "charts", "policies", "internal/operator", "internal/registrymirror", "internal/release", "internal/bridge", "resource-types", "config", "cmd/operator", "cmd/aep-release", "Dockerfile*", "portal/Dockerfile", ".github/workflows", "release/extra-images.yaml", "release/*.go")
+	cmd.Dir = root
+	tracked, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("tracked release inputs: %w", err)
+	}
+	paths := strings.Split(strings.TrimSuffix(string(tracked), "\x00"), "\x00")
+	sort.Strings(paths)
+	for _, rel := range paths {
+		if rel == "" || strings.HasSuffix(rel, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(root, rel))
 		if err != nil {
 			return "", err
 		}
+		fmt.Fprintf(h, "%s\x00%s\x00", filepath.ToSlash(rel), b)
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -129,7 +128,7 @@ func Check(root, path string) error {
 			return e
 		}
 	}
-	return nil
+	return CheckImages(context.Background(), root, m)
 }
 
 // Images walks all documents, including hooks, init containers and custom resources.
@@ -258,6 +257,9 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 			if e != nil {
 				return m, e
 			}
+			if err := client.discoverSignature(ctx, &a); err != nil {
+				return m, err
+			}
 			artifacts[a.Ref] = a
 			rendered, e := render(ctx, filepath.Dir(p), "", values)
 			if e != nil {
@@ -331,13 +333,121 @@ func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifa
 		a.Ref = "oci://" + a.Ref
 	} else {
 		a.Version = r.Identifier()
+		if tagged, _, ok := strings.Cut(raw, "@"); ok {
+			if tag, err := name.NewTag(tagged); err == nil && strings.LastIndex(tagged, ":") > strings.LastIndex(tagged, "/") {
+				a.Version = tag.TagStr()
+			}
+		}
+		if !immutableVersion(a.Version) {
+			return a, fmt.Errorf("mutable release tag: %s", raw)
+		}
 	}
-	sig := r.Context().Tag("sha256-" + d.Digest.Hex + ".sig")
-	sd, e := remote.Get(sig, c.options(ctx)...)
-	if e == nil {
-		a.Signature = sd.Digest.String()
-	} else if !notFound(e) {
-		return a, fmt.Errorf("discover signature %s: %w", sig, e)
+	if err := c.discoverSignature(ctx, &a); err != nil {
+		return a, err
 	}
 	return a, nil
+}
+func (c *Client) discoverSignature(ctx context.Context, a *Artifact) error {
+	r, err := c.ref(strings.TrimPrefix(a.Ref, "oci://") + "@" + a.Digest)
+	if err != nil {
+		return err
+	}
+	sig := r.Context().Tag("sha256-" + strings.TrimPrefix(a.Digest, "sha256:") + ".sig")
+	sd, err := remote.Get(sig, c.options(ctx)...)
+	if err == nil {
+		a.Signature = sd.Digest.String()
+	} else if !notFound(err) {
+		return fmt.Errorf("discover signature %s: %w", sig, err)
+	}
+	return nil
+}
+
+// CheckImages renders only local paths. A missing upstream cache is an error,
+// never an excuse to skip the inventory comparison.
+func CheckImages(ctx context.Context, root string, m Manifest) error {
+	actual := map[string]bool{}
+	collect := func(path string, values map[string]any) error {
+		data, err := render(ctx, path, "", values)
+		if err != nil {
+			return err
+		}
+		list, err := Images(data)
+		if err != nil {
+			return err
+		}
+		for _, ref := range list {
+			actual[ref] = true
+		}
+		return nil
+	}
+	for _, chart := range operator.DeliveryCharts() {
+		if err := collect(filepath.Join(root, "release/.cache", chart.Name), operator.ReleaseValues(chart.Name)); err != nil {
+			return err
+		}
+	}
+	for _, base := range []string{"charts", "policies"} {
+		paths, err := filepath.Glob(filepath.Join(root, base, "*", "Chart.yaml"))
+		if err != nil {
+			return err
+		}
+		for _, path := range paths {
+			if err := collect(filepath.Dir(path), LocalValues(filepath.Base(filepath.Dir(path)))); err != nil {
+				return err
+			}
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(root, "release/extra-images.yaml"))
+	if err != nil {
+		return err
+	}
+	var extra []string
+	if err := yaml.UnmarshalStrict(b, &extra); err != nil {
+		return err
+	}
+	for _, ref := range extra {
+		actual[ref] = true
+	}
+	expected := map[string]bool{}
+	for _, a := range m.Artifacts {
+		if a.Kind != "image" {
+			continue
+		}
+		expected[a.Ref+":"+a.Version] = true
+		expected[a.Ref+"@"+a.Digest] = true
+		expected[a.Ref+":"+a.Version+"@"+a.Digest] = true
+	}
+	used := map[string]bool{}
+	for ref := range actual {
+		tagged, _, _ := strings.Cut(ref, "@")
+		if pos := strings.LastIndex(tagged, ":"); pos > strings.LastIndex(tagged, "/") && !immutableVersion(tagged[pos+1:]) {
+			return fmt.Errorf("rendered mutable image tag: %s", ref)
+		}
+		r, err := name.ParseReference(ref)
+		if err != nil {
+			return err
+		}
+		normalized := r.Name()
+		if !expected[normalized] {
+			return fmt.Errorf("rendered image missing from inventory: %s", ref)
+		}
+		used[r.Context().Name()+"@"+r.Identifier()] = true
+		used[normalized] = true
+	}
+	for _, a := range m.Artifacts {
+		if a.Kind != "image" {
+			continue
+		}
+		if !used[a.Ref+":"+a.Version] && !used[a.Ref+"@"+a.Digest] {
+			return fmt.Errorf("inventory image is no longer rendered: %s:%s", a.Ref, a.Version)
+		}
+	}
+	return nil
+}
+
+// Digest-only references have no mutable tag. Tagged references must identify a
+// source commit or a release, not an arbitrary moving development channel.
+var immutableTag = regexp.MustCompile(`^(sha-[a-f0-9]{7,40}|v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?|sha256:[a-f0-9]{64})$`)
+
+func immutableVersion(version string) bool {
+	return version == "" || immutableTag.MatchString(version)
 }

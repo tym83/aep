@@ -51,10 +51,11 @@ func (c *Client) Init() error {
 	return nil
 }
 func (c *Client) options(ctx context.Context) []remote.Option {
-	opts := []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain)}
-	if c.transport != nil {
-		opts = append(opts, remote.WithTransport(c.transport))
+	base := c.transport
+	if base == nil {
+		base = remote.DefaultTransport
 	}
+	opts := []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithTransport(registryTransport{base, c.InsecureRegistry})}
 	return opts
 }
 func (c *Client) ref(s string) (name.Reference, error) {
@@ -233,4 +234,16 @@ func (c *Client) Mirror(ctx context.Context, m Manifest, to string) error {
 		}
 	}
 	return nil
+}
+
+type registryTransport struct {
+	base         http.RoundTripper
+	insecureHost string
+}
+
+func (t registryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Scheme == "http" && req.URL.Host != t.insecureHost {
+		return nil, fmt.Errorf("HTTP registry access requires --insecure-registry=%s", req.URL.Host)
+	}
+	return t.base.RoundTrip(req)
 }
