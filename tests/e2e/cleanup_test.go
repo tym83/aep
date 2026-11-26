@@ -144,6 +144,79 @@ func (s *suite) cleanupList(org int, kind string) ([]map[string]any, error) {
 		seen[cursor] = true
 	}
 }
+
+// Report classes only: API errors can embed object contents or credentials.
+func cleanupErrorClass(err error) string {
+	if err == nil {
+		return "object still present (finalization pending)"
+	}
+	if reason := apierrors.ReasonForError(err); reason != "" && reason != metav1.StatusReasonUnknown {
+		return string(reason)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline exceeded"
+	}
+	if errors.Is(err, errTransport) {
+		return "transport error"
+	}
+	return fmt.Sprintf("%T", err)
+}
+
+func (s *suite) cleanupTimeout() time.Duration {
+	if s.c.TimeoutSeconds <= 0 {
+		return 900 * time.Second
+	}
+	return time.Duration(s.c.TimeoutSeconds) * time.Second
+}
+
+func cleanupPause(deadline time.Time) {
+	if remaining := time.Until(deadline); remaining > 0 {
+		time.Sleep(min(200*time.Millisecond, remaining))
+	}
+}
+
+// A failed GET never establishes absence. Retry until the configured deadline.
+func (s *suite) cleanupGet(org int, kind, name string, deadline time.Time) (map[string]any, bool, error) {
+	var last string
+	for {
+		ctx, cancel := context.WithDeadline(context.Background(), deadline)
+		var obj map[string]any
+		var gone bool
+		if s.cleanupClient != nil {
+			v, err := s.cleanupResource(org, kind).Get(ctx, name, metav1.GetOptions{})
+			gone = apierrors.IsNotFound(err)
+			last = cleanupErrorClass(err)
+			if err == nil {
+				obj = v.Object
+			}
+		} else {
+			tok, err := token(s.c.Cleanup.TokenCommand, "")
+			if err == nil {
+				var code int
+				var raw string
+				code, raw, err = exchange(ctx, s.c.Endpoints["openchoreo"], s.oc(org, "/"+kind+"/"+name), "GET", tok, nil, nil)
+				gone = err == nil && code == 404
+				if err == nil && code == 200 {
+					err = json.Unmarshal([]byte(raw), &obj)
+				}
+				last = fmt.Sprintf("HTTP %d", code)
+			}
+			if err != nil {
+				obj = nil
+				last = cleanupErrorClass(err)
+			}
+		}
+		cancel()
+		if gone || obj != nil {
+			return obj, gone, nil
+		}
+		if !time.Now().Before(deadline) {
+			return nil, false, fmt.Errorf("%s", last)
+		}
+		cleanupPause(deadline)
+	}
+}
+
 func (s *suite) cleanupDelete(org int, kind, name string) (bool, error) {
 	if s.cleanupClient != nil {
 		r := s.cleanupResource(org, kind)
@@ -152,14 +225,14 @@ func (s *suite) cleanupDelete(org int, kind, name string) (bool, error) {
 			return true, nil
 		}
 		if err != nil {
-			return false, fmt.Errorf("delete %s/%s failed (details redacted)", kind, name)
+			return false, fmt.Errorf("delete %s/%s failed: %s", kind, name, cleanupErrorClass(err))
 		}
 		_, err = r.Get(context.Background(), name, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			return true, nil
 		}
 		if err != nil {
-			return false, fmt.Errorf("verify %s/%s failed (details redacted)", kind, name)
+			return false, fmt.Errorf("verify %s/%s failed: %s", kind, name, cleanupErrorClass(err))
 		}
 		return false, nil
 	}
@@ -213,7 +286,7 @@ func (s *suite) cleanupNow(org int, kind, name string) error {
 	if contains([]string{"resourcereleasebindings", "releasebindings", "projectreleasebindings"}, kind) && strings.HasSuffix(name, "-"+s.c.Resources.ProdEnvironment) {
 		return s.cleanupProduction(org, kind, name)
 	}
-	deadline := time.Now().Add(time.Duration(s.c.TimeoutSeconds) * time.Second)
+	deadline := time.Now().Add(s.cleanupTimeout())
 	var err error
 	for {
 		var gone bool
@@ -222,9 +295,13 @@ func (s *suite) cleanupNow(org int, kind, name string) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("deletion not confirmed for %s/%s: %v", kind, name, err)
+			detail := "object still present (finalization pending)"
+			if err != nil {
+				detail = err.Error()
+			}
+			return fmt.Errorf("deletion not confirmed for %s/%s: %s", kind, name, detail)
 		}
-		time.Sleep(2 * time.Second)
+		cleanupPause(deadline)
 	}
 }
 
@@ -253,27 +330,13 @@ func (s *suite) cleanupChangeCall(org int, role, method, path string, body any, 
 }
 func (s *suite) cleanupProduction(org int, kind, name string) error {
 	// Read with the cleanup identity, not a filtered developer list.
-	var binding map[string]any
-	if s.cleanupClient != nil {
-		obj, err := s.cleanupResource(org, kind).Get(context.Background(), name, metav1.GetOptions{})
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("cannot verify production binding %s", name)
-		}
-		binding = obj.Object
-	} else {
-		code, raw, err := s.cleanupExchange(org, "GET", kind, name)
-		if err != nil {
-			return err
-		}
-		if code == 404 {
-			return nil
-		}
-		if code != 200 || json.Unmarshal([]byte(raw), &binding) != nil {
-			return fmt.Errorf("cannot verify production binding %s: HTTP %d", name, code)
-		}
+	deadline := time.Now().Add(s.cleanupTimeout())
+	binding, gone, err := s.cleanupGet(org, kind, name, deadline)
+	if err != nil {
+		return fmt.Errorf("cannot verify production binding %s: %v", name, err)
+	}
+	if gone {
+		return nil
 	}
 	targetKind, ownerField := "Resource", "resourceName"
 	if kind == "releasebindings" {
@@ -299,28 +362,28 @@ func (s *suite) cleanupProduction(org int, kind, name string) error {
 	if id == "" {
 		return fmt.Errorf("decommission response has no name")
 	}
-	deadline := time.Now().Add(time.Duration(s.c.TimeoutSeconds) * time.Second)
+	deadline = time.Now().Add(s.cleanupTimeout())
 	for time.Now().Before(deadline) {
 		code, v, err = s.cleanupChangeCall(org, "developer", "GET", s.changePath(org, id), nil, nil)
 		if err == nil && code == 200 {
 			phase := str(v, "request.status.phase")
 			if phase == "Applied" {
 				// Approved deletion may still be finalizing. Never issue a raw prod DELETE.
-				for time.Now().Before(deadline) {
-					if s.cleanupClient != nil {
-						_, err = s.cleanupResource(org, kind).Get(context.Background(), name, metav1.GetOptions{})
-						if apierrors.IsNotFound(err) {
-							return nil
-						}
-					} else {
-						code, _, err = s.cleanupExchange(org, "GET", kind, name)
-						if err == nil && code == 404 {
-							return nil
-						}
+				// Give finalizers their own full timeout after approval is applied.
+				deletionDeadline := time.Now().Add(s.cleanupTimeout())
+				for {
+					_, gone, readErr := s.cleanupGet(org, kind, name, deletionDeadline)
+					if gone {
+						return nil
 					}
-					time.Sleep(2 * time.Second)
+					if readErr != nil {
+						return fmt.Errorf("cannot verify production binding %s deletion: %v", name, readErr)
+					}
+					if !time.Now().Before(deletionDeadline) {
+						return fmt.Errorf("production binding %s still finalizing", name)
+					}
+					cleanupPause(deletionDeadline)
 				}
-				return fmt.Errorf("production binding %s still finalizing", name)
 			}
 			if contains([]string{"Failed", "Rejected", "Expired", "Superseded"}, phase) {
 				return fmt.Errorf("decommission reached %s", phase)
@@ -332,7 +395,7 @@ func (s *suite) cleanupProduction(org int, kind, name string) error {
 				}
 			}
 		}
-		time.Sleep(2 * time.Second)
+		cleanupPause(deadline)
 	}
 	return fmt.Errorf("production decommission %s timed out", id)
 }
