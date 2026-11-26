@@ -1,4 +1,3 @@
-# Replace after publishing; this digest intentionally cannot be deployed.
 image: ghcr.io/tym83/aep-cp-backup:sha-29e886e8fa23cc232371e08106182fb8fb47957d@sha256:9a06bf3c272a1976f69536607a7a621bd849e8bf3a1e196002f7084d2b0a91c5
 schedule: "*/10 * * * *"
 suspend: false
@@ -17,3 +16,7 @@ tolerations: []
 
 # Required public age X25519 recipient. Keep the private identity offline.
 ageRecipient: ""
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

@@ -1,5 +1,5 @@
 apiVersion: v2
 name: aep-audit-forwarder
 description: Durable audit export for the AEP management cluster
-version: 0.1.1
+version: 0.1.2
 appVersion: 0.1.0

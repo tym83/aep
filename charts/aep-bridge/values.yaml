@@ -4,7 +4,7 @@ clusterID: ""
 # Install into the tier tenant namespace; all management permissions stay there.
 image:
   repository: ghcr.io/tym83/aep-bridge
-  tag: "sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83"
+  tag: "sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83@sha256:3b1f6ba35e7d43e7ff3df5f18f797c5dc52aea370bba1dda2c2acfbc5bfe7414"
   pullPolicy: IfNotPresent
 replicas: 1
 allowedKinds: [Postgres, Redis]

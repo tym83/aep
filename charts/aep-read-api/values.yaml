@@ -1,4 +1,4 @@
-image: ghcr.io/tym83/aep-read-api:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+image: ghcr.io/tym83/aep-read-api:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83@sha256:c77fcc71261cfccfd0f386fcb095e3bbce8d7af435e7ba5591d69241bdc452bd
 replicas: 1
 oidc:
   issuer: ""

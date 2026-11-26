@@ -3,11 +3,13 @@ image:
   pullPolicy: IfNotPresent
 api:
   repository: ghcr.io/tym83/aep-change-api
+  digest: sha256:bb48e6e36c9798a66ced1c2b6a6e78490ff59898de175740c1866051f2085fdb
   replicas: 1
   # Existing kubernetes.io/tls Secret in the release namespace; empty serves HTTP.
   tlsSecret: ""
 controller:
   repository: ghcr.io/tym83/aep-change-controller
+  digest: sha256:1c877d5b550aa88607de7029e70b71e568f0387a3fdeae5eb41e077f2ea42432
   replicas: 1
   # Empty uses the release namespace. The namespace must already exist.
   leaseNamespace: ""

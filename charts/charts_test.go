@@ -3,6 +3,8 @@ package charts
 import (
 	"encoding/json"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sigs.k8s.io/yaml"
 	"strings"
 	"testing"
@@ -104,15 +106,15 @@ func TestLLMAuthenticationAndIsolation(t *testing.T) {
 
 func TestDigestRequirements(t *testing.T) {
 	digest := "sha256:" + strings.Repeat("a", 64)
-	out, err := render(t, "aep-sre-agent", agentValues()...)
+	out, err := render(t, "aep-sre-agent", append(agentValues(), "image.digest=", "tokenProxy.image.digest=")...)
 	if err == nil || !strings.Contains(out, "digest is required") {
 		t.Fatal(out, err)
 	}
-	out, err = render(t, "aep-sre-agent", append(agentValues(), "tokenProxy.image.digest="+digest)...)
+	out, err = render(t, "aep-sre-agent", append(agentValues(), "image.digest=", "tokenProxy.image.digest="+digest)...)
 	if err == nil || !strings.Contains(out, "image.digest is required") {
 		t.Fatal(out, err)
 	}
-	out, err = render(t, "aep-sre-agent", append(agentValues(), "image.digest="+digest)...)
+	out, err = render(t, "aep-sre-agent", append(agentValues(), "tokenProxy.image.digest=", "image.digest="+digest)...)
 	if err == nil || !strings.Contains(out, "tokenProxy.image.digest is required") {
 		t.Fatal(out, err)
 	}
@@ -165,7 +167,19 @@ func TestMirrorAllCharts(t *testing.T) {
 		"aep-read-api":          {"oidc.issuer=https://id.invalid", "oidc.audience=aep"},
 		"aep-cost-ledger":       {"credentialsSecret=database"},
 		"aep-llm":               {"model=test", "apiKeySecret=key"},
-		"aep-sre-agent":         append(agentValues(), "dev=true"),
+		"aep-sre-agent":         agentValues(),
+		"aep-audit-forwarder":   {},
+		"aep-cp-backup":         {},
+		"aep-itsm-bridge":       {"credentialsSecret=itsm", "config.organization=acme", "config.changeNamespace=tenant-acme"},
+	}
+	paths, err := filepath.Glob("*/Chart.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if _, ok := cases[filepath.Dir(path)]; !ok {
+			t.Fatalf("chart missing mirror coverage: %s", path)
+		}
 	}
 	for chart, values := range cases {
 		t.Run(chart, func(t *testing.T) {
@@ -173,7 +187,12 @@ func TestMirrorAllCharts(t *testing.T) {
 			if err != nil {
 				t.Fatal(out, err)
 			}
-			for _, host := range []string{"ghcr.io/", "cr.openchoreo.dev/", "docker.io/", "quay.io/", "registry.k8s.io/"} {
+			for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(out, -1) {
+				if !strings.HasPrefix(image[1], "mirror.local/cache/") || !strings.Contains(image[1], "@sha256:") {
+					t.Fatalf("non-mirrored or mutable image: %s", image[1])
+				}
+			}
+			for _, host := range []string{"argoproj.github.io/", "ghcr.io/", "cr.openchoreo.dev/", "docker.io/", "quay.io/", "registry.k8s.io/"} {
 				if strings.Contains(strings.ReplaceAll(out, "mirror.local/cache/"+host, ""), host) {
 					t.Fatalf("public reference in %s: %s", chart, out)
 				}

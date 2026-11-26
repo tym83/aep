@@ -61,7 +61,7 @@ spec:
       tolerations: {{ .Values.tolerations | toJson }}
       containers:
         - name: forwarder
-          image: {{ .Values.image | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
           args:
             - --spool=/var/lib/audit
             - --spool-bytes={{ .Values.spoolBytes | int }}

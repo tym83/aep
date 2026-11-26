@@ -55,7 +55,7 @@ spec:
           tolerations: {{ .Values.tolerations | toJson }}
           containers:
             - name: backup
-              image: {{ .Values.image | quote }}
+              image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
               args:
                 - --aepcp-kubeconfig=/cp/config
                 - --organizations={{ join "," .Values.organizations }}
