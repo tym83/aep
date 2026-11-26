@@ -7,10 +7,16 @@
 {{- range $trust.vendorPublicKeys -}}
 {{- if not (trim .) -}}{{- fail "vendorPublicKeys must not be blank" -}}{{- end -}}
 {{- end -}}
+{{- $allowed := list -}}
+{{- $skip := list -}}
 {{- range $trust.allowedImages -}}
-{{- if not (regexMatch "^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$" .) -}}
+{{- if not (regexMatch "^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+(:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)?@sha256:[a-f0-9]{64}$" .) -}}
 {{- fail "platformImageTrust.allowedImages must be exact registry/repository@sha256:digest references" -}}
 {{- end -}}
+{{- $canonical := regexReplaceAll ":[^/:]+@" . "@" -}}
+{{- $allowed = append $allowed $canonical -}}
+{{- $skip = append $skip $canonical -}}
+{{- $skip = append $skip (replace "@" ":*@" $canonical) -}}
 {{- end }}
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -31,7 +37,7 @@ spec:
 {{- if $trust.vendorPublicKeys }}
       verifyImages:
         - imageReferences: ["*"]
-          skipImageReferences: {{ $trust.allowedImages | default list | toJson }}
+          skipImageReferences: {{ $skip | toJson }}
           mutateDigest: false
           verifyDigest: true
           required: true
@@ -52,7 +58,7 @@ spec:
             deny:
               conditions:
                 all:
-                  - key: {{ "{{ element.image }}" | quote }}
+                  - key: {{ "{{ regex_replace_all(':[^/:]+@', element.image, '@') }}" | quote }}
                     operator: AnyNotIn
-                    value: {{ $trust.allowedImages | default list | toJson }}
+                    value: {{ $allowed | toJson }}
 {{- end }}
