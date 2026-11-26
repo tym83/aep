@@ -19,7 +19,11 @@ jobs:
         with:
           version: v3.17.3
       - run: helm dependency build charts/aep-gitlab
+      - name: Stage fleet charts for permission coverage
+        run: sh charts/aep-operator/fleet-stage.sh "$RUNNER_TEMP/fleet-charts"
       - run: go test ./...
+        env:
+          AEP_FLEET_CHART_TEST_DIR: ${{ runner.temp }}/fleet-charts
       # Flag registration happens at start-up, outside unit tests: catch
       # duplicate flags and init panics in every shipped binary.
       - name: Binaries start
