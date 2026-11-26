@@ -60,3 +60,44 @@ func TestAgentTokenProxy(t *testing.T) {
 		t.Fatal(out)
 	}
 }
+
+func TestLLMAuthenticationAndIsolation(t *testing.T) {
+	out, err := render(t, "aep-llm", "model=test")
+	if err == nil || !strings.Contains(out, "apiKeySecret is required") {
+		t.Fatal(out, err)
+	}
+	for _, auth := range []string{"apiKeySecret=llm-key", "allowUnauthenticated=true"} {
+		out, err := render(t, "aep-llm", "model=test", auth)
+		if err != nil {
+			t.Fatal(out, err)
+		}
+		docs := resources(t, out)
+		pod := docs["Deployment"]["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)
+		sc := pod["securityContext"].(map[string]any)
+		if sc["runAsNonRoot"] != true || sc["seccompProfile"].(map[string]any)["type"] != "RuntimeDefault" {
+			t.Fatal(sc)
+		}
+		c := pod["containers"].([]any)[0].(map[string]any)
+		cs := c["securityContext"].(map[string]any)
+		if cs["allowPrivilegeEscalation"] != false || cs["capabilities"].(map[string]any)["drop"].([]any)[0] != "ALL" {
+			t.Fatal(cs)
+		}
+		np := docs["NetworkPolicy"]["spec"].(map[string]any)
+		ingress := np["ingress"].([]any)[0].(map[string]any)
+		peers := ingress["from"].([]any)
+		if len(peers) != 1 || peers[0].(map[string]any)["podSelector"].(map[string]any)["matchLabels"].(map[string]any)["app.kubernetes.io/name"] != "aep-sre-agent" {
+			t.Fatal(peers)
+		}
+		if ingress["ports"].([]any)[0].(map[string]any)["port"] != float64(8000) {
+			t.Fatal(ingress)
+		}
+	}
+	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key", "networkPolicy.allowedSources[0].namespaceSelector.matchLabels.team=operations")
+	if err != nil || !strings.Contains(out, "team: operations") {
+		t.Fatal(out, err)
+	}
+	out, err = render(t, "aep-llm", "model=test", "apiKeySecret=key", "networkPolicy.allowedSources=null")
+	if err != nil || !strings.Contains(out, "ingress: []") {
+		t.Fatal(out, err)
+	}
+}

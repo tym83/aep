@@ -8,6 +8,13 @@ weights:
 resources:
   cpu: "4"
   memory: 16Gi
-# Optional existing Secret with key api-key; pass the same key to the agent.
+# Required existing Secret with key api-key; pass the same key to the agent.
 apiKeySecret: ""
 extraArgs: []
+
+allowUnauthenticated: false
+networkPolicy:
+  allowedSources:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: aep-sre-agent

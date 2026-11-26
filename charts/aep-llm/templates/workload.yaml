@@ -1,3 +1,6 @@
+{{- if and (not .Values.apiKeySecret) (not .Values.allowUnauthenticated) }}
+{{- fail "apiKeySecret is required unless allowUnauthenticated is true" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,9 +15,20 @@ spec:
       labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: aep-llm}
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: inference
           image: {{ .Values.image | quote }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+            seccompProfile: {type: RuntimeDefault}
           args:
             - --model
             - {{ required "model is required" .Values.model | quote }}
@@ -27,12 +41,15 @@ spec:
             {{- range .Values.extraArgs }}
             - {{ . | quote }}
             {{- end }}
-          {{- if .Values.apiKeySecret }}
           env:
+            - {name: HOME, value: /tmp}
+            - {name: HF_HOME, value: /weights/huggingface}
+            - {name: VLLM_CACHE_ROOT, value: /weights/vllm}
+            {{- if .Values.apiKeySecret }}
             - name: VLLM_API_KEY
               valueFrom:
                 secretKeyRef: {name: {{ .Values.apiKeySecret }}, key: api-key}
-          {{- end }}
+            {{- end }}
           ports: [{name: http, containerPort: 8000}]
           resources:
             requests:
