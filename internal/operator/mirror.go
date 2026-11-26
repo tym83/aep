@@ -47,6 +47,9 @@ func MirrorValues(chart, mirror string, values M) M {
 		return values
 	}
 	switch chart {
+	case "argo-cd":
+		setMap(values, []string{"global", "image", "repository"}, mirror+"/quay.io/argoproj/argocd")
+		setMap(values, []string{"redis", "image", "repository"}, mirror+"/ecr-public.aws.com/docker/library/redis")
 	case "openchoreo-data-plane":
 		values["global"] = M{"imageRegistry": mirror + "/cr.openchoreo.dev"}
 	case "kgateway":
@@ -80,12 +83,15 @@ func DeliveryCharts() []struct{ Name, Version, URL string } {
 	for _, c := range charts {
 		out = append(out, struct{ Name, Version, URL string }{c.name, c.version, c.url + "/" + c.name})
 	}
-	return append(out, struct{ Name, Version, URL string }{"kyverno", KyvernoChartVersion, "oci://ghcr.io/kyverno/charts/kyverno"})
+	return append(out, struct{ Name, Version, URL string }{"kyverno", KyvernoChartVersion, "oci://ghcr.io/kyverno/charts/kyverno"}, struct{ Name, Version, URL string }{"argo-cd", ArgoCDChartVersion, ArgoCDChartOCI})
 }
 
 // ReleaseValues is the same chart configuration used by reconciliation, with
 // representative identity values (which do not affect image selection).
 func ReleaseValues(chart string) M {
+	if chart == "argo-cd" {
+		return PinValues(chart, argoValues(&api.Organization{}, "argo.inventory.invalid", "https://id.invalid", nil))
+	}
 	if chart == "kyverno" {
 		return PinValues(chart, policyValues(&api.Organization{}, "prod", "")["kyverno"])
 	}
@@ -135,6 +141,9 @@ func PinValues(chart string, values M) M {
 		setMap(values, path, a.Version+"@"+a.Digest)
 	}
 	switch chart {
+	case "argo-cd":
+		pin("quay.io/argoproj/argocd", "global", "image", "tag")
+		pin("ecr-public.aws.com/docker/library/redis", "redis", "image", "tag")
 	case "kgateway":
 		pin("cr.kgateway.dev/kgateway-dev/kgateway", "controller", "image", "tag")
 		pin("cr.kgateway.dev/kgateway-dev/envoy-wrapper", "image", "tag")
@@ -159,4 +168,17 @@ func PinValues(chart string, values M) M {
 		}
 	}
 	return values
+}
+
+// Helm may already have rewritten an operator image argument. Validate the
+// original repository and digest before returning it through the mirror again.
+func (o Options) pinnedImage(ref string) (string, error) {
+	if o.ImageRegistryMirror != "" {
+		ref = strings.TrimPrefix(ref, o.ImageRegistryMirror+"/")
+	}
+	pinned, err := inventory.Image(ref)
+	if err != nil {
+		return "", err
+	}
+	return registrymirror.Rewrite(pinned, o.ImageRegistryMirror), nil
 }
