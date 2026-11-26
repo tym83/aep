@@ -4,3 +4,5 @@
 state/
 .DS_Store
 /.cache/
+
+release/.cache/

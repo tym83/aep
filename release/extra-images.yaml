@@ -1,0 +1,5 @@
+# Runtime images not present in a Helm Pod template (controller-created or standalone).
+- cr.kgateway.dev/kgateway-dev/envoy-wrapper:v2.3.11
+- ghcr.io/tym83/aep-portal:main
+- ghcr.io/tym83/aep-cozystack-mcp:main
+- ghcr.io/tym83/aep-alert-router:main
