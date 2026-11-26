@@ -167,10 +167,7 @@ func (releaseHandler) Apply(ctx context.Context, oc *ocapi.Client, cr *api.Chang
 		if kind == ocapi.KindReleaseBinding {
 			nb.Spec["state"] = "Active"
 		}
-		// Protected resources retain their data unless a change says otherwise.
-		if kind == ocapi.KindResourceReleaseBinding && target.Environment == "prod" {
-			nb.Spec["retainPolicy"] = "Retain"
-		}
+		defaultRetain(kind, target.Environment, nb.Spec)
 		_, e = oc.Create(ctx, org, kind, nb)
 		return Result{Executed: e == nil, Message: "binding created"}, e
 	}
@@ -178,7 +175,8 @@ func (releaseHandler) Apply(ctx context.Context, oc *ocapi.Client, cr *api.Chang
 		return Result{}, fmt.Errorf("binding %s/%s belongs to another owner; refusing to overwrite it", kind, name)
 	}
 	field := ocapi.ReleaseField(kind)
-	if b.Spec[field] == release {
+	retainAdded := defaultRetain(kind, target.Environment, b.Spec)
+	if b.Spec[field] == release && !retainAdded {
 		return Result{Executed: true, Message: "already at the requested release"}, nil
 	}
 	b.Spec[field] = release
@@ -186,6 +184,21 @@ func (releaseHandler) Apply(ctx context.Context, oc *ocapi.Client, cr *api.Chang
 		return Result{}, e
 	}
 	return Result{Executed: true, Message: "release pin updated"}, nil
+}
+
+// defaultRetain makes protected resources retain their data unless a change
+// explicitly chose otherwise. Bindings created outside the change service
+// (before protection was in place) get the default on their next promotion.
+// It reports whether the spec was changed.
+func defaultRetain(kind, environment string, spec map[string]any) bool {
+	if kind != ocapi.KindResourceReleaseBinding || environment != "prod" {
+		return false
+	}
+	if v, _ := spec["retainPolicy"].(string); v != "" {
+		return false
+	}
+	spec["retainPolicy"] = "Retain"
+	return true
 }
 
 // resourceUpdateHandler changes the environment configs, release pin or
