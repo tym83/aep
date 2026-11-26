@@ -43,7 +43,10 @@ resources:
   #   create-resourcetypes: {workload: {}}
   # Routes vary by OpenChoreo release. Set the actual observer/API routes.
   # {environment} is substituted with dev or prod for the two logs cells.
-  logsPath: /api/v1/namespaces/{org}/projects/{project}/components/{component}/logs?environment={environment}
+  # OpenChoreo 1.4 requires a pod name; {podName} is resolved through
+  # logsTreePath (default shown) with the organization's platform identity.
+  logsPath: /api/v1/namespaces/{org}/releasebindings/{component}-{environment}/k8sresources/logs?podName={podName}
+  # logsTreePath: /api/v1/namespaces/{org}/releasebindings/{component}-{environment}/k8sresources/tree
   outputsPath: /api/v1/namespaces/{org}/resourcereleasebindings/{resource}-{environment}
   # Dot paths in the outputs response. Secret references are acceptable;
   # values are checked for presence and are never printed.
