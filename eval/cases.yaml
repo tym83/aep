@@ -1,0 +1,330 @@
+cases:
+  - id: "database-disk-full"
+    class: "database"
+    injector: "simulated-disk"
+    inject: "go run ./cmd/rca-eval --execute --case database-disk-full --org \"$ORG\" --tier \"$TIER\" --app \"$APP\" --agent-url \"$AGENT_URL\" --project \"$PROJECT\" --component \"$COMPONENT\""
+    cleanup: "go run ./cmd/rca-eval --restore --journal eval-recovery.json"
+    expected: "Postgres PVC is full (simulation only)."
+    match: "(?i)(disk|volume|pvc).*(full|exhaust)|no space"
+    symptom: "Database write requests are failing."
+  - id: "database-failover"
+    class: "database"
+    injector: "stub"
+    inject: |
+      PRIMARY=$(kubectl -n "$NS" get clusters.postgresql.cnpg.io "postgres-$APP" -o jsonpath="{.status.currentPrimary}")
+      kubectl -n "$NS" delete pod "$PRIMARY" --wait=true
+    cleanup: "kubectl -n \"$NS\" wait clusters.postgresql.cnpg.io/\"postgres-$APP\" --for=condition=Ready --timeout=300s"
+    expected: "Primary restart causes transient database unavailability."
+    match: "(?i)(primary|failover|restart)"
+    symptom: "Database connections reset during request processing."
+  - id: "database-connections"
+    class: "database"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" exec \"$LOAD_POD\" -- sh -c 'pgbench -c 150 -j 4 -T 120 \"$DATABASE_URL\"'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" exec \"$LOAD_POD\" -- pkill pgbench || true"
+    expected: "Database connection slots are exhausted."
+    match: "(?i)connection.*(exhaust|limit|slot|max)"
+    symptom: "Database connection attempts are failing."
+  - id: "database-lock"
+    class: "database"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" exec \"$LOAD_POD\" -- sh -c 'psql \"$DATABASE_URL\" -c \"BEGIN; LOCK TABLE aep_eval IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(120); ROLLBACK;\"'"
+    cleanup: "Wait 120 seconds for the disposable transaction to roll back."
+    expected: "A long transaction blocks updates to the stand table."
+    match: "(?i)(lock|blocking|transaction)"
+    symptom: "Database writes time out."
+  - id: "database-replica"
+    class: "database"
+    injector: "stub"
+    inject: "kubectl -n \"$NS\" delete pod \"$STANDBY_POD\" --wait=true"
+    cleanup: "kubectl -n \"$NS\" wait clusters.postgresql.cnpg.io/\"postgres-$APP\" --for=condition=Ready --timeout=300s"
+    expected: "Loss of a standby reduces database redundancy."
+    match: "(?i)(standby|replica).*(unavailable|fail|lost|delet)"
+    symptom: "Database replica readiness has dropped."
+  - id: "volume-unbound"
+    class: "volume"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" create -f - <<EOF
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: aep-eval-unbound}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: aep-eval-missing
+        resources: {requests: {storage: 1Gi}}
+      EOF
+    cleanup: "kubectl -n \"$NS\" delete pvc aep-eval-unbound"
+    expected: "A nonexistent StorageClass leaves a stand PVC Pending."
+    match: "(?i)(storageclass|storage class|unbound|pending.*pvc)"
+    symptom: "A requested persistent volume is not becoming ready."
+  - id: "volume-capacity"
+    class: "volume"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" create -f - <<EOF
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: aep-eval-large}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: $STAND_STORAGE_CLASS
+        resources: {requests: {storage: 100Pi}}
+      EOF
+    cleanup: "kubectl -n \"$NS\" delete pvc aep-eval-large"
+    expected: "A stand PVC exceeds available storage capacity."
+    match: "(?i)(storage|volume|pvc).*(capacity|insufficient|space)"
+    symptom: "Volume provisioning stalls."
+  - id: "volume-mount"
+    class: "volume"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=json -p '[{\"op\":\"replace\",\"path\":\"/spec/template/spec/volumes/0/persistentVolumeClaim/claimName\",\"value\":\"aep-eval-missing\"}]'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "A workload references a missing PVC."
+    match: "(?i)(missing|not found|does not exist).*(pvc|volume)|persistentvolumeclaim.*not found"
+    symptom: "Application pods remain Pending after a rollout."
+  - id: "volume-readonly"
+    class: "volume"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/volumeMounts/0/readOnly\",\"value\":true}]'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "A workload data mount is made read-only."
+    match: "(?i)read.only"
+    symptom: "Application writes to its data directory fail."
+  - id: "volume-attach"
+    class: "volume"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" scale deployment "$RWO_WORKLOAD" --replicas=2
+      # Fixture has required pod anti-affinity by hostname and one shared RWO PVC.
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" scale deployment \"$RWO_WORKLOAD\" --replicas=1"
+    expected: "Two stand pods on different nodes contend for an RWO volume."
+    match: "(?i)(multi.attach|already.*attach|readwriteonce)"
+    symptom: "The second application replica cannot start."
+  - id: "node-cordoned"
+    class: "node"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" cordon "$STAND_NODE"
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" rollout restart deployment "$WORKLOAD"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" uncordon \"$STAND_NODE\""
+    expected: "The sole eligible guest node is unschedulable."
+    match: "(?i)(cordon|unschedulable)"
+    symptom: "New application pods cannot be scheduled."
+  - id: "node-cpu"
+    class: "node"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" set resources deployment \"$WORKLOAD\" --requests=cpu=1000 --limits=cpu=1000"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "The workload CPU request exceeds the guest node capacity."
+    match: "(?i)cpu.*(insufficient|capacity|request)|insufficient.*cpu"
+    symptom: "A rollout leaves new pods Pending."
+  - id: "node-memory"
+    class: "node"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" set resources deployment \"$WORKLOAD\" --requests=memory=100Ti --limits=memory=100Ti"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "The workload memory request exceeds guest node capacity."
+    match: "(?i)memory.*(insufficient|capacity|request)|insufficient.*memory"
+    symptom: "Application replicas do not become ready."
+  - id: "node-selector"
+    class: "node"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=merge -p '{\"spec\":{\"template\":{\"spec\":{\"nodeSelector\":{\"aep-eval\":\"absent\"}}}}}'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "The workload node selector matches no guest node."
+    match: "(?i)(selector|affinity|no.*matching.*node)"
+    symptom: "Application pods are unschedulable."
+  - id: "node-taint"
+    class: "node"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" taint node "$STAND_NODE" aep-eval=true:NoSchedule
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" rollout restart deployment "$WORKLOAD"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" taint node \"$STAND_NODE\" aep-eval:NoSchedule-"
+    expected: "A stand guest node rejects the workload with an untolerated taint."
+    match: "(?i)(taint|toleration)"
+    symptom: "New application replicas cannot start."
+  - id: "quota-pods"
+    class: "quota"
+    injector: "quota-exhaustion"
+    inject: "go run ./cmd/rca-eval --execute --case quota-pods --org \"$ORG\" --tier \"$TIER\" --quota \"$QUOTA\" --agent-url \"$AGENT_URL\" --project \"$PROJECT\" --component \"$COMPONENT\""
+    cleanup: "go run ./cmd/rca-eval --restore --journal eval-recovery.json"
+    expected: "The tier namespace pods ResourceQuota is exhausted."
+    match: "(?i)quota.*(pod|exceed|exhaust)|pod.*quota"
+    symptom: "New infrastructure workload replicas cannot be created."
+  - id: "quota-cpu"
+    class: "quota"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" get resourcequota "$QUOTA" -o json > "$SNAPSHOT"
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p '{"spec":{"hard":{"requests.cpu":"0"}}}'
+      # Increase the disposable stand workload replicas or request one fixture PVC.
+      kubectl -n "$NS" scale deployment "$TIER_WORKLOAD" --replicas=2
+    cleanup: |
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p "$(jq '{spec:{hard:.spec.hard}}' "$SNAPSHOT")"
+      kubectl -n "$NS" scale deployment "$TIER_WORKLOAD" --replicas=1
+    expected: "The tier requests.cpu ResourceQuota is exhausted."
+    match: "(?i)quota.*cpu|cpu.*quota"
+    symptom: "A new infrastructure resource is rejected."
+  - id: "quota-memory"
+    class: "quota"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" get resourcequota "$QUOTA" -o json > "$SNAPSHOT"
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p '{"spec":{"hard":{"requests.memory":"0"}}}'
+      # Increase the disposable stand workload replicas or request one fixture PVC.
+      kubectl -n "$NS" scale deployment "$TIER_WORKLOAD" --replicas=2
+    cleanup: |
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p "$(jq '{spec:{hard:.spec.hard}}' "$SNAPSHOT")"
+      kubectl -n "$NS" scale deployment "$TIER_WORKLOAD" --replicas=1
+    expected: "The tier requests.memory ResourceQuota is exhausted."
+    match: "(?i)quota.*memory|memory.*quota"
+    symptom: "A new infrastructure resource is rejected."
+  - id: "quota-storage"
+    class: "quota"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" get resourcequota "$QUOTA" -o json > "$SNAPSHOT"
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p '{"spec":{"hard":{"requests.storage":"0"}}}'
+      kubectl -n "$NS" create -f - <<EOF
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: aep-eval-quota}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: $STAND_STORAGE_CLASS
+        resources: {requests: {storage: 1Gi}}
+      EOF
+    cleanup: |
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p "$(jq '{spec:{hard:.spec.hard}}' "$SNAPSHOT")"
+      kubectl -n "$NS" delete pvc aep-eval-quota --ignore-not-found
+    expected: "The tier requests.storage ResourceQuota is exhausted."
+    match: "(?i)quota.*storage|storage.*quota"
+    symptom: "A new infrastructure resource is rejected."
+  - id: "quota-pvc-count"
+    class: "quota"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" get resourcequota "$QUOTA" -o json > "$SNAPSHOT"
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p '{"spec":{"hard":{"persistentvolumeclaims":"0"}}}'
+      kubectl -n "$NS" create -f - <<EOF
+      apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata: {name: aep-eval-quota}
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: $STAND_STORAGE_CLASS
+        resources: {requests: {storage: 1Gi}}
+      EOF
+    cleanup: |
+      kubectl -n "$NS" patch resourcequota "$QUOTA" --type=merge -p "$(jq '{spec:{hard:.spec.hard}}' "$SNAPSHOT")"
+      kubectl -n "$NS" delete pvc aep-eval-quota --ignore-not-found
+    expected: "The tier persistentvolumeclaims ResourceQuota is exhausted."
+    match: "(?i)quota.*(pvc|persistentvolumeclaim|claim)|(pvc|persistentvolumeclaim|claim).*quota"
+    symptom: "A new infrastructure resource is rejected."
+  - id: "network-egress"
+    class: "network"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" create -f - <<EOF
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata: {name: aep-eval-deny}
+      spec:
+        podSelector: {matchLabels: {app: $WORKLOAD}}
+        policyTypes: [Egress]
+        egress: []
+      EOF
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" delete networkpolicy aep-eval-deny"
+    expected: "A guest NetworkPolicy blocks all application egress."
+    match: "(?i)(networkpolicy|network policy|egress)"
+    symptom: "Application outbound requests time out."
+  - id: "network-dns"
+    class: "network"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=merge -p '{\"spec\":{\"template\":{\"spec\":{\"dnsPolicy\":\"None\",\"dnsConfig\":{\"nameservers\":[\"192.0.2.53\"]}}}}}'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "The guest workload uses a nonexistent DNS server."
+    match: "(?i)dns|name resolution"
+    symptom: "Application dependency names cannot be resolved."
+  - id: "network-selector"
+    class: "network"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" get service "$SERVICE" -o json > "$SNAPSHOT"
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" patch service "$SERVICE" --type=json -p '[{"op":"replace","path":"/spec/selector","value":{"aep-eval":"absent"}}]'
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch service \"$SERVICE\" --type=json -p \"$(jq '[{op:\"replace\",path:\"/spec/selector\",value:.spec.selector}]' \"$SNAPSHOT\")\""
+    expected: "A Service selector matches no workload pod."
+    match: "(?i)(selector|endpoint)"
+    symptom: "Service requests fail despite running application pods."
+  - id: "network-port"
+    class: "network"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" get service "$SERVICE" -o json > "$SNAPSHOT"
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" patch service "$SERVICE" --type=json -p '[{"op":"replace","path":"/spec/ports/0/targetPort","value":65534}]'
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch service \"$SERVICE\" --type=json -p \"$(jq '[{op:\"replace\",path:\"/spec/ports\",value:.spec.ports}]' \"$SNAPSHOT\")\""
+    expected: "A Service targets a port that the workload does not listen on."
+    match: "(?i)(targetport|target port|port.*incorrect|wrong.*port)"
+    symptom: "Connections to the service are refused."
+  - id: "network-ingress"
+    class: "network"
+    injector: "stub"
+    inject: |
+      kubectl --context "$GUEST_CONTEXT" -n "$APP_NS" create -f - <<EOF
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata: {name: aep-eval-deny}
+      spec:
+        podSelector: {matchLabels: {app: $WORKLOAD}}
+        policyTypes: [Ingress]
+        ingress: []
+      EOF
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" delete networkpolicy aep-eval-deny"
+    expected: "A guest NetworkPolicy blocks inbound traffic to the workload."
+    match: "(?i)(networkpolicy|network policy|ingress)"
+    symptom: "Incoming application requests time out."
+  - id: "release-image"
+    class: "release"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" set image deployment/\"$WORKLOAD\" \"$CONTAINER=$IMAGE:aep-eval-missing\""
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "A nonexistent image tag prevents rollout."
+    match: "(?i)(imagepull|image.*(missing|invalid|not found)|tag)"
+    symptom: "A new application release does not become ready."
+  - id: "release-crash"
+    class: "release"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/command\",\"value\":[\"/bin/sh\",\"-c\",\"exit 42\"]}]'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "The new container command exits immediately."
+    match: "(?i)(crash|exit|command)"
+    symptom: "Application containers restart repeatedly."
+  - id: "release-readiness"
+    class: "release"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=json -p '[{\"op\":\"replace\",\"path\":\"/spec/template/spec/containers/0/readinessProbe/httpGet/path\",\"value\":\"/aep-eval-missing\"}]'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "A bad readiness probe path removes pods from endpoints."
+    match: "(?i)readiness.*(probe|path)|probe.*404"
+    symptom: "Application pods run but no traffic reaches them."
+  - id: "release-config"
+    class: "release"
+    injector: "stub"
+    inject: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" patch deployment \"$WORKLOAD\" --type=json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/envFrom\",\"value\":[{\"configMapRef\":{\"name\":\"aep-eval-missing\"}}]}]'"
+    cleanup: "kubectl --context \"$GUEST_CONTEXT\" -n \"$APP_NS\" rollout undo deployment/\"$WORKLOAD\""
+    expected: "A release references a nonexistent ConfigMap."
+    match: "(?i)configmap.*(missing|not found)|missing.*configmap"
+    symptom: "A new container cannot be created."
+  - id: "release-chart"
+    class: "release"
+    injector: "stub"
+    inject: |
+      kubectl -n "$NS" get helmrelease "$RELEASE" -o json > "$SNAPSHOT"
+      kubectl -n "$NS" patch helmrelease "$RELEASE" --type=json -p '[{"op":"replace","path":"/spec/chart/spec/version","value":"0.0.0-aep-eval-missing"}]'
+      # Use a standalone stand HelmRelease not reconciled by the app controller.
+    cleanup: "kubectl -n \"$NS\" patch helmrelease \"$RELEASE\" --type=merge -p \"$(jq '{spec:.spec}' \"$SNAPSHOT\")\""
+    expected: "A managed-service HelmRelease references an absent chart version."
+    match: "(?i)(chart|helm).*(version|not found|fail)"
+    symptom: "A managed-service upgrade fails."
