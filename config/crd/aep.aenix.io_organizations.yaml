@@ -205,6 +205,23 @@
                                 "type": "string"
                               }
                             }
+                          },
+                          "argocd": {
+                            "type": "object",
+                            "required": [
+                              "enabled"
+                            ],
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "version": {
+                                "type": "string",
+                                "enum": [
+                                  "9.7.1"
+                                ]
+                              }
+                            }
                           }
                         }
                       },
@@ -286,8 +303,31 @@
                                 "type": "string"
                               }
                             }
+                          },
+                          "argocd": {
+                            "type": "object",
+                            "required": [
+                              "enabled"
+                            ],
+                            "properties": {
+                              "enabled": {
+                                "type": "boolean"
+                              },
+                              "version": {
+                                "type": "string",
+                                "enum": [
+                                  "9.7.1"
+                                ]
+                              }
+                            }
                           }
-                        }
+                        },
+                        "x-kubernetes-validations": [
+                          {
+                            "rule": "!has(self.argocd)",
+                            "message": "Argo CD is supported only in nonprod; use OpenChoreo promotion for prod"
+                          }
+                        ]
                       }
                     }
                   },
@@ -298,37 +338,43 @@
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       },
                       "platform": {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       },
                       "approver": {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       },
                       "admin": {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       },
                       "auditor": {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       },
                       "finance": {
                         "type": "array",
                         "items": {
                           "type": "string"
-                        }
+                        },
+                        "x-kubernetes-list-type": "atomic"
                       }
                     }
                   },
@@ -390,7 +436,8 @@
                               "type": "string",
                               "minLength": 1,
                               "maxLength": 16384
-                            }
+                            },
+                            "x-kubernetes-list-type": "atomic"
                           },
                           "allowedImages": {
                             "type": "array",
@@ -398,13 +445,105 @@
                             "items": {
                               "type": "string",
                               "pattern": "^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$"
-                            }
+                            },
+                            "x-kubernetes-list-type": "atomic"
                           }
                         }
                       }
                     }
+                  },
+                  "vcs": {
+                    "type": "object",
+                    "required": [
+                      "provider",
+                      "url",
+                      "credentialsSecretRef",
+                      "readCredentialsSecretRef"
+                    ],
+                    "properties": {
+                      "provider": {
+                        "type": "string",
+                        "enum": [
+                          "gitlab",
+                          "github",
+                          "gitea"
+                        ]
+                      },
+                      "url": {
+                        "type": "string",
+                        "pattern": "^https://[a-zA-Z0-9.-]+(:[0-9]+)?/?$"
+                      },
+                      "groupPath": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]+(/[a-zA-Z0-9_-]+)*$"
+                      },
+                      "org": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z0-9_-]+$"
+                      },
+                      "ensureGroup": {
+                        "type": "boolean"
+                      },
+                      "credentialsSecretRef": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253,
+                            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                          }
+                        }
+                      },
+                      "readCredentialsSecretRef": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253,
+                            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                          }
+                        }
+                      },
+                      "caBundleSecretRef": {
+                        "type": "object",
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 253,
+                            "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                          }
+                        }
+                      }
+                    },
+                    "x-kubernetes-validations": [
+                      {
+                        "rule": "self.readCredentialsSecretRef.name != self.credentialsSecretRef.name",
+                        "message": "Read and admin credentials must use separate Secrets"
+                      },
+                      {
+                        "rule": "self.provider == 'gitlab' ? has(self.groupPath) && !has(self.org) : has(self.org) && !has(self.groupPath)",
+                        "message": "Use groupPath for GitLab and org for GitHub/Gitea"
+                      },
+                      {
+                        "rule": "!has(self.ensureGroup) || !self.ensureGroup || self.provider == 'gitlab'",
+                        "message": "Only GitLab supports group creation"
+                      }
+                    ]
                   }
-                }
+                },
+                "x-kubernetes-validations": []
               },
               "status": {
                 "type": "object",
@@ -492,7 +631,11 @@
                           "type": "string"
                         }
                       }
-                    }
+                    },
+                    "x-kubernetes-list-type": "atomic"
+                  },
+                  "argocdURL": {
+                    "type": "string"
                   }
                 }
               }

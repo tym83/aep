@@ -12,7 +12,7 @@ spec:
       match:
         any:
           - resources:
-              kinds: [Pod, Deployment]
+              kinds: [Pod, Deployment, ReplicaSet, StatefulSet, DaemonSet, Job, CronJob, Service, ConfigMap, Secret, ServiceAccount, PersistentVolumeClaim, Event, HorizontalPodAutoscaler, PodDisruptionBudget, NetworkPolicy, HTTPRoute, TLSRoute, GRPCRoute]
               operations: [CREATE, UPDATE]
       exclude:
         any:
@@ -31,6 +31,9 @@ spec:
                 operator: GreaterThan
                 value: 0
               - key: {{ "{{ keys(request.object.spec.template.metadata.labels || `{}`)[?starts_with(@, 'openchoreo.dev/')] | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
+              - key: {{ "{{ keys(request.object.spec.jobTemplate.spec.template.metadata.labels || `{}`)[?starts_with(@, 'openchoreo.dev/')] | length(@) }}" | quote }}
                 operator: GreaterThan
                 value: 0
 ---

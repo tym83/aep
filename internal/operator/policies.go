@@ -48,7 +48,7 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 			"features":    M{"policyExceptions": M{"enabled": true, "namespace": "aep-system"}},
 			"rbac":        M{"roles": M{"aggregate": M{"admin": false}}},
 			"openreports": M{"enabled": false, "installCrds": false}},
-		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries)},
+		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries), "platformNamespaces": stringsAny(append([]string{"kube-system", "kyverno", "argocd", "aep-system", "openchoreo-data-plane"}, o.Spec.Policy.PlatformNamespaces...))},
 		"app-cluster-" + tier:  {},
 	}
 	if tier == "prod" {
@@ -71,6 +71,14 @@ func (s *session) policies(ctx context.Context) error {
 	}
 	for _, tier := range Tiers(s.o) {
 		values := policyValues(s.o, tier, key)
+
+		if argoEnabled(s.o) {
+			host, err := argoHost(s.r.Options.ArgoCDHostTemplate, s.o.Name)
+			if err != nil {
+				return err
+			}
+			values["app-cluster-baseline"]["argocdHost"] = host
+		}
 		for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-" + tier} {
 			if name == "app-cluster-prod" && missingKey {
 				continue

@@ -16,3 +16,9 @@ keycloak:
 policyBundleRepository: oci://ghcr.io/tym83/aep/policies
 kyvernoChartURL: oci://ghcr.io/kyverno/charts/kyverno
 restoreVerification: false
+
+argocdHostTemplate: ""
+vcsWebhookURL: ""
+
+# Mirror the pinned Argo CD chart for disconnected installations.
+argocdChartURL: https://argoproj.github.io/argo-helm

@@ -248,3 +248,27 @@ func TestMembershipGroupBoundaries(t *testing.T) {
 		t.Fatalf("valid roles or hyphenated organization lost: %v", got)
 	}
 }
+
+func TestIntegrationLinksRespectMembership(t *testing.T) {
+	s, _, c, sign := fixture(t)
+	org := &api.Organization{}
+	if err := c.Get(context.Background(), client.ObjectKey{Name: "acme"}, org); err != nil {
+		t.Fatal(err)
+	}
+	org.Status.ArgoCDURL = "https://argo.acme.example"
+	org.Spec.VCS = &api.VCSSpec{Provider: "gitlab", URL: "https://git.example", GroupPath: "acme", CredentialsSecretRef: api.SecretNameReference{Name: "private-credential"}}
+	if err := c.Update(context.Background(), org); err != nil {
+		t.Fatal(err)
+	}
+	w := call(s, "/v1/me", sign([]string{"aep-acme-developer"}, nil))
+	if !strings.Contains(w.Body.String(), `"argocdUrl":"https://argo.acme.example"`) || !strings.Contains(w.Body.String(), `"repositoryUrl":"https://git.example/acme"`) {
+		t.Fatal(w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "private-credential") {
+		t.Fatal("credential reference exposed")
+	}
+	w = call(s, "/v1/me", sign([]string{"aep-other-developer"}, nil))
+	if strings.Contains(w.Body.String(), "argo.acme") {
+		t.Fatal("cross-organization link exposed")
+	}
+}

@@ -165,6 +165,15 @@
       ],
       "kind": "Namespace",
       "result": "pass"
+    },
+    {
+      "policy": "aep-openchoreo-labels",
+      "rule": "reserved-labels",
+      "resources": [
+        "spoofed-service"
+      ],
+      "kind": "Service",
+      "result": "fail"
     }
   ]
 }

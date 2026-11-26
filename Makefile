@@ -17,7 +17,7 @@ docker-build:
 
 .PHONY: policies-render policies-test policies-package
 policies-render:
-	helm template test policies/app-cluster-baseline --set organizationUID=test-org --show-only templates/workloads.yaml --show-only templates/namespaces.yaml --show-only templates/isolation.yaml > policies/app-cluster-baseline/tests/rendered.yaml
+	helm template test policies/app-cluster-baseline --set organizationUID=test-org --set argocdHost=argo.example --show-only templates/workloads.yaml --show-only templates/namespaces.yaml --show-only templates/isolation.yaml --show-only templates/network-services.yaml > policies/app-cluster-baseline/tests/rendered.yaml
 	helm template test policies/app-cluster-nonprod > policies/app-cluster-nonprod/tests/rendered.yaml
 	helm template test policies/app-cluster-prod --set-file cosignPublicKey=policies/app-cluster-prod/tests/cosign.pub > policies/app-cluster-prod/tests/rendered.yaml
 policies-test: policies-render

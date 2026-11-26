@@ -1,0 +1,124 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Test",
+  "metadata": {
+    "name": "network-boundaries"
+  },
+  "policies": [
+    "../rendered.yaml"
+  ],
+  "resources": [
+    "resources.yaml"
+  ],
+  "variables": "variables.yaml",
+  "results": [
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "ingress-boundary",
+      "resources": [
+        "reserved-host"
+      ],
+      "kind": "Ingress",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "ingress-boundary",
+      "resources": [
+        "snippet"
+      ],
+      "kind": "Ingress",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "ingress-boundary",
+      "resources": [
+        "safe-host"
+      ],
+      "kind": "Ingress",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "loadbalancer"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "nodeport"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "externalname"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "no-external-ips",
+      "resources": [
+        "external"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "clusterip"
+      ],
+      "kind": "Service",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "no-external-ips",
+      "resources": [
+        "platform"
+      ],
+      "kind": "Service",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "gitops-services",
+      "resources": [
+        "external"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "no-external-ips",
+      "resources": [
+        "ordinary-external"
+      ],
+      "kind": "Service",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-network-boundaries",
+      "rule": "ingress-boundary",
+      "resources": [
+        "reserved-tls-host"
+      ],
+      "kind": "Ingress",
+      "result": "fail"
+    }
+  ]
+}
