@@ -51,7 +51,7 @@ type config struct {
 		Parameters                                          map[string]any
 		ComponentSpec, SecretSpec                           map[string]any
 		ProtectedSpecs                                      map[string]map[string]any
-		LogsPath, OutputsPath                               string
+		LogsPath, LogsTreePath, OutputsPath                 string
 		OutputFields                                        []string
 	}
 	Network        struct{ Image, ControlAddress string }
@@ -76,6 +76,8 @@ type suite struct {
 	cleanupClient dynamic.Interface
 	cleanupKinds  []string
 	fixtures      []fixture
+	// Pod names for log cells, keyed by organization index and environment.
+	pods map[string]string
 }
 type fixture struct {
 	project, resource, component, projectRelease, resourceRelease string
@@ -331,7 +333,7 @@ func TestAcceptance(t *testing.T) {
 	if _, err = rand.Read(b); err != nil {
 		t.Fatal(err)
 	}
-	s := &suite{t: t, c: c, run: hex.EncodeToString(b), tokens: map[string]string{}, fixtures: make([]fixture, 2)}
+	s := &suite{t: t, c: c, run: hex.EncodeToString(b), tokens: map[string]string{}, fixtures: make([]fixture, 2), pods: map[string]string{}}
 	t.Logf("run id: %s", s.run)
 	s.prepareCleanup()
 	t.Cleanup(s.sweep)

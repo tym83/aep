@@ -53,7 +53,14 @@ func (s *suite) expand(v any, org int, name string) any {
 		logsComponent = s.c.Organizations[org].LogsComponent
 	}
 	logs := func(env string) string {
-		return strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{project}", logsProject, "{component}", logsComponent, "{environment}", env).Replace(s.c.Resources.LogsPath)
+		if !strings.Contains(string(b), "ogsPath}") {
+			return ""
+		}
+		path := strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{project}", logsProject, "{component}", logsComponent, "{environment}", env).Replace(s.c.Resources.LogsPath)
+		if strings.Contains(path, "{podName}") {
+			path = strings.ReplaceAll(path, "{podName}", s.logsPod(org, logsComponent, env))
+		}
+		return path
 	}
 	r := strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{project}", f.project, "{resource}", f.resource, "{component}", f.component, "{resourceType}", s.c.Resources.ResourceType, "{environment}", s.c.Resources.Environment, "{prod}", s.c.Resources.ProdEnvironment, "{projectRelease}", f.projectRelease, "{resourceRelease}", f.resourceRelease, "{name}", name, "{run}", s.run, "{logsPath}", logs(s.c.Resources.ProdEnvironment), "{nonprodLogsPath}", logs(s.c.Resources.Environment))
 	var out any
@@ -262,4 +269,65 @@ func delegatedBinding(rendered map[string]any, role, run string) (map[string]any
 		return map[string]any{"entitlement": map[string]any{"claim": "groups", "value": "e2e-unused-" + run}, "effect": "allow", "roleMappings": []any{map[string]any{"roleRef": map[string]any{"kind": "AuthzRole", "name": role}, "conditions": conditions}}}, nil
 	}
 	return nil, fmt.Errorf("operator developer binding has no nonprod restrictions")
+}
+
+// logsPod finds a pod of the log component through the binding's resource
+// tree: the OpenChoreo logs route requires a pod name, which is generated.
+// A missing binding or pod yields "absent", so denial cells still exercise
+// authorization while allowed cells fail on the response.
+func (s *suite) logsPod(org int, component, env string) string {
+	key := fmt.Sprintf("%d/%s/%s", org, component, env)
+	if pod, ok := s.pods[key]; ok {
+		return pod
+	}
+	role := "developer"
+	if s.c.Organizations[org].Users["platform"] != "" {
+		role = "platform"
+	}
+	tree := s.c.Resources.LogsTreePath
+	if tree == "" {
+		tree = "/api/v1/namespaces/{org}/releasebindings/{component}-{environment}/k8sresources/tree"
+	}
+	tree = strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{component}", component, "{environment}", env).Replace(tree)
+	pod := "absent"
+	if code, raw := s.call(org, role, "openchoreo", "GET", tree, nil, nil); code == 200 {
+		if name := podFromTree(raw); name != "" {
+			pod = name
+		}
+	}
+	if pod == "absent" {
+		s.t.Logf("no pod for logs component in %s of organization %d", env, org)
+	}
+	s.pods[key] = pod
+	return pod
+}
+func podFromTree(raw string) string {
+	var tree struct {
+		RenderedReleases []struct {
+			Nodes []struct {
+				Kind, Name string
+				Object     struct {
+					Status struct{ Phase string }
+				}
+			}
+		}
+	}
+	if json.Unmarshal([]byte(raw), &tree) != nil {
+		return ""
+	}
+	first := ""
+	for _, r := range tree.RenderedReleases {
+		for _, n := range r.Nodes {
+			if n.Kind != "Pod" || n.Name == "" {
+				continue
+			}
+			if n.Object.Status.Phase == "Running" {
+				return n.Name
+			}
+			if first == "" {
+				first = n.Name
+			}
+		}
+	}
+	return first
 }
