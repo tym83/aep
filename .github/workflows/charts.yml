@@ -1,0 +1,32 @@
+name: charts
+on:
+  push:
+    branches: [main]
+    paths: ["policies/**", "charts/**", ".github/workflows/charts.yml"]
+permissions:
+  contents: read
+  packages: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Log in to the registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+      # Published versions are immutable: tier clusters pin them, so a version
+      # that already exists is skipped instead of overwritten.
+      - name: Publish new chart versions
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          publish() { # dir repository
+            name=$(yq -r .name "$1/Chart.yaml"); version=$(yq -r .version "$1/Chart.yaml")
+            if helm show chart "$2/$name" --version "$version" >/dev/null 2>&1; then
+              echo "$name $version exists"; return
+            fi
+            helm package "$1" -d dist >/dev/null
+            helm push "dist/$name-$version.tgz" "$2"
+          }
+          for d in policies/*/; do publish "$d" "oci://ghcr.io/$owner/aep/policies"; done
+          for d in charts/*/; do publish "$d" "oci://ghcr.io/$owner/aep/charts"; done
