@@ -1,0 +1,13 @@
+image: vllm/vllm-openai:v0.11.0
+model: ""
+gpu: 1
+weights:
+  size: 100Gi
+  storageClass: ""
+  existingClaim: ""
+resources:
+  cpu: "4"
+  memory: 16Gi
+# Optional existing Secret with key api-key; pass the same key to the agent.
+apiKeySecret: ""
+extraArgs: []

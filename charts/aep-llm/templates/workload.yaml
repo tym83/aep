@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: aep-llm}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: inference
+          image: {{ .Values.image | quote }}
+          args:
+            - --model
+            - {{ required "model is required" .Values.model | quote }}
+            - --download-dir
+            - /weights
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            {{- range .Values.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- if .Values.apiKeySecret }}
+          env:
+            - name: VLLM_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.apiKeySecret }}, key: api-key}
+          {{- end }}
+          ports: [{name: http, containerPort: 8000}]
+          resources:
+            requests:
+              cpu: {{ .Values.resources.cpu | quote }}
+              memory: {{ .Values.resources.memory | quote }}
+              nvidia.com/gpu: {{ .Values.gpu }}
+            limits:
+              cpu: {{ .Values.resources.cpu | quote }}
+              memory: {{ .Values.resources.memory | quote }}
+              nvidia.com/gpu: {{ .Values.gpu }}
+          readinessProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10}
+          startupProbe: {httpGet: {path: /health, port: http}, periodSeconds: 10, failureThreshold: 180}
+          volumeMounts:
+            - {name: weights, mountPath: /weights}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: weights
+          persistentVolumeClaim:
+            claimName: {{ .Values.weights.existingClaim | default (printf "%s-weights" .Release.Name) }}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  ports: [{name: http, port: 8000, targetPort: http}]
+{{- if not .Values.weights.existingClaim }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-weights
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- if .Values.weights.storageClass }}
+  storageClassName: {{ .Values.weights.storageClass | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.weights.size }}
+{{- end }}

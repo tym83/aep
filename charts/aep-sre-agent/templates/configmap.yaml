@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-extensions
+data:
+  mcp.json: |
+    {"mcpServers":{"cozystack":{"type":"streamable_http","url":{{ .Values.mcpUrl | toJson }},"headers":{"Authorization":"Bearer ${COZYSTACK_MCP_TOKEN}"}}}}
+  CONTEXT.md: |
+{{ .Files.Get "files/rca/CONTEXT.md" | indent 4 }}
+{{ range $name := list "database-below-service" "tenant-cluster-capacity" "quota-exhaustion" }}
+  {{ $name }}.md: |
+{{ $.Files.Get (printf "files/rca/skills/%s/SKILL.md" $name) | indent 4 }}
+{{ end }}
+  auth-config.yaml: |
+    auth:
+      subject_types:
+        - type: user
+          display_name: User
+          priority: 1
+          auth_mechanisms:
+            - type: jwt
+              entitlement: {claim: groups, display_name: User Group}
+        - type: service_account
+          display_name: Service Account
+          priority: 2
+          auth_mechanisms:
+            - type: jwt
+              entitlement: {claim: client_id, display_name: Client ID}

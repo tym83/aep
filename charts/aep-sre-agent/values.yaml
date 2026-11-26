@@ -1,0 +1,35 @@
+organization: ""
+image:
+  repository: cr.openchoreo.dev/openchoreo/sre-agent
+  tag: latest-dev
+  digest: ""
+  pullPolicy: IfNotPresent
+# Existing per-organization secret: COZYSTACK_MCP_TOKEN, RCA_LLM_API_KEY,
+# OAUTH_CLIENT_SECRET, SQL_BACKEND_URI. Never put credentials in values.
+secretName: ""
+mcpUrl: https://cozystack-mcp.aep-system.svc:8443/mcp
+llm:
+  baseUrl: ""
+  modelName: ""
+observerApiUrl: http://observer.openchoreo-observability-plane:8080
+openchoreoApiUrl: http://openchoreo-api.openchoreo-control-plane:8080
+reportBackend: postgresql
+oauth:
+  tokenUrl: ""
+  scope: ""
+jwt:
+  issuer: ""
+  audience: ""
+  jwksUrl: ""
+networkPolicy:
+  alertRouterNamespace: aep-system
+  alertRouterLabels:
+    app.kubernetes.io/name: alert-router
+  portalNamespace: aep-system
+  portalLabels:
+    app.kubernetes.io/name: aep-portal
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: "2", memory: 2Gi}
+# Optional CA bundle Secret containing ca.crt for the internal HTTPS endpoints.
+caSecretName: ""

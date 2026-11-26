@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cozystack": {
+      "type": "streamable_http",
+      "url": "https://cozystack-mcp.aep-system.svc:8443/mcp",
+      "headers": {"Authorization": "Bearer ${COZYSTACK_MCP_TOKEN}"}
+    }
+  }
+}
