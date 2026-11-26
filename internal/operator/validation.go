@@ -1,6 +1,7 @@
 package operator
 
 import (
+	"crypto/sha256"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/kinds"
@@ -187,4 +188,11 @@ func ValidateName(name string) error {
 		return fmt.Errorf("organization name must be 1-32 lowercase alphanumeric characters and not reserved")
 	}
 	return nil
+}
+
+func shortName(name string) string {
+	if len(name) <= 63 {
+		return name
+	}
+	return fmt.Sprintf("%s-%x", name[:46], sha256.Sum256([]byte(name)))[:63]
 }

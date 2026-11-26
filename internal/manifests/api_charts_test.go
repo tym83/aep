@@ -42,9 +42,9 @@ func TestChangeChartRBAC(t *testing.T) {
 			if doc["kind"] == "ClusterRole" {
 				clusterRoles++
 				if len(role.Rules) != 1 || !slices.Equal(role.Rules[0].APIGroups, []string{"aep.aenix.io"}) ||
-					!slices.Equal(role.Rules[0].Resources, []string{"changerequests"}) ||
+					!slices.Equal(role.Rules[0].Resources, []string{"changerequests", "organizations"}) ||
 					!slices.Equal(role.Rules[0].Verbs, []string{"get", "list", "watch"}) {
-					t.Fatal("cluster permissions must only read ChangeRequests")
+					t.Fatal("cluster permissions must only read ChangeRequests and Organizations")
 				}
 			} else {
 				roles++

@@ -6,10 +6,14 @@ import (
 )
 
 type Quotas map[string]string
+type EnvironmentDataPlane struct {
+	External string `json:"external"`
+}
 type Environment struct {
-	Name        string `json:"name"`
-	Tier        string `json:"tier"`
-	ChangeModel string `json:"changeModel"`
+	DataPlane   EnvironmentDataPlane `json:"dataPlane,omitzero"`
+	Name        string               `json:"name"`
+	Tier        string               `json:"tier"`
+	ChangeModel string               `json:"changeModel"`
 }
 type NodeGroup struct {
 	MinReplicas  int32  `json:"minReplicas"`
@@ -65,6 +69,7 @@ type PolicySpec struct {
 	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
 	Mode            string `json:"mode,omitempty"`
 }
+
 type OrganizationSpec struct {
 	VCS          *VCSSpec            `json:"vcs,omitempty"`
 	Policy       PolicySpec          `json:"policy,omitempty"`

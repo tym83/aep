@@ -1,0 +1,10 @@
+apiVersion: v2
+name: aep-gitlab
+description: Optional installation-wide GitLab with external Cozystack services
+type: application
+version: 0.1.0
+appVersion: '19.6.2'
+dependencies:
+  - name: gitlab
+    version: '10.6.2'
+    repository: https://charts.gitlab.io

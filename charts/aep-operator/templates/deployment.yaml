@@ -33,6 +33,13 @@ spec:
             - {{ printf "--registry-ca-secret=%s" .Values.registryCASecret | quote }}
             - {{ printf "--policy-bundle-repository=%s" (include "aep.mirror" (dict "root" . "ref" .Values.policyBundleRepository)) | quote }}
             - {{ printf "--kyverno-chart-url=%s" (include "aep.mirror" (dict "root" . "ref" .Values.kyvernoChartURL)) | quote }}
+            {{- if .Values.fleet.enabled }}
+            - --fleet-chart-dir=/fleet-charts
+            - {{ printf "--fleet-gateway-url=%s" (required "fleet.gatewayURL required" .Values.fleet.gatewayURL) | quote }}
+            {{- if .Values.fleet.hubConfigSecret }}
+            - --fleet-hub-config=/fleet-hub/config
+            {{- end }}
+            {{- end }}
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
             - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.bridgeImage)))) | quote }}
@@ -49,6 +56,18 @@ spec:
             - {{ printf "--keycloak-realm=%s" .Values.keycloak.realm | quote }}
             - {{ printf "--keycloak-credentials-secret=%s" .Values.keycloak.credentialsSecret | quote }}
             {{- end }}
+          {{- if .Values.fleet.enabled }}
+          env:
+            - {name: HELM_CACHE_HOME, value: /tmp/helm/cache}
+            - {name: HELM_CONFIG_HOME, value: /tmp/helm/config}
+            - {name: HELM_DATA_HOME, value: /tmp/helm/data}
+          volumeMounts:
+            - {name: fleet-charts, mountPath: /fleet-charts, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.fleet.hubConfigSecret }}
+            - {name: fleet-hub, mountPath: /fleet-hub, readOnly: true}
+            {{- end }}
+          {{- end }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -60,3 +79,17 @@ spec:
             httpGet: {path: /readyz, port: 8081}
           livenessProbe:
             httpGet: {path: /healthz, port: 8081}
+
+      {{- if .Values.fleet.enabled }}
+      volumes:
+        - name: fleet-charts
+          persistentVolumeClaim:
+            claimName: {{ required "fleet.chartsPVC required" .Values.fleet.chartsPVC }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.fleet.hubConfigSecret }}
+        - name: fleet-hub
+          secret:
+            secretName: {{ .Values.fleet.hubConfigSecret }}
+        {{- end }}
+      {{- end }}

@@ -96,6 +96,20 @@ func (s *session) delete(ctx context.Context) error {
 			return e
 		}
 	}
+	var external api.ExternalClusterList
+	if err := s.r.List(ctx, &external, client.InNamespace("tenant-"+s.o.Name)); err != nil {
+		return err
+	}
+	for i := range external.Items {
+		ec := &external.Items[i]
+		if ec.Spec.Organization != s.o.Name {
+			continue
+		}
+		if err := s.r.Delete(ctx, ec); client.IgnoreNotFound(err) != nil {
+			return err
+		}
+		return pending("waiting for ExternalCluster %s cleanup", ec.Name)
+	}
 	var e error
 	// Delete one dependency layer at a time; wait for finalizers before advancing.
 	for _, r := range []string{"secretreferences", "authzrolebindings", "authzroles", "deploymentpipelines", "environments", "dataplanes"} {

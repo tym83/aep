@@ -35,6 +35,9 @@ func (s *session) openChoreo(ctx context.Context) error {
 		}
 	}
 	for _, e := range s.o.Spec.Environments {
+		if e.DataPlane.External != "" {
+			continue
+		}
 		u := obj(ocAPI, "Environment", s.o.Name, e.Name, M{"dataPlaneRef": M{"kind": "DataPlane", "name": PhysicalTier(s.o, e.Tier)}})
 		u.SetAnnotations(map[string]string{"aep.aenix.io/change-model": e.ChangeModel})
 		if err := s.cp.apply(ctx, s.o, "environments", u); err != nil {

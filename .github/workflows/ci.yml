@@ -15,7 +15,15 @@ jobs:
           go-version-file: go.mod
       - run: go build ./...
       - run: go vet ./...
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - run: helm repo add gitlab https://charts.gitlab.io && helm dependency build charts/aep-gitlab
+      - name: Stage fleet charts for permission coverage
+        run: sh charts/aep-operator/fleet-stage.sh "$RUNNER_TEMP/fleet-charts"
       - run: go test ./...
+        env:
+          AEP_FLEET_CHART_TEST_DIR: ${{ runner.temp }}/fleet-charts
       # Flag registration happens at start-up, outside unit tests: catch
       # duplicate flags and init panics in every shipped binary.
       - name: Binaries start
@@ -36,6 +44,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: bash tools/check-argocd.sh
+      - run: helm repo add gitlab https://charts.gitlab.io && helm dependency build charts/aep-gitlab
       - run: make charts-lint
       - run: go test ./internal/manifests ./charts
 
@@ -52,6 +61,10 @@ jobs:
       - name: Fetch pinned upstream charts for mirror rendering
         run: |
           mkdir -p release/.cache
+          helm pull klusterlet --repo https://open-cluster-management.io/helm-charts --version 1.4.0 --untar --untardir release/.cache
+          helm pull gitlab --repo https://charts.gitlab.io --version 10.6.2 --destination release/.cache
+          mkdir -p charts/aep-gitlab/charts
+          cp release/.cache/gitlab-10.6.2.tgz charts/aep-gitlab/charts/
           helm pull argo-cd --repo https://argoproj.github.io/argo-helm --version 9.7.1 --untar --untardir release/.cache
           helm pull oci://ghcr.io/kyverno/charts/kyverno --version 3.9.2 --untar --untardir release/.cache
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway --version v2.3.11 --untar --untardir release/.cache

@@ -3,3 +3,5 @@
 - ghcr.io/tym83/aep-portal:@build
 - ghcr.io/tym83/aep-cozystack-mcp:@build
 - ghcr.io/tym83/aep-alert-router:@build
+- quay.io/open-cluster-management/registration:v1.4.0
+- quay.io/open-cluster-management/work:v1.4.0

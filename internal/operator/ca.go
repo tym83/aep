@@ -37,7 +37,7 @@ func GenerateCA(name string, now time.Time) (map[string][]byte, error) {
 	return map[string][]byte{"tls.crt": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "tls.key": pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: pk})}, nil
 }
 func (s *session) ca(ctx context.Context, tier string) (map[string][]byte, error) {
-	name := "agent-ca-" + s.o.Name + "-" + tier
+	name := shortName("agent-ca-" + s.o.Name + "-" + tier)
 	sec, e := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, name, metav1.GetOptions{})
 	var data map[string][]byte
 	if errors.IsNotFound(e) {

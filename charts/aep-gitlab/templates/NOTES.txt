@@ -1,0 +1,3 @@
+This release is installation-wide. Verify external Postgres, Redis, S3 and
+Keycloak before admitting users. See docs/vcs.md for the install profile,
+backup/restore, required Secrets and upgrade gates.

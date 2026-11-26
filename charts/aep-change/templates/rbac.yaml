@@ -15,7 +15,7 @@ metadata:
   name: {{ $prefix }}-watch
 rules:
   - apiGroups: [aep.aenix.io]
-    resources: [changerequests]
+    resources: [changerequests, organizations]
     verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -43,12 +43,15 @@ rules:
   {{- if eq $component "api" }}
   - apiGroups: [aep.aenix.io]
     resources: [changerequests]
-    verbs: [get, list, create]
+    verbs: [get, list, create, delete]
   {{- end }}
   - apiGroups: [aep.aenix.io]
     resources: [changerequests/status]
     verbs: [get, update, patch]
   {{- if eq $component "controller" }}
+  - apiGroups: [aep.aenix.io]
+    resources: [externalclusters]
+    verbs: [get, list, create, delete]
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     verbs: [get, create, update, delete]

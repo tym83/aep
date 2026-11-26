@@ -6,3 +6,5 @@ state/
 /.cache/
 
 release/.cache/
+# Upstream chart packages are fetched from pinned Chart.lock dependencies.
+charts/aep-gitlab/charts/

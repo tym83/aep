@@ -111,6 +111,7 @@ Rules enforced by the controller:
 | `resource-update` | implemented | Replaces `resourceTypeEnvironmentConfigs` and/or advances `resourceRelease`/`retainPolicy` on an existing `ResourceReleaseBinding`. |
 | `decommission` | implemented | Requests owner-checked binding deletion and verifies absence. Retain reports `Applied/Retained`, keeping data; a new normal, human-approved change with `desired: {deleteData: true}` sets `retainPolicy: Delete` before deletion. A remaining non-retained binding reports `Applied/Finalizing`; verify absence before deleting its owner. Idempotent. |
 | `breakglass` | records only | Validated (duration ≤ 4h, requester in the breakglass group), approved by security on-call, recorded with reason `Recorded`. The actual grant sits behind the `change.Granter` interface — a TODO: temporary group membership, expiring prod bindings, SIEM alert, post-window credential rotation. |
+| `cluster-attach` | external assignment | Normal model; platform approval and a distinct security approver for prod/regulated. See [fleet](fleet.md). |
 | the rest | stored, `NotImplemented` | Validated, approved and stored; the `Applied` condition reports `NotImplemented` until a handler lands. |
 
 ## HTTP API
@@ -178,7 +179,7 @@ reconcile without a restart.
 ## Known limitations and open questions
 
 - `resource-restore`, `credential-rotate`, `policy-exception`,
-  `organization-change`, `cluster-attach`, `machine-approve`,
+  `organization-change`, `machine-approve`,
   `machine-decommission` return `NotImplemented`; `breakglass` records
   without granting (`change.Granter` is the extension point).
 - Approval quorum is 1; per-organization quorum and ordered approvals

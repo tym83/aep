@@ -5,7 +5,9 @@ RUN go mod download
 COPY . .
 ARG AEP_VERSION=dev
 RUN CGO_ENABLED=0 go build -ldflags "-X github.com/tym83/aep/internal/version.Version=${AEP_VERSION}" -trimpath -o /operator ./cmd/operator
+FROM alpine/helm:3.17.3 AS helm
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /operator /operator
+COPY --from=helm /usr/bin/helm /usr/local/bin/helm
 USER 65532:65532
 ENTRYPOINT ["/operator"]

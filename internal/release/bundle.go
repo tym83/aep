@@ -22,6 +22,11 @@ func (c *Client) Bundle(ctx context.Context, m Manifest, out string) error {
 	if out == "" {
 		return fmt.Errorf("--out required")
 	}
+	var err error
+	m, err = c.publishedSignatures(ctx, m)
+	if err != nil {
+		return err
+	}
 	if e := os.MkdirAll(out, 0755); e != nil {
 		return e
 	}
@@ -47,6 +52,9 @@ func (c *Client) Bundle(ctx context.Context, m Manifest, out string) error {
 				return e
 			}
 			if d.MediaType.IsIndex() {
+				if sig {
+					return fmt.Errorf("signature must be an image for %s", a.Ref)
+				}
 				idx, e := d.ImageIndex()
 				if e != nil {
 					return e

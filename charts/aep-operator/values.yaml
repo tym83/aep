@@ -37,3 +37,10 @@ registrySecret: ""
 registryCASecret: ""
 
 registryInsecure: false
+fleet:
+  enabled: false
+  gatewayURL: ''
+  # Read-only PVC populated with fleet-stage.sh. Never mounted in external clusters.
+  chartsPVC: ''
+  # Optional dedicated aep-fleet hub config Secret, key config. Empty uses management.
+  hubConfigSecret: ''

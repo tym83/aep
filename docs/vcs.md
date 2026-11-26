@@ -1,8 +1,7 @@
 # Corporate VCS integration
 
 Stage 1 connects the customer's existing GitLab or GitHub/GitHub Enterprise.
-It does not install GitLab per tenant or per platform. Bundled GitLab and
-external cluster fleets are later stages. `gitea` is reserved in the API;
+An optional shared GitLab installation profile is described below. `gitea` is reserved in the API;
 selecting it returns an explicit unsupported-provider error, never Ready.
 
 ## Organization contract
@@ -143,3 +142,178 @@ for the UI. No tests contact a customer VCS or Kubernetes cluster.
 
 Provider references: [GitLab authentication](https://docs.gitlab.com/api/rest/authentication/),
 [GitHub App installation tokens](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app).
+
+## Optional installation profile
+
+`charts/aep-gitlab` is a small operator-independent wrapper around the official
+[GitLab chart](https://docs.gitlab.com/charts/), pinned to **10.6.2 / GitLab 19.6.2**, verified against the official chart repository and
+[patch announcement](https://docs.gitlab.com/releases/patches/patch-release-gitlab-19-6-2-released/)
+on 2026-11-25. Review later security releases before deployment and follow required
+upgrade stops with a restore rehearsal. There is **one instance
+per installation**, in `tenant-aep` on management or a dedicated tenant cluster.
+Do not install this chart per Organization. An individual tenant's own GitLab is
+an ordinary marketplace application, outside this profile.
+
+The wrapper disables bundled Postgres, Redis, MinIO, ingress controller,
+cert-manager, Prometheus, registry and runners. It uses Cozystack-managed Postgres,
+Redis and S3 buckets. Gitaly repository storage remains a persistent volume and
+must have its own capacity, backup and recovery plan; S3 does not replace Gitaly.
+
+1. Provision Cozystack Postgres/Redis/Bucket applications in the installation
+   service tenant using the schemas of the installed Cozystack release. Select
+   HA sizes and backup policies, provision a dedicated database/user with GitLab's
+   required extensions and Redis endpoint/authentication. Never reuse tenant DBs.
+2. Provision separate buckets for LFS, artifacts, uploads, packages, backups and
+   temporary restore data. Enable encryption, retention and lifecycle policies;
+   grant only the required bucket operations to each credential.
+3. On the GitLab target cluster, create referenced Secrets from managed service
+   outputs via the installation's secret-management process. Use reachable TLS
+   endpoints/CA bundles when GitLab is on a dedicated cluster; `.svc` addresses in
+   default values illustrate management-local service names only. Configure
+   Postgres `sslmode` and Redis TLS according to the chart's supported settings.
+4. Prepare DNS, ingress class and TLS Secret; set `gitlab.global.hosts.domain` and
+   `gitlab.global.ingress.class`. Supply exact endpoints and Secret names in a
+   protected site values file. Install the release only after review.
+5. Configure every participating Organization's `spec.vcs.provider: gitlab`,
+   shared URL and distinct `groupPath`. Use Keycloak groups/explicit membership to
+   separate organizations; shared login does not authorize repository access.
+
+The referenced Secrets are:
+
+| Secret | Key | Content |
+|---|---|---|
+| gitlab-postgres | password | Dedicated database user's password |
+| gitlab-redis | password | Managed Redis password |
+| gitlab-s3 | connection | Rails object-store connection YAML |
+| gitlab-backup-s3 | config | Toolbox s3cmd configuration |
+| gitlab-keycloak | provider | OpenID Connect provider YAML |
+| gitlab-ingress-tls | tls.crt, tls.key | Public GitLab hostname TLS certificate |
+
+Example object-store connection (create inside the Secret, not values):
+
+```yaml
+provider: AWS
+region: us-east-1
+aws_access_key_id: REPLACE_FROM_SECRET_MANAGER
+aws_secret_access_key: REPLACE_FROM_SECRET_MANAGER
+endpoint: https://s3.example.com
+path_style: true
+```
+
+Register a confidential Keycloak OIDC client with redirect URI
+`https://gitlab.example.com/users/auth/openid_connect/callback`. Provider Secret:
+
+```yaml
+name: openid_connect
+label: Keycloak
+args:
+  name: openid_connect
+  scope: [openid, profile, email]
+  response_type: code
+  issuer: https://identity.example.com/realms/aep
+  discovery: true
+  uid_field: sub
+  pkce: true
+  client_options:
+    identifier: gitlab
+    secret: REPLACE_FROM_SECRET_MANAGER
+    redirect_uri: https://gitlab.example.com/users/auth/openid_connect/callback
+```
+
+Auto-created users remain blocked until explicitly admitted. Do not enable
+email-based auto-linking without verifying the directory's email trust. Keep an
+audited breakglass admin path for identity outages; restrict initial-root Secret
+access and rotate it after setup. See [GitLab OmniAuth](https://docs.gitlab.com/charts/charts/globals/#omniauth)
+and [external services](https://docs.gitlab.com/charts/advanced/external-db/).
+
+Prepare and inspect without deploying (Helm 4):
+install the local renderer plugin with
+`helm plugin install ./charts/aep-gitlab/postrenderer` and put the reviewed
+`aep-release` binary on PATH. Helm 3 excludes hooks from its built-in
+post-renderer; use the complete-output rendering command below instead.
+
+```sh
+helm dependency build charts/aep-gitlab
+helm lint charts/aep-gitlab --set gitlab.global.ingress.class=nginx
+helm template gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml \
+  --post-renderer aep-images
+```
+
+For Helm 3, render and pin the complete manifest, including hook Jobs:
+
+```sh
+AEP_REGISTRY_MIRROR=mirror.example/cache charts/aep-gitlab/render.sh \
+  gitlab charts/aep-gitlab --namespace tenant-aep -f site-values.yaml
+```
+
+This prepares manifests for review; it does not install a Helm release. Helm 3
+install/upgrade requires explicit digest-pinned mirror image values for hooks;
+its `--post-renderer` alone cannot enforce that requirement.
+
+Retain Chart.lock; upstream packages are not committed. Validate all rendered
+pods against restricted PSS for the selected site options, including hooks and
+backup CronJobs. The upstream webservice Helm test Pod lacks a restricted security context, so
+`helmTests` is disabled; perform external HTTP/repository smoke tests instead.
+No privileged runners or Docker-in-Docker are part of this
+profile. Images are pinned by the upstream chart/app version; mirror their exact
+resolved references in disconnected environments.
+
+## Operations and recovery
+
+Monitor Gitaly latency/disk space, Sidekiq queues, web errors, Redis memory,
+Postgres replication, object-store failures and backup age. Toolbox backup CronJob
+runs daily; independently back up the database with Cozystack and archive GitLab
+configuration/encryption Secrets. A recoverable backup requires a coordinated
+GitLab application backup (repositories/database/metadata), object storage and
+Secrets, not just database snapshots. Set RPO/RTO and test restoration to an
+isolated target at the same GitLab version before upgrades. Do not declare recovery
+successful until repository clone/push, LFS/artifacts, SSO and a CI publish work.
+
+Follow [required upgrade stops](https://docs.gitlab.com/update/upgrade_paths/),
+wait for background migrations at each stop and take verified backups. A Helm
+rollback alone is not a database downgrade strategy. This change performs no
+installation and no live GitLab integration test.
+
+## Cozystack service contract
+
+Provision PostgreSQL **16 or newer**; `postgresMajorVersion` is a required deployment
+assertion checked by the wrapper (it cannot inspect a remote server during Helm
+rendering). For a Cozystack Postgres application named `gitlab`, the chart release
+is `postgres-gitlab` and the writable endpoint is
+`postgres-gitlab-rw.tenant-aep.svc`. Use the CNPG writable service, not the cluster
+name. The wrapper requires `sslMode: verify-full`; a narrow template override adds
+hostname verification to upstream's verify-ca configuration. Supply
+`gitlab-postgres-tls` containing `ca.crt`, `tls.crt`, `tls.key` for the dedicated
+GitLab database role. The server certificate must cover the configured host.
+
+For Redis application `gitlab`, the release is `redis-gitlab`, Sentinel service is
+`rfs-redis-gitlab.tenant-aep.svc:26379`, and the monitored master set is `mymaster`.
+`global.redis.host` is that master-set name when Sentinels are configured; do not
+use a single Redis Pod or service as a master-discovery substitute. Enable TLS when
+creating the Cozystack Redis service, use `rediss` and TLS on each Sentinel, and
+provide `gitlab-redis-ca` to the GitLab trusted certificate bundle. Redis auth uses
+`gitlab-redis/password`; Sentinel auth is disabled in the Cozystack default and must
+match the installed service if changed. For a separate GitLab cluster, provide
+routable Sentinel and Redis advertised addresses, not inaccessible `.svc` names.
+
+These names and CA contracts were checked in Cozystack `upstream/main` under
+`packages/apps/redis/templates/{redisfailover,certmanager,tenant-projection}.yaml`
+and `packages/apps/postgres/templates/{db,tenant-projection}.yaml`.
+`global.ingress.class` is mandatory. The bundled ingress/Gateway controllers remain
+disabled. All rendered GitLab images, including hooks and init containers, enter
+the release inventory; use its exact digests when mirroring the installation.
+Upgrades must follow the official [upgrade paths](https://docs.gitlab.com/update/upgrade_paths/),
+including all required stops and completed background migrations, rather than
+jumping directly from the old 18.6.0 baseline to 19.6.2.
+
+With Helm 4, use `--post-renderer aep-images` for Helm template,
+install and upgrade. Set `AEP_REGISTRY_MIRROR` for disconnected installations.
+The renderer pins every container/init image to the reviewed release digest,
+rewrites its registry and rejects images absent from the inventory. It uses the
+installed `aep-release` binary, with a source-checkout fallback for development.
+This is necessary because upstream GitLab subcharts use different image-value
+contracts. Keep the post-renderer and release inventory version with the chart.
+
+Helm 4 uses the `postrenderer/v1` plugin name (`aep-images`); Helm 3 uses
+the complete-output wrapper above. CI tests the appropriate path according to the
+installed Helm version; plugin installation is isolated from the user's plugins.

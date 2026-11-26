@@ -169,7 +169,7 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 	if Expired(cr, now, r.ttl()) {
 		return r.expire(ctx, cr)
 	}
-	handler := HandlerFor(cr.Spec.Operation, r.Granter)
+	handler := r.handler(cr.Spec.Operation)
 	var oc *ocapi.Client
 	if IsBindingOp(cr.Spec.Operation) {
 		var e error
@@ -205,7 +205,20 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	}
+	if cr.Spec.Operation == api.OperationClusterAttach || cr.Spec.Operation == api.OperationClusterDetach {
+		locked, e := r.acquireLease(ctx, cr)
+		if e != nil {
+			return r.retry(ctx, cr, "LeaseUnavailable", e, now)
+		}
+		if !locked {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+	}
 	res, e := handler.Apply(ctx, oc, cr)
+	if e == nil && res.Pending {
+		r.setCondition(cr, "Applied", metav1.ConditionFalse, "CleanupPending", res.Message)
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, r.save(ctx, cr)
+	}
 	if e == nil {
 		cr.Status.Attempts++
 		reason := res.Reason
@@ -257,7 +270,7 @@ func (r *Reconciler) captureBefore(ctx context.Context, cr *api.ChangeRequest, n
 	if cr.Status.Before != nil {
 		return nil
 	}
-	handler := HandlerFor(cr.Spec.Operation, r.Granter)
+	handler := r.handler(cr.Spec.Operation)
 	var oc *ocapi.Client
 	if IsBindingOp(cr.Spec.Operation) {
 		var e error

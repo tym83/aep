@@ -91,8 +91,8 @@ func TestOperatorChart(t *testing.T) {
 		t.Fatalf("%v: %s", e, b)
 	}
 	docs := decode(t, b)
-	if len(docs) != 6 {
-		t.Fatalf("expected two CRDs, SA, RBAC and Deployment, got %d", len(docs))
+	if len(docs) != 7 {
+		t.Fatalf("expected three CRDs, SA, RBAC and Deployment, got %d", len(docs))
 	}
 	for _, d := range docs {
 		if d["kind"] != "ClusterRole" {

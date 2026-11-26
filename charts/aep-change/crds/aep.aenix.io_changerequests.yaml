@@ -89,6 +89,7 @@ spec:
                 - breakglass
                 - organization-change
                 - cluster-attach
+                - cluster-detach
                 - machine-approve
                 - machine-decommission
                 - decommission

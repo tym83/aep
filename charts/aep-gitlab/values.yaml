@@ -1,0 +1,112 @@
+global:
+  imageRegistry: ""
+  # Nested dependency conditions read the wrapper's global scope.
+  gatewayApi: {enabled: false, installEnvoy: false, configureCertmanager: false}
+postgresMajorVersion: 16
+# One release per installation, in tenant-aep or a dedicated tenant cluster.
+# Replace endpoints and create referenced Secrets before installation.
+gitlab:
+  global:
+    gatewayApi:
+      enabled: false
+      installEnvoy: false
+      configureCertmanager: false
+    edition: ce
+    certificates:
+      customCAs:
+        - secret: gitlab-redis-ca
+    hosts:
+      domain: example.invalid
+      https: true
+    ingress:
+      enabled: true
+      class: "" # required: site ingress controller class
+      configureCertmanager: false
+      tls:
+        secretName: gitlab-ingress-tls
+    psql:
+      host: postgres-gitlab-rw.tenant-aep.svc
+      sslMode: verify-full
+      ssl:
+        secret: gitlab-postgres-tls
+        serverCA: ca.crt
+        clientCertificate: tls.crt
+        clientKey: tls.key
+      port: 5432
+      database: gitlabhq_production
+      username: gitlab
+      password:
+        secret: gitlab-postgres
+        key: password
+    redis:
+      host: mymaster # Sentinel master set, not a DNS hostname
+      scheme: rediss
+      sentinels:
+        - host: rfs-redis-gitlab.tenant-aep.svc
+          port: 26379
+          ssl: true
+      port: 6379
+      auth:
+        enabled: true
+        secret: gitlab-redis
+        key: password
+    minio:
+      enabled: false
+    appConfig:
+      object_store:
+        enabled: true
+        connection:
+          secret: gitlab-s3
+          key: connection
+      lfs: {bucket: gitlab-lfs}
+      artifacts: {bucket: gitlab-artifacts}
+      uploads: {bucket: gitlab-uploads}
+      packages: {bucket: gitlab-packages}
+      backups:
+        bucket: gitlab-backups
+        tmpBucket: gitlab-backups-tmp
+      omniauth:
+        enabled: true
+        allowSingleSignOn: [openid_connect]
+        blockAutoCreatedUsers: true
+        providers:
+          - secret: gitlab-keycloak
+            key: provider
+  traefik: {install: false}
+  haproxy: {install: false}
+  openbao: {install: false}
+  gitlab-zoekt: {install: false}
+  ai-gateway: {install: false}
+  certmanager:
+    install: false
+  installCertmanager: false
+  nginx-ingress:
+    enabled: false
+  prometheus:
+    install: false
+  postgresql:
+    install: false
+  redis:
+    install: false
+  gitlab-runner:
+    install: false
+  registry:
+    enabled: false
+  gitlab:
+    gitaly:
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+    webservice:
+      # Upstream test Pod lacks restricted PSS context. Use external smoke tests.
+      helmTests:
+        enabled: false
+    toolbox:
+      backups:
+        objectStorage:
+          backend: s3
+          config:
+            secret: gitlab-backup-s3
+            key: config
+        cron:
+          enabled: true
+          schedule: '0 2 * * *'

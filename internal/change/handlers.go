@@ -21,6 +21,7 @@ var ErrNotImplemented = errors.New("operation handler is not implemented")
 
 // Result reports what Apply did.
 type Result struct {
+	Pending bool // Ordered cleanup is still in progress; do not consume failure attempts.
 	// Executed is false when the change was recorded but the platform side is
 	// a manual step (breakglass grant).
 	Executed bool
@@ -60,7 +61,7 @@ func (RecordOnlyGranter) Grant(context.Context, *api.ChangeRequest) (bool, error
 
 func Implemented(op api.ChangeOperation) bool {
 	switch op {
-	case api.OperationPromote, api.OperationRollback, api.OperationResourceUpdate, api.OperationDecommission, api.OperationBreakglass:
+	case api.OperationClusterAttach, api.OperationClusterDetach, api.OperationPromote, api.OperationRollback, api.OperationResourceUpdate, api.OperationDecommission, api.OperationBreakglass:
 		return true
 	}
 	return false

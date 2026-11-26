@@ -177,6 +177,11 @@ func (c *Client) Mirror(ctx context.Context, m Manifest, to string) error {
 	if to == "" {
 		return fmt.Errorf("--to required")
 	}
+	var err error
+	m, err = c.publishedSignatures(ctx, m)
+	if err != nil {
+		return err
+	}
 	for _, a := range m.Artifacts {
 		if err := c.requireSignature(a); err != nil {
 			return err

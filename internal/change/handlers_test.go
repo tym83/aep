@@ -222,7 +222,7 @@ func TestBreakglassRecordOnly(t *testing.T) {
 func TestNotImplementedOperations(t *testing.T) {
 	for _, op := range []api.ChangeOperation{
 		api.OperationResourceRestore, api.OperationCredentialRotate, api.OperationPolicyException,
-		api.OperationOrganizationChange, api.OperationClusterAttach, api.OperationMachineApprove, api.OperationMachineDecommission,
+		api.OperationOrganizationChange, api.OperationMachineApprove, api.OperationMachineDecommission,
 	} {
 		if Implemented(op) {
 			t.Fatalf("%s must not report implemented", op)
