@@ -104,27 +104,27 @@ func ExternalSpec(cr *api.ChangeRequest) (api.ExternalClusterSpec, error) {
 // trusts an ExternalCluster annotation or a caller-supplied approved boolean.
 func VerifyExternalApproval(ctx context.Context, c client.Reader, ec *api.ExternalCluster) error {
 	if ec.Namespace != OrgNamespace("", ec.Spec.Organization) {
-		return fmt.Errorf("assignment namespace does not match organization")
+		return approvalMismatch("assignment namespace does not match organization")
 	}
 	cr := &api.ChangeRequest{}
 	if e := c.Get(ctx, client.ObjectKey{Namespace: ec.Namespace, Name: ec.Spec.ChangeRequestRef}, cr); e != nil {
 		return e
 	}
 	if cr.Spec.Operation != api.OperationClusterAttach || cr.Spec.Target.Name != ec.Name || cr.Status.Phase != api.PhaseApplied {
-		return fmt.Errorf("assignment has no applied cluster-attach change")
+		return approvalMismatch("assignment has no applied cluster-attach change")
 	}
 	s, e := ExternalSpec(cr)
 	if e != nil {
-		return e
+		return approvalMismatch("%v", e)
 	}
 	actual := ec.Spec
 	actual.Suspended = false
 	actual.ClusterProfileRef.APIVersion = s.ClusterProfileRef.APIVersion
 	if !reflect.DeepEqual(s, actual) {
-		return fmt.Errorf("assignment differs from approved change")
+		return approvalMismatch("assignment differs from approved change")
 	}
 	if p, _, _ := EvaluateFleetApprovals(cr.Spec, cr.Status.Approvals); p != api.PhaseApproved {
-		return fmt.Errorf("fleet approvals missing")
+		return approvalMismatch("fleet approvals missing")
 	}
 	return ValidateFleetEnvironment(ctx, c, ec.Spec, ec.Name)
 }
@@ -138,7 +138,7 @@ func ValidateFleetEnvironment(ctx context.Context, c client.Reader, s api.Extern
 			return nil
 		}
 	}
-	return fmt.Errorf("environment and tier must match Organization.spec.environments")
+	return approvalMismatch("environment and tier must match Organization.spec.environments")
 }
 
 type clusterAttachHandler struct{ c client.Client }
@@ -230,4 +230,12 @@ func (h clusterDetachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *ap
 		return Result{}, e
 	}
 	return Result{Pending: true, Message: "waiting for ordered assignment cleanup"}, nil
+}
+
+// ApprovalMismatchError denotes observed evidence, never a failed API read.
+type ApprovalMismatchError struct{ Message string }
+
+func (e *ApprovalMismatchError) Error() string { return e.Message }
+func approvalMismatch(format string, args ...any) error {
+	return &ApprovalMismatchError{Message: fmt.Sprintf(format, args...)}
 }

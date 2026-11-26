@@ -43,7 +43,7 @@ func (f *FleetReconciler) quarantine(ctx context.Context, ec *api.ExternalCluste
 	if err := f.revokeHub(ctx, ec); err != nil {
 		return err
 	}
-	id := FleetID(ec)
+	id := fleetDataPlaneName(ec)
 	var err error
 	o := &api.Organization{}
 	if err = f.Get(ctx, client.ObjectKey{Name: ec.Spec.Organization}, o); err != nil {
@@ -118,7 +118,7 @@ func (f *FleetReconciler) cleanupFleetObjects(ctx context.Context, ec *api.Exter
 	if err = s.controlPlane(ctx); err != nil {
 		return ctrl.Result{}, err
 	}
-	if err = s.deleteNamed(ctx, s.cp, ocAPI, "dataplanes", o.Name, id); err != nil {
+	if err = s.deleteNamed(ctx, s.cp, ocAPI, "dataplanes", o.Name, fleetDataPlaneName(ec)); err != nil {
 		return fleetCleanupResult(err)
 	}
 	for _, name := range []string{shortName("agent-ca-" + o.Name + "-" + id), "agent-leaf-" + id} {

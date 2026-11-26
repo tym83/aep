@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"encoding/json"
 	api "github.com/tym83/aep/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -27,7 +28,7 @@ func TestFleetCleanupWaitsBetweenDependencyLayers(t *testing.T) {
 	profile := owned(obj("multicluster.x-k8s.io/v1alpha1", "ClusterProfile", "aep-acme", "west", M{}))
 	mc := obj("cluster.open-cluster-management.io/v1", "ManagedCluster", "", id, M{}) // deliberately untrusted labels
 	hub := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr(work.GetAPIVersion(), "manifestworks"): "ManifestWorkList"}, work, profile, mc)
-	dp := owned(obj(ocAPI, "DataPlane", o.Name, id, M{}))
+	dp := owned(obj(ocAPI, "DataPlane", o.Name, fleetDataPlaneName(ec), M{}))
 	cp := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), dp)
 	ca := owned(secretObject("aep-system", shortName("agent-ca-"+o.Name+"-"+id), nil))
 	leaf := owned(secretObject("aep-system", "agent-leaf-"+id, nil))
@@ -76,5 +77,59 @@ func TestFleetCleanupWaitsBetweenDependencyLayers(t *testing.T) {
 		if a.GetVerb() == "delete" && a.GetResource().Resource == "manifestworks" && !patched {
 			t.Fatal("work deleted without Orphan")
 		}
+	}
+}
+
+func TestDetachReattachKeepsImmutableEnvironmentReference(t *testing.T) {
+	ctx := context.Background()
+	o := organization()
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge", UID: "first"}, Spec: api.ExternalClusterSpec{Organization: o.Name, Environment: "dev"}}
+	cp := &Cluster{Dynamic: dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())}
+	cp.Dynamic.(*dynamicfake.FakeDynamicClient).PrependReactor("patch", "environments", func(a ktesting.Action) (bool, runtime.Object, error) {
+		u := &unstructured.Unstructured{}
+		if err := json.Unmarshal(a.(ktesting.PatchAction).GetPatch(), &u.Object); err != nil {
+			return true, nil, err
+		}
+		old, err := cp.get(ctx, ocAPI, "environments", o.Name, u.GetName())
+		if err != nil {
+			return true, nil, err
+		}
+		before, _, _ := unstructured.NestedString(old.Object, "spec", "dataPlaneRef", "name")
+		after, _, _ := unstructured.NestedString(u.Object, "spec", "dataPlaneRef", "name")
+		if before != after {
+			t.Fatal("immutable reference changed")
+		}
+		return true, u, cp.Dynamic.(*dynamicfake.FakeDynamicClient).Tracker().Update(a.GetResource(), u, a.GetNamespace())
+	})
+
+	first := fleetDataPlane(o, ec, []byte("first-ca"))
+	if err := cp.apply(ctx, o, "dataplanes", first); err != nil {
+		t.Fatal(err)
+	}
+	env := fleetEnvironment(o, ec)
+	if err := cp.apply(ctx, o, "environments", env); err != nil {
+		t.Fatal(err)
+	}
+	if err := cp.resource(ocAPI, "dataplanes", o.Name).Delete(ctx, first.GetName(), metav1.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	ec.UID = "second"
+	second := fleetDataPlane(o, ec, []byte("second-ca"))
+	if second.GetName() != first.GetName() {
+		t.Fatal("immutable reference changed")
+	}
+	if err := cp.apply(ctx, o, "dataplanes", second); err != nil {
+		t.Fatal(err)
+	}
+	if err := cp.apply(ctx, o, "environments", fleetEnvironment(o, ec)); err != nil {
+		t.Fatal(err)
+	}
+	live, err := cp.get(ctx, ocAPI, "dataplanes", o.Name, first.GetName())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _, _ := unstructured.NestedString(live.Object, "spec", "planeID")
+	if id != FleetID(ec) {
+		t.Fatal("assignment identity not rotated")
 	}
 }

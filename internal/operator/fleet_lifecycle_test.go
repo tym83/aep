@@ -121,3 +121,24 @@ func TestExternalPlanePreservesIngressAndChangeControl(t *testing.T) {
 		t.Fatal("environment references wrong assignment")
 	}
 }
+
+func TestApprovalCacheMissDoesNotRevokeHub(t *testing.T) {
+	ctx := context.Background()
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "edge", Namespace: "tenant-acme", UID: "one"}, Spec: api.ExternalClusterSpec{Organization: "acme", ChangeRequestRef: "missing"}}
+	scheme := runtime.NewScheme()
+	_ = api.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+	f := &FleetReconciler{Reconciler: &Reconciler{Client: c}, Hub: &Cluster{Dynamic: d}}
+	if err := f.reconcileFleet(ctx, ec); err == nil {
+		t.Fatal("missing approval must retry")
+	}
+	if len(d.Actions()) != 0 {
+		t.Fatal("cache miss touched hub", d.Actions())
+	}
+	for _, condition := range ec.Status.Conditions {
+		if condition.Reason == "Quarantined" {
+			t.Fatal("cache miss quarantined assignment")
+		}
+	}
+}

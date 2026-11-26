@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/change"
@@ -95,6 +96,10 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return f.quarantine(ctx, ec, "Assignment suspended")
 	}
 	if e := change.VerifyExternalApproval(ctx, f.Client, ec); e != nil {
+		var mismatch *change.ApprovalMismatchError
+		if !errors.As(e, &mismatch) {
+			return e
+		}
 		if q := f.quarantine(ctx, ec, e.Error()); q != nil {
 			return fmt.Errorf("%v; quarantine: %w", e, q)
 		}
@@ -280,7 +285,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return e
 	}
 	fleetCondition(ec, "PoliciesReady", policyReady, "ManifestWorkObserved", "Policy work and Ready feedback observed at current generation")
-	live, e := s.cp.get(ctx, ocAPI, "dataplanes", o.Name, id)
+	live, e := s.cp.get(ctx, ocAPI, "dataplanes", o.Name, fleetDataPlaneName(ec))
 	if e != nil {
 		return e
 	}
@@ -376,14 +381,19 @@ func (f *FleetReconciler) work(ctx context.Context, o *api.Organization, id, nam
 
 func fleetDataPlane(o *api.Organization, ec *api.ExternalCluster, ca []byte) *unstructured.Unstructured {
 	id := FleetID(ec)
-	return obj(ocAPI, "DataPlane", o.Name, id, M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(ca)}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
+	return obj(ocAPI, "DataPlane", o.Name, fleetDataPlaneName(ec), M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(ca)}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
 }
 func fleetEnvironment(o *api.Organization, ec *api.ExternalCluster) *unstructured.Unstructured {
-	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": FleetID(ec)}})
+	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": fleetDataPlaneName(ec)}})
 	for _, decl := range o.Spec.Environments {
 		if decl.Name == ec.Spec.Environment {
 			env.SetAnnotations(map[string]string{"aep.aenix.io/change-model": decl.ChangeModel})
 		}
 	}
 	return env
+}
+
+// The Environment reference is immutable across assignment recreation.
+func fleetDataPlaneName(ec *api.ExternalCluster) string {
+	return fmt.Sprintf("ext-%x", sha256.Sum256([]byte(ec.Spec.Organization+"/"+ec.Spec.Environment)))[:36]
 }
