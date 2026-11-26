@@ -37,7 +37,7 @@ func run() error {
 	var policyPath, leaderNamespace, orgNamespaceTemplate, instanceID string
 	var approvalTTL time.Duration
 	var maxAttempts int
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Management kubeconfig; default in-cluster")
+	flag.StringVar(&kubeconfig, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&apiURL, "oc-api-url", "", "OpenChoreo API base URL (required)")
 	flag.StringVar(&tokenURL, "oc-token-url", "", "OAuth token URL for client credentials; a token-url key in the org Secret overrides it")
 	flag.StringVar(&clientIDTemplate, "oc-client-id-template", "aep-change-{org}", "Client ID template; a client-id key in the org Secret overrides it")

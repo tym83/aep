@@ -28,7 +28,7 @@ func main() {
 
 func run() error {
 	var kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey string
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Management kubeconfig; default in-cluster")
+	flag.StringVar(&kubeconfig, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&listen, "listen", ":8080", "Listen address")
 	flag.StringVar(&issuer, "issuer", "", "OIDC issuer URL (required)")
 	flag.StringVar(&jwksURL, "jwks-url", "", "JWKS URL; defaults to <issuer>/protocol/openid-connect/certs")
