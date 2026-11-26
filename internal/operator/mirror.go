@@ -83,7 +83,7 @@ func DeliveryCharts() []struct{ Name, Version, URL string } {
 	for _, c := range charts {
 		out = append(out, struct{ Name, Version, URL string }{c.name, c.version, c.url + "/" + c.name})
 	}
-	return append(out, struct{ Name, Version, URL string }{"kyverno", KyvernoChartVersion, "oci://ghcr.io/kyverno/charts/kyverno"}, struct{ Name, Version, URL string }{"argo-cd", ArgoCDChartVersion, ArgoCDChartOCI})
+	return append(out, struct{ Name, Version, URL string }{"klusterlet", KlusterletVersion, KlusterletChartOCI}, struct{ Name, Version, URL string }{"kyverno", KyvernoChartVersion, "oci://ghcr.io/kyverno/charts/kyverno"}, struct{ Name, Version, URL string }{"argo-cd", ArgoCDChartVersion, ArgoCDChartOCI})
 }
 
 // ReleaseValues is the same chart configuration used by reconciliation, with
@@ -182,3 +182,6 @@ func (o Options) pinnedImage(ref string) (string, error) {
 	}
 	return registrymirror.Rewrite(pinned, o.ImageRegistryMirror), nil
 }
+
+const KlusterletVersion = "1.4.0"
+const KlusterletChartOCI = "oci://ghcr.io/tym83/aep/charts/klusterlet"

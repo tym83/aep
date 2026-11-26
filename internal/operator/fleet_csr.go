@@ -8,6 +8,7 @@ import (
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sort"
 	"strings"
 )
 
@@ -58,15 +59,40 @@ func (f *FleetReconciler) approveFleetCSR(ctx context.Context, ec *api.ExternalC
 	if e != nil {
 		return e
 	}
+
+	var candidates []*certificatesv1.CertificateSigningRequest
 	for i := range list.Items {
 		c := &list.Items[i]
-		if len(c.Status.Conditions) > 0 || !validFleetCSR(c, id, ec.Spec.Organization) {
-			continue
-		}
-		c.Status.Conditions = append(c.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue, Reason: "AEPApprovedAssignment", Message: "Cluster identity matches approved AEP assignment", LastUpdateTime: metav1.Now()})
-		if _, e = f.Hub.Kube.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, c.Name, c, metav1.UpdateOptions{}); e != nil {
-			return e
+		if validFleetCSR(c, id, ec.Spec.Organization) {
+			candidates = append(candidates, c)
 		}
 	}
-	return nil
+	sort.Slice(candidates, func(i, j int) bool {
+		a, b := candidates[i], candidates[j]
+		if a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+			return a.Name < b.Name
+		}
+		return a.CreationTimestamp.Before(&b.CreationTimestamp)
+	})
+	if len(list.Items) > 1 && f.Recorder != nil {
+		f.Recorder.Event(ec, "Warning", "DuplicateBootstrapCSR", "Multiple bootstrap CSRs; only the oldest request may be approved")
+	}
+	for _, c := range candidates {
+		for _, condition := range c.Status.Conditions {
+			if condition.Type == certificatesv1.CertificateApproved {
+				return nil
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	// Never approve a second request on retries, even if the first is already signed.
+	c := candidates[0]
+	if len(c.Status.Conditions) > 0 {
+		return nil
+	}
+	c.Status.Conditions = append(c.Status.Conditions, certificatesv1.CertificateSigningRequestCondition{Type: certificatesv1.CertificateApproved, Status: corev1.ConditionTrue, Reason: "AEPApprovedAssignment", Message: "Oldest CSR matches approved assignment", LastUpdateTime: metav1.Now()})
+	_, e = f.Hub.Kube.CertificatesV1().CertificateSigningRequests().UpdateApproval(ctx, c.Name, c, metav1.UpdateOptions{})
+	return e
 }

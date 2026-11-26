@@ -23,11 +23,12 @@ desired:
   trustLevel: regulated
   provider: aws
   distro: eks
+  gatewayHost: production.apps.example.org
 justification: Dedicated production account with audit forwarding to SIEM
 ```
 
 The environment must already exist in `Organization.spec.environments` with the
-same tier. A platform-team human approves every attachment. Prod or regulated
+same tier and `dataPlane: {external: eks-east}`. A platform-team human approves every attachment. Prod or regulated
 attachments additionally require a **different** member of `aep-security`.
 The requester, service accounts, system approvals and emergency/standard models
 cannot bypass this requirement. Untrusted prod is rejected outright. Security
@@ -45,7 +46,7 @@ change service, cluster administrators are inside the Tier-0 trust boundary.
 
 The organization reconciler reserves assigned environments; the fleet reconciler
 is their sole writer. It binds the Environment to the new DataPlane only after
-ManifestWork policies are Applied/Available at the current generation and the
+ManifestWork policies are Applied/Available with Ready feedback at the current generation and the
 OpenChoreo gateway reports the agent connected. Duplicate environment assignments
 fail closed. Existing workloads are not migrated automatically.
 
@@ -67,9 +68,8 @@ only a CSR from the dedicated bootstrap identity whose cluster label, X.509
 subject/group and usages match the approved assignment. OCM handles subsequent
 agent certificate renewals. No hub chart is vendored here.
 
-The task's management-as-hub topology is supported when `fleet.hubConfigSecret`
-is empty. DESIGN 5.14 instead recommends an isolated Tier-0 tenant cluster
-`aep-fleet`, separate from management and `aep-cp`; use that topology for production.
+Management is the default hub when `fleet.hubConfigSecret` is empty.
+An isolated hub is optional when an installation requires that separation.
 Set a Secret containing key `config` with a restricted hub client, and grant on
 the hub the OCM/inventory/CSR permissions in the operator chart. Management keeps
 Organizations, ChangeRequests, ExternalClusters and private agent CAs. Hub users
@@ -80,9 +80,8 @@ and management CA Secrets with the same recovery discipline as `aep-cp`.
 Install the upstream cluster-inventory-api **v0.1.0** CRD serving
 `multicluster.x-k8s.io/v1alpha1` on the hub. AEP produces ClusterProfiles in
 `aep-{org}` and stores their references in ExternalCluster. Do not also enable an
-OCM inventory writer for these objects. This intentionally follows the requested
-v1alpha1 contract; DESIGN 5.14 now specifies v0.2.0/v1alpha2. That migration requires
-an explicit compatibility decision before upgrading the inventory CRD.
+OCM inventory writer for these objects. API discovery prefers v1alpha2 when served and falls back to v1alpha1.
+The API-version hint can change without changing the approved assignment.
 
 ## Delivery and network
 
@@ -102,7 +101,7 @@ in `internal/operator/delivery.go` and `policies.go`. Upgrade staged packages an
 operator together; canary a nonprod attachment before production rollout.
 
 The registrar creates an organization ManagedClusterSet, its namespace binding,
-a label-constrained Placement, accepted ManagedCluster and ClusterProfile. It
+accepted ManagedCluster and ClusterProfile. It
 sends raw rendered resources through OCM ManifestWork: OpenChoreo data plane,
 kgateway, ServiceClaim/bridge-appcluster contract, Kyverno, baseline and tier
 policies. Standard trust uses the organization baseline mode; untrusted and
@@ -157,18 +156,14 @@ securely and delete it after joining. Alternatively supply `--target-config`
 and `--execute`; Helm receives values on stdin, never a token argument. Run
 `aep-fleet join -h` for flags. The bootstrap identity can submit CSRs but cannot
 approve them or read other spoke credentials. Re-bootstrap after Joined is deliberately refused; use the platform recovery procedure.
-Delete its ServiceAccount and
-bootstrap RBAC after a successful join; expired tokens cannot bootstrap again.
+The token is bound to a dedicated Secret. After ManagedClusterJoined the controller
+deletes that Secret, ServiceAccount and RBAC. ConfigMap reads are restricted to
+a Role in kube-public. Only the oldest valid CSR is approved; duplicates emit
+a warning event, and retries never approve a second CSR.
 
 ## Detach and verification
 
-DESIGN does not define a `cluster-detach` operation; none is added implicitly.
-ManifestWork uses orphan deletion to avoid deleting workloads during an accidental
-hub object loss. De-registration is a platform maintenance procedure: stop new
-placements, drain/migrate workloads through approved changes, unbind environments,
-revoke the gateway CA registration, remove OCM work/registration and bootstrap
-RBAC, uninstall spoke agents and finally remove inventory/assignment. Do not delete
-an assignment to migrate an active environment. Automated detach is deferred.
+Detach uses the approved operation and ordered cleanup described below.
 
 Local checks cover approval bypasses, idempotency, assignment tampering, CSR
 identity, leaf trust/lifetime, stale readiness and pinned Helm rendering:
@@ -228,3 +223,18 @@ gets a distinct plane identity, CA and leaf; detached credentials cannot be reus
 The management cluster is the default hub; a separate hub remains optional.
 ClusterProfile discovery prefers v1alpha2 when served and falls back to v1alpha1
 (OCM 1.4.0). Its API version is not part of immutable assignment approval.
+
+For disconnected staging, load the release bundle into the mirror and run:
+
+```sh
+AEP_REGISTRY_MIRROR=registry.example/aep sh charts/aep-operator/fleet-stage.sh /path/to/staged-charts
+```
+
+This path pulls all charts by `release/manifest.yaml` digest. Set operator
+`global.imageRegistry` to the same prefix; renderer values also rewrite future
+kgateway proxy images. Bootstrap accepts `aep-fleet join --registry-mirror` for the
+pinned klusterlet chart and all three OCM images. The first ManifestWork contains
+only the aggregate work-agent ClusterRole. Subsequent works wait for its Applied
+and Available conditions. Readiness also requires Kyverno Deployment feedback and
+ClusterPolicy Ready; mere resource existence is insufficient. Decorative Placement
+objects are not created; all delivery targets derive from ExternalCluster identity.

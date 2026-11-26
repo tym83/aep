@@ -3,6 +3,10 @@
 # Run from the repository root. Helm only downloads/renders; nothing is deployed.
 set -eu
 destination=${1:?artifact directory required}
+# Release/mirror mode fetches every chart by the reviewed inventory digest.
+if [ -n "${AEP_REGISTRY_MIRROR:-}" ]; then
+  exec go run ./cmd/aep-fleet stage --directory "$destination" --registry-mirror "$AEP_REGISTRY_MIRROR"
+fi
 mkdir -p "$destination"
 helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds --version v2.3.11 --destination "$destination"
 helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway --version v2.3.11 --destination "$destination"
