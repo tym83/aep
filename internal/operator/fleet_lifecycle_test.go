@@ -103,3 +103,21 @@ func TestSuspensionNeverReacceptsHub(t *testing.T) {
 		t.Fatal("suspended assignment ready")
 	}
 }
+
+func TestExternalPlanePreservesIngressAndChangeControl(t *testing.T) {
+	o := organization()
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: "west", Namespace: "tenant-acme", UID: "one"}, Spec: api.ExternalClusterSpec{Environment: "prod", GatewayHost: "west.apps.example.org"}}
+	dp := fleetDataPlane(o, ec, []byte("assignment-ca"))
+	host, _, _ := unstructured.NestedString(dp.Object, "spec", "gateway", "ingress", "external", "http", "host")
+	if host != ec.Spec.GatewayHost {
+		t.Fatal("external ingress host lost")
+	}
+	env := fleetEnvironment(o, ec)
+	if env.GetAnnotations()["aep.aenix.io/change-model"] != "required" {
+		t.Fatal("fleet environment bypassed change control")
+	}
+	ref, _, _ := unstructured.NestedString(env.Object, "spec", "dataPlaneRef", "name")
+	if ref != dp.GetName() {
+		t.Fatal("environment references wrong assignment")
+	}
+}

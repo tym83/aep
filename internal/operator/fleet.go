@@ -193,7 +193,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if len(gateway.Data["ca.crt"]) == 0 {
 		return fmt.Errorf("gateway CA missing")
 	}
-	dp := obj(ocAPI, "DataPlane", o.Name, id, M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(data["tls.crt"])}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
+	dp := fleetDataPlane(o, ec, data["tls.crt"])
 	if e = s.cp.apply(ctx, o, "dataplanes", dp); e != nil {
 		return e
 	}
@@ -289,13 +289,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if !policyReady || !connected {
 		return nil
 	}
-	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": id}})
-	for _, decl := range o.Spec.Environments {
-		if decl.Name == ec.Spec.Environment {
-			env.SetAnnotations(map[string]string{"aep.aenix.io/change-model": decl.ChangeModel})
-		}
-	}
-	return s.cp.apply(ctx, o, "environments", env)
+	return s.cp.apply(ctx, o, "environments", fleetEnvironment(o, ec))
 }
 func ocmCondition(u *unstructured.Unstructured, t string) bool {
 	cs, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
@@ -378,4 +372,18 @@ func (f *FleetReconciler) work(ctx context.Context, o *api.Organization, id, nam
 		}
 	}
 	return all, nil
+}
+
+func fleetDataPlane(o *api.Organization, ec *api.ExternalCluster, ca []byte) *unstructured.Unstructured {
+	id := FleetID(ec)
+	return obj(ocAPI, "DataPlane", o.Name, id, M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(ca)}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
+}
+func fleetEnvironment(o *api.Organization, ec *api.ExternalCluster) *unstructured.Unstructured {
+	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": FleetID(ec)}})
+	for _, decl := range o.Spec.Environments {
+		if decl.Name == ec.Spec.Environment {
+			env.SetAnnotations(map[string]string{"aep.aenix.io/change-model": decl.ChangeModel})
+		}
+	}
+	return env
 }
