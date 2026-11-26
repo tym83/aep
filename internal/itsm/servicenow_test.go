@@ -208,3 +208,65 @@ func TestChangeTextDoesNotDiscloseRequest(t *testing.T) {
 		t.Fatal("unsafe summary")
 	}
 }
+
+func TestCSDMCompanyAndIdentification(t *testing.T) {
+	g := sampleGraph()
+	g.Items = append(g.Items, CI{UID: "business", Kind: "business-application", Name: "orders", ExternalID: "business123"})
+	payload, err := IREPayload(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := payload["items"].([]any)
+	for _, item := range items {
+		v := item.(map[string]any)
+		values := v["values"].(map[string]any)
+		switch v["className"] {
+		case "core_company":
+			t.Fatal("company sent to IRE")
+		case "cmdb_ci_kubernetes_cluster":
+			if values["k8s_uid"] != "real-cluster-uid" {
+				t.Fatal(values)
+			}
+		case "cmdb_ci_db_instance":
+			if values["instance_name"] != "orders" || values["tcp_port"] != "5432" || values["fqdn"] != "db.example" {
+				t.Fatal(values)
+			}
+		case "cmdb_ci_business_app":
+			if values["company"] != "company123" {
+				t.Fatal(values)
+			}
+		}
+	}
+	g.Items[1].K8sUID = ""
+	if _, err := IREPayload(g); err == nil {
+		t.Fatal("cluster identity not required")
+	}
+	g = sampleGraph()
+	g.Items[3].FQDN = ""
+	if _, err := IREPayload(g); err == nil {
+		t.Fatal("database identity not required")
+	}
+}
+func TestIREHostingReference(t *testing.T) {
+	g := sampleGraph()
+	g.Items[3].HostSysID = "host123"
+	payload, err := IREPayload(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := payload["items"].([]any)
+	host := items[len(items)-1].(map[string]any)
+	if host["className"] != "cmdb_ci_server" || host["sys_object_source_info"] != nil {
+		t.Fatal(host)
+	}
+	found := false
+	for _, r := range payload["relations"].([]any) {
+		rel := r.(map[string]any)
+		if rel["parent"] == 2 && rel["child"] == 3 && rel["type"] == "Runs on::Runs" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("hosting dependency missing")
+	}
+}

@@ -59,7 +59,7 @@ func (s *ServiceNow) Deliver(ctx context.Context, e Event, ref string) (string, 
 					return ref, errors.New("IRE rejected a relationship")
 				}
 			}
-			if len(out.Result.Items) != len(g.Items) {
+			if len(out.Result.Items) != len(payload["items"].([]any)) {
 				return ref, errors.New("IRE did not acknowledge every CI")
 			}
 			for _, item := range out.Result.Items {
@@ -267,7 +267,7 @@ type snRecord struct {
 	State snValue `json:"state"`
 }
 
-var ciClasses = map[string]string{"organization": "cmdb_ci_service_discovered", "application-service": "cmdb_ci_service_discovered", "cluster": "cmdb_ci_kubernetes_cluster", "database": "cmdb_ci_db_instance", "business-application": "cmdb_ci_business_app", "technical-service": "cmdb_ci_service_technical", "service-offering": "service_offering"}
+var ciClasses = map[string]string{"application-service": "cmdb_ci_service_discovered", "cluster": "cmdb_ci_kubernetes_cluster", "database": "cmdb_ci_db_instance", "business-application": "cmdb_ci_business_app", "technical-service": "cmdb_ci_service_technical", "service-offering": "service_offering"}
 
 func IREPayload(g Graph) (map[string]any, error) {
 	if err := ValidateGraph(g); err != nil {
@@ -276,7 +276,19 @@ func IREPayload(g Graph) (map[string]any, error) {
 	indexes := map[string]int{}
 	items := []any{}
 	relations := []any{}
-	for i, ci := range g.Items {
+	company := ""
+	for _, ci := range g.Items {
+		if ci.Kind == "organization" {
+			if !validID(ci.ExternalID) {
+				return nil, errors.New("organization requires core_company sys_id")
+			}
+			company = ci.ExternalID
+		}
+	}
+	for _, ci := range g.Items {
+		if ci.Kind == "organization" {
+			continue
+		}
 		class, ok := ciClasses[ci.Kind]
 		if !ok || ci.UID == "" || ci.Name == "" {
 			return nil, fmt.Errorf("invalid CI %q", ci.UID)
@@ -284,13 +296,35 @@ func IREPayload(g Graph) (map[string]any, error) {
 		if _, exists := indexes[ci.UID]; exists {
 			return nil, errors.New("duplicate CI UID")
 		}
-		indexes[ci.UID] = i
+		indexes[ci.UID] = len(items)
 		values := map[string]any{"name": ci.Name, "discovery_source": "AEP"}
+		if ci.Kind == "cluster" {
+			if ci.K8sUID == "" {
+				return nil, errors.New("cluster requires discovered k8s_uid")
+			}
+			values["k8s_uid"] = ci.K8sUID
+		}
+		if ci.Kind == "database" {
+			if ci.InstanceName == "" || ci.FQDN == "" || ci.Port == "" {
+				return nil, errors.New("database requires instance name, FQDN and port")
+			}
+			values["instance_name"] = ci.InstanceName
+			values["tcp_port"] = ci.Port
+		}
+		if ci.FQDN != "" {
+			values["fqdn"] = ci.FQDN
+		}
+		if ci.Kind == "cluster" && ci.Port != "" {
+			values["port"] = ci.Port
+		}
 		if ci.Kind == "business-application" {
 			if !validID(ci.ExternalID) {
 				return nil, errors.New("Business Application must reference a customer-owned sys_id")
 			}
 			values = map[string]any{"sys_id": ci.ExternalID}
+			if company != "" {
+				values["company"] = company
+			}
 		}
 		if ci.Retired {
 			if ci.Kind == "business-application" {
@@ -300,7 +334,34 @@ func IREPayload(g Graph) (map[string]any, error) {
 		}
 		items = append(items, map[string]any{"className": class, "values": values, "sys_object_source_info": map[string]string{"source_name": "AEP", "source_native_key": ci.UID}})
 	}
+	// Reference discovered hosts without claiming ownership or retiring them.
+	hosts := map[string]int{}
+	for _, ci := range g.Items {
+		if ci.HostSysID == "" {
+			continue
+		}
+		if !validID(ci.HostSysID) || (ci.Kind != "database" && ci.Kind != "cluster") {
+			return nil, errors.New("invalid hosting reference")
+		}
+		host, ok := hosts[ci.HostSysID]
+		if !ok {
+			host = len(items)
+			hosts[ci.HostSysID] = host
+			items = append(items, map[string]any{"className": "cmdb_ci_server", "values": map[string]string{"sys_id": ci.HostSysID}})
+		}
+		relations = append(relations, map[string]any{"parent": indexes[ci.UID], "child": host, "type": "Runs on::Runs"})
+	}
+
 	for _, rel := range g.Relationships {
+		organizationEdge := false
+		for _, ci := range g.Items {
+			if ci.Kind == "organization" && (rel.Parent == ci.UID || rel.Child == ci.UID) {
+				organizationEdge = true
+			}
+		}
+		if organizationEdge {
+			continue
+		}
 		p, pok := indexes[rel.Parent]
 		c, cok := indexes[rel.Child]
 		if !pok || !cok || p == c {

@@ -25,6 +25,7 @@ type Receipt struct {
 	Until  time.Time `json:"until"`
 }
 type Record struct {
+	Snapshot json.RawMessage    `json:"snapshot,omitempty"`
 	Receipts map[string]Receipt `json:"receipts,omitempty"`
 	Event    Event              `json:"event"`
 	Ref      string             `json:"ref,omitempty"`
@@ -175,7 +176,7 @@ func (e *Engine) Submit(ctx context.Context, event Event) error {
 				return ErrBusy
 			}
 		}
-		r = Record{Event: event, Ref: r.Ref, Receipts: r.Receipts}
+		r = Record{Event: event, Ref: r.Ref, Receipts: r.Receipts, Snapshot: r.Snapshot}
 		if err = e.Store.save(ctx, cm, r); err != nil {
 			return err
 		}
@@ -189,6 +190,9 @@ func (e *Engine) deliver(ctx context.Context, cm *corev1.ConfigMap, r Record) er
 	ref, err := e.Adapter.Deliver(ctx, r.Event, r.Ref)
 	if ref != "" {
 		r.Ref = ref
+	}
+	if err == nil && r.Event.Type == "cmdb.sync" {
+		r.Snapshot = append(json.RawMessage(nil), r.Event.Data...)
 	}
 	r.Failure = permanent(err)
 	if err == nil || r.Failure != 0 {

@@ -75,7 +75,7 @@ func TestServiceNowLostCreateResponseRecovery(t *testing.T) {
 	}
 }
 func sampleGraph() Graph {
-	return Graph{Organization: "acme", Epoch: "1", Items: []CI{{UID: "org", Kind: "organization", Name: "acme"}, {UID: "cluster", Kind: "cluster", Name: "prod"}, {UID: "app", Kind: "application-service", Name: "orders/prod"}, {UID: "db", Kind: "database", Name: "orders-db"}}, Relationships: []Relationship{{Parent: "org", Child: "app", Type: "Contains::Contained by"}, {Parent: "app", Child: "cluster", Type: "Runs on::Runs"}, {Parent: "app", Child: "db", Type: "Depends on::Used by"}}}
+	return Graph{Organization: "acme", Epoch: "1", Items: []CI{{UID: "org", Kind: "organization", Name: "acme", ExternalID: "company123"}, {UID: "cluster", Kind: "cluster", Name: "prod", K8sUID: "real-cluster-uid"}, {UID: "app", Kind: "application-service", Name: "orders/prod"}, {UID: "db", Kind: "database", Name: "orders-db", InstanceName: "orders", FQDN: "db.example", Port: "5432"}}, Relationships: []Relationship{{Parent: "org", Child: "app", Type: "Contains::Contained by"}, {Parent: "app", Child: "cluster", Type: "Depends on::Used by"}, {Parent: "app", Child: "db", Type: "Depends on::Used by"}}}
 }
 func TestServiceNowCMDBAndEvents(t *testing.T) {
 	var graph map[string]any
@@ -88,7 +88,7 @@ func TestServiceNowCMDBAndEvents(t *testing.T) {
 			if r.URL.Query().Get("sysparm_data_source") != "AEP" {
 				t.Error("missing source")
 			}
-			fmt.Fprint(w, `{"result":{"items":[{},{},{},{}]}}`)
+			fmt.Fprint(w, `{"result":{"items":[{},{},{}]}}`)
 		case "/api/global/em/jsonv2":
 			var body struct {
 				Records []map[string]string `json:"records"`
@@ -112,7 +112,7 @@ func TestServiceNowCMDBAndEvents(t *testing.T) {
 		}
 	}
 	items := graph["items"].([]any)
-	if items[1].(map[string]any)["className"] != "cmdb_ci_kubernetes_cluster" || items[3].(map[string]any)["className"] != "cmdb_ci_db_instance" || len(graph["relations"].([]any)) != 3 {
+	if items[0].(map[string]any)["className"] != "cmdb_ci_kubernetes_cluster" || items[2].(map[string]any)["className"] != "cmdb_ci_db_instance" || len(graph["relations"].([]any)) != 2 {
 		t.Fatalf("bad graph: %v", graph)
 	}
 	if strings.Join(severities, ",") != "1,0" {
@@ -225,7 +225,7 @@ func TestJiraIncidentForwarding(t *testing.T) {
 func TestIREPartialFailureDoesNotAdvanceCursor(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"result":{"items":[{},{},{},{}],"relations":[{"errors":[{"error":"INVALID_RELATION"}]}]}}`)
+		fmt.Fprint(w, `{"result":{"items":[{},{},{}],"relations":[{"errors":[{"error":"INVALID_RELATION"}]}]}}`)
 	}))
 	defer srv.Close()
 	engine := &Engine{Store: testStore(t), Adapter: &ServiceNow{HTTP: HTTP{BaseURL: srv.URL}}}

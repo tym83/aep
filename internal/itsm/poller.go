@@ -31,6 +31,7 @@ type Poller struct {
 	Organization, Namespace, ConfirmationURL string
 	Services                                 []ApplicationService
 	SyncCMDB                                 bool
+	CompanyID                                string
 }
 
 func (p *Poller) Once(ctx context.Context) error {
@@ -71,7 +72,7 @@ func (p *Poller) Inventory(ctx context.Context) (Graph, error) {
 	if root == "" {
 		return g, errors.New("organization UID required")
 	}
-	g.Items = append(g.Items, CI{UID: root, Kind: "organization", Name: org.Name})
+	g.Items = append(g.Items, CI{UID: root, Kind: "organization", Name: org.Name, ExternalID: p.CompanyID})
 	clusters := map[string]string{}
 	databases := map[string]string{}
 	tiers := []string{}
@@ -99,7 +100,7 @@ func (p *Poller) Inventory(ctx context.Context) (Graph, error) {
 				if resource.Kind == "cluster" && app.GetName() != "apps" {
 					continue
 				}
-				g.Items = append(g.Items, CI{UID: uid, Kind: resource.Kind, Name: ns + "/" + app.GetName()})
+				g.Items = append(g.Items, CI{UID: uid, Kind: resource.Kind, Name: ns + "/" + app.GetName(), HostSysID: app.GetAnnotations()["aep.aenix.io/itsm-host-sys-id"], K8sUID: app.GetAnnotations()["aep.aenix.io/itsm-k8s-uid"], InstanceName: app.GetName(), FQDN: app.GetAnnotations()["aep.aenix.io/itsm-fqdn"], Port: app.GetAnnotations()["aep.aenix.io/itsm-port"]})
 				g.Relationships = append(g.Relationships, Relationship{Parent: root, Child: uid, Type: "Contains::Contained by"})
 				if resource.Kind == "cluster" {
 					clusters[tier] = uid
@@ -120,7 +121,7 @@ func (p *Poller) Inventory(ctx context.Context) (Graph, error) {
 			return g, fmt.Errorf("cluster missing for application service %s", svc.Name)
 		}
 		g.Items = append(g.Items, CI{UID: svc.UID, Kind: "application-service", Name: svc.Name + "/" + svc.Environment})
-		g.Relationships = append(g.Relationships, Relationship{Parent: root, Child: svc.UID, Type: "Contains::Contained by"}, Relationship{Parent: svc.UID, Child: cluster, Type: "Runs on::Runs"})
+		g.Relationships = append(g.Relationships, Relationship{Parent: root, Child: svc.UID, Type: "Contains::Contained by"}, Relationship{Parent: svc.UID, Child: cluster, Type: "Depends on::Used by"})
 		for _, db := range svc.Databases {
 			uid := databases[db]
 			if uid == "" {
@@ -143,8 +144,12 @@ func (p *Poller) Inventory(ctx context.Context) (Graph, error) {
 	if err != nil {
 		return g, err
 	}
-	if previous.Done && previous.Event.Type == "cmdb.sync" {
-		old, err := decodeGraph(previous.Event.Data)
+	snapshot := previous.Snapshot
+	if len(snapshot) == 0 && previous.Done && previous.Failure == 0 && previous.Event.Type == "cmdb.sync" {
+		snapshot = previous.Event.Data
+	}
+	if len(snapshot) > 0 {
+		old, err := decodeGraph(snapshot)
 		if err != nil {
 			return g, err
 		}

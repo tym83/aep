@@ -45,11 +45,16 @@ type Change struct {
 	ConfirmationURL string             `json:"confirmationUrl,omitempty"`
 }
 type CI struct {
-	UID        string `json:"uid"`
-	Kind       string `json:"kind"`
-	Name       string `json:"name"`
-	ExternalID string `json:"externalId,omitempty"`
-	Retired    bool   `json:"retired,omitempty"`
+	HostSysID    string `json:"hostSysId,omitempty"`
+	K8sUID       string `json:"k8sUid,omitempty"`
+	InstanceName string `json:"instanceName,omitempty"`
+	FQDN         string `json:"fqdn,omitempty"`
+	Port         string `json:"port,omitempty"`
+	UID          string `json:"uid"`
+	Kind         string `json:"kind"`
+	Name         string `json:"name"`
+	ExternalID   string `json:"externalId,omitempty"`
+	Retired      bool   `json:"retired,omitempty"`
 }
 type Relationship struct {
 	Parent string `json:"parent"`

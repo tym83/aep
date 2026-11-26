@@ -63,7 +63,7 @@ func TestScenario3ServiceNow(t *testing.T) {
 		if r.URL.Path == "/api/now/identifyreconcile" {
 			cmdb = true
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"result":{"items":[{},{},{},{}]}}`)
+			fmt.Fprint(w, `{"result":{"items":[{},{},{}]}}`)
 			return
 		}
 		f.ServeHTTP(w, r)

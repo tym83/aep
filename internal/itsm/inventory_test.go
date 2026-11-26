@@ -79,7 +79,27 @@ func TestInventoryRelationshipsRetirementAndFailedList(t *testing.T) {
 	if !retired["db"] || !retired["app"] {
 		t.Fatal(retired)
 	}
-	if err := engine.Submit(ctx, NewEvent("cmdb.sync", "cmdb/acme", g)); err != nil {
+	engine.Adapter = deliveryFunc(func(context.Context, Event, string) (string, error) { return "", &HTTPError{422} })
+	if err := engine.Submit(ctx, NewEvent("cmdb.sync", "cmdb/acme", g)); err == nil {
+		t.Fatal("expected permanent failure")
+	}
+	pending, err := p.Inventory(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, ci := range pending.Items {
+		if ci.UID == "db" && ci.Retired {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("failed retirement lost")
+	}
+	engine.Adapter = deliveryFunc(func(context.Context, Event, string) (string, error) { return "", nil })
+	retry := NewEvent("cmdb.sync", "cmdb/acme", g)
+	retry.ID += "-retry"
+	if err := engine.Submit(ctx, retry); err != nil {
 		t.Fatal(err)
 	}
 	next, err := p.Inventory(ctx)
