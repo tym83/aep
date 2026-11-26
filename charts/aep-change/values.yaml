@@ -1,5 +1,5 @@
 image:
-  tag: "main"
+  tag: "sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83"
   pullPolicy: IfNotPresent
 api:
   repository: ghcr.io/tym83/aep-change-api

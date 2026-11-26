@@ -2,7 +2,7 @@ dev: false
 organization: ""
 image:
   repository: cr.openchoreo.dev/openchoreo/sre-agent
-  tag: latest-dev
+  tag: v1.4.0-m.3
   digest: ""
   pullPolicy: IfNotPresent
 # Existing per-organization secret: RCA_LLM_API_KEY,
@@ -39,7 +39,7 @@ tokenProxy:
   port: 8081
   image:
     repository: ghcr.io/tym83/aep-token-proxy
-    tag: main
+    tag: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
     digest: ""
 
 # Mirror prefix; upstream registry hosts are retained as path components.

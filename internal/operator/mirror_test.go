@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,11 @@ func TestUpstreamMirrorRendering(t *testing.T) {
 			if e != nil {
 				t.Fatalf("%v: %s", e, out)
 			}
+			for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(string(out), -1) {
+				if !strings.Contains(image[1], "@sha256:") {
+					t.Fatalf("unpinned delivered image: %s", image[1])
+				}
+			}
 			// Scan all rendered text, including hooks and controller environment defaults.
 			for _, host := range []string{"ghcr.io/", "cr.kgateway.dev/", "cr.openchoreo.dev/", "reg.kyverno.io/", "quay.io/", "registry.k8s.io/", "docker.io/"} {
 				stripped := strings.ReplaceAll(string(out), "mirror.local/cache/"+host, "")
@@ -76,10 +82,10 @@ func TestNormalizeMirrorOptions(t *testing.T) {
 	if o.ImageRegistryMirror != "mirror.local/cache" || o.ChartRegistryMirror != o.ImageRegistryMirror {
 		t.Fatal(o)
 	}
-	u := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", "tenant", "chart", M{"url": "oci://ghcr.io/team/chart"})
+	u := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", "tenant", "chart", M{"url": DeliveryCharts()[0].URL})
 	o.chartSource(u)
 	spec := u.Object["spec"].(map[string]any)
-	if spec["insecure"] != true || spec["url"] != "oci://mirror.local/cache/ghcr.io/team/chart" {
+	if spec["insecure"] != true || !strings.HasPrefix(spec["url"].(string), "oci://mirror.local/cache/") {
 		t.Fatal(spec)
 	}
 	values := MirrorValues("kgateway", o.ImageRegistryMirror, M{})
@@ -111,5 +117,19 @@ func TestMirrorSecrets(t *testing.T) {
 	r.Options.RegistrySecret = "missing"
 	if err := s.mirrorSecrets(ctx, "tenant-acme-test"); err == nil {
 		t.Fatal("missing source credentials accepted")
+	}
+}
+
+func TestSourceUsesInventoryDigest(t *testing.T) {
+	o := Options{}
+	for _, chart := range DeliveryCharts() {
+		u := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", "tenant", "chart", M{"url": chart.URL, "ref": M{"tag": chart.Version}})
+		if err := o.chartSource(u); err != nil {
+			t.Fatal(err)
+		}
+		ref := u.Object["spec"].(map[string]any)["ref"].(map[string]any)
+		if ref["tag"] != nil || !strings.HasPrefix(ref["digest"].(string), "sha256:") {
+			t.Fatal(ref)
+		}
 	}
 }

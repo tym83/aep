@@ -1,5 +1,5 @@
-image: ghcr.io/tym83/aep-operator:main
-bridgeImage: ghcr.io/tym83/aep-bridge:main
+image: ghcr.io/tym83/aep-operator:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+bridgeImage: ghcr.io/tym83/aep-bridge:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
 aepcpKubeconfigSecret: ""
 aepcpTenantNamespace: tenant-aep-cp
 aepcpCluster: aepcp

@@ -4,15 +4,30 @@ import (
 	"context"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/registrymirror"
+	inventory "github.com/tym83/aep/release"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"strings"
 )
 
-func (o Options) chartSource(source *unstructured.Unstructured) {
+func (o Options) chartSource(source *unstructured.Unstructured) error {
 	spec := source.Object["spec"].(map[string]any)
+	url := spec["url"].(string)
+	version := ""
+	if ref, ok := spec["ref"].(map[string]any); ok {
+		version, _ = ref["tag"].(string)
+	}
+	canonical := url
+	if o.ChartRegistryMirror != "" {
+		canonical = strings.Replace(canonical, "oci://"+o.ChartRegistryMirror+"/", "oci://", 1)
+	}
+	a, err := inventory.Lookup("chart", canonical, version)
+	if err != nil {
+		return err
+	}
+	spec["ref"] = M{"digest": a.Digest}
 	spec["url"] = registrymirror.Rewrite(spec["url"].(string), o.ChartRegistryMirror)
-	if o.RegistryInsecure {
+	if o.RegistryInsecure && o.ChartRegistryMirror != "" {
 		spec["insecure"] = true
 	}
 	if o.RegistrySecret != "" {
@@ -21,11 +36,13 @@ func (o Options) chartSource(source *unstructured.Unstructured) {
 	if o.RegistryCASecret != "" {
 		spec["certSecretRef"] = M{"name": o.RegistryCASecret}
 	}
+	return nil
 }
 
 // MirrorValues uses each pinned upstream chart's own value contract. In particular,
 // Kyverno has a different registry for hooks, and kgateway creates proxy pods later.
 func MirrorValues(chart, mirror string, values M) M {
+	values = PinValues(chart, values)
 	if mirror == "" {
 		return values
 	}
@@ -33,7 +50,7 @@ func MirrorValues(chart, mirror string, values M) M {
 	case "openchoreo-data-plane":
 		values["global"] = M{"imageRegistry": mirror + "/cr.openchoreo.dev"}
 	case "kgateway":
-		values["image"] = M{"registry": mirror + "/cr.kgateway.dev/kgateway-dev"}
+		setMap(values, []string{"image", "registry"}, mirror+"/cr.kgateway.dev/kgateway-dev")
 	case "kyverno":
 		// Do not use global.image.registry: hooks use ghcr.io instead of reg.kyverno.io.
 		for _, path := range [][]string{{"admissionController", "initContainer", "image"}, {"admissionController", "container", "image"}, {"backgroundController", "image"}, {"cleanupController", "image"}, {"reportsController", "image"}, {"crds", "migration", "image"}} {
@@ -70,12 +87,12 @@ func DeliveryCharts() []struct{ Name, Version, URL string } {
 // representative identity values (which do not affect image selection).
 func ReleaseValues(chart string) M {
 	if chart == "kyverno" {
-		return policyValues(&api.Organization{}, "prod", "")["kyverno"]
+		return PinValues(chart, policyValues(&api.Organization{}, "prod", "")["kyverno"])
 	}
 	if chart == "openchoreo-data-plane" {
-		return DataPlaneValues("inventory", "wss://gateway.invalid")
+		return PinValues(chart, DataPlaneValues("inventory", "wss://gateway.invalid"))
 	}
-	return M{}
+	return PinValues(chart, M{})
 }
 func DataPlaneValues(plane, gateway string) M {
 	return M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": plane, "serverUrl": gateway, "tls": M{"generateCerts": false, "caSecretName": "aep-agent-ca"}}}
@@ -105,4 +122,41 @@ func (s *session) mirrorSecrets(ctx context.Context, ns string) error {
 		}
 	}
 	return nil
+}
+
+// Each upstream chart accepts a tag string; tag@digest preserves the release
+// label while making runtime pulls independent of mutable registry tags.
+func PinValues(chart string, values M) M {
+	pin := func(ref string, path ...string) {
+		a, err := inventory.Lookup("image", ref, "")
+		if err != nil {
+			panic(err)
+		} // Embedded inventory is validated by release checks.
+		setMap(values, path, a.Version+"@"+a.Digest)
+	}
+	switch chart {
+	case "kgateway":
+		pin("cr.kgateway.dev/kgateway-dev/kgateway", "controller", "image", "tag")
+		pin("cr.kgateway.dev/kgateway-dev/envoy-wrapper", "image", "tag")
+	case "openchoreo-data-plane":
+		pin("cr.openchoreo.dev/openchoreo/cluster-agent", "clusterAgent", "image", "tag")
+	case "kyverno":
+		for _, p := range []struct {
+			repo string
+			path []string
+		}{
+			{"kyvernopre", []string{"admissionController", "initContainer", "image", "tag"}},
+			{"kyverno", []string{"admissionController", "container", "image", "tag"}},
+			{"background-controller", []string{"backgroundController", "image", "tag"}},
+			{"cleanup-controller", []string{"cleanupController", "image", "tag"}},
+			{"reports-controller", []string{"reportsController", "image", "tag"}},
+			{"kyverno-cli", []string{"crds", "migration", "image", "tag"}},
+		} {
+			pin("reg.kyverno.io/kyverno/"+p.repo, p.path...)
+		}
+		for _, p := range []string{"test", "webhooksCleanup"} {
+			pin("ghcr.io/kyverno/readiness-checker", p, "image", "tag")
+		}
+	}
+	return values
 }

@@ -45,7 +45,9 @@ func (s *session) delivery(ctx context.Context) error {
 		}
 		for i, ch := range charts {
 			source := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", ns, "aep-"+ch.name, M{"interval": "5m", "url": ch.url + "/" + ch.name, "ref": M{"tag": ch.version}})
-			s.r.Options.chartSource(source)
+			if err := s.r.Options.chartSource(source); err != nil {
+				return err
+			}
 			if e = s.r.Management.apply(ctx, s.o, "ocirepositories", source); e != nil {
 				return e
 			}

@@ -31,7 +31,7 @@ spec:
             - {{ printf "--kyverno-chart-url=%s" (include "aep.mirror" (dict "root" . "ref" .Values.kyvernoChartURL)) | quote }}
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
-            - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" .Values.bridgeImage)) | quote }}
+            - {{ printf "--bridge-image=%s" .Values.bridgeImage | quote }}
             - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}
             - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
             - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}

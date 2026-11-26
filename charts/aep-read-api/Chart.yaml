@@ -2,5 +2,5 @@ apiVersion: v2
 name: aep-read-api
 description: Authenticated, organization-scoped portal reads from management state
 type: application
-version: 0.1.1
+version: 0.1.2
 appVersion: "0.1.0"
