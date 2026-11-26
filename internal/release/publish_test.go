@@ -55,7 +55,7 @@ func TestSigningWorkflows(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, required := range []string{"secrets.COSIGN_PRIVATE_KEY", "secrets.COSIGN_PASSWORD", `if [ -n "$COSIGN_PRIVATE_KEY" ]`, "--key env://COSIGN_PRIVATE_KEY", "--tlog-upload=false"} {
+		for _, required := range []string{"docker/login-action@v3", "secrets.COSIGN_PRIVATE_KEY", "secrets.COSIGN_PASSWORD", `if [ -n "$COSIGN_PRIVATE_KEY" ]`, "--key env://COSIGN_PRIVATE_KEY", "--tlog-upload=false"} {
 			if !strings.Contains(string(b), required) {
 				t.Fatalf("%s lacks %s", name, required)
 			}
