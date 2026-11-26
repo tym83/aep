@@ -123,7 +123,7 @@ func TestFinalization(t *testing.T) {
 	for _, tt := range []struct {
 		tier, policy, claimPolicy string
 		paused, conflict, retain  bool
-	}{{"prod", "Delete", "Delete", false, false, true}, {"nonprod", "Retain", "Delete", false, false, true}, {"nonprod", "Delete", "Retain", false, false, true}, {"nonprod", "Delete", "Delete", false, false, false}, {"nonprod", "Delete", "Delete", true, false, true}, {"nonprod", "Delete", "Delete", false, true, true}} {
+	}{{"nonprod", "", "Delete", false, false, false}, {"nonprod", "", "Retain", false, false, true}, {"prod", "", "Delete", false, false, true}, {"prod", "Retain", "Delete", false, false, true}, {"prod", "Delete", "Delete", false, false, true}, {"nonprod", "Retain", "Delete", false, false, true}, {"nonprod", "Delete", "Retain", false, false, true}, {"nonprod", "Delete", "Delete", false, false, false}, {"nonprod", "Delete", "Delete", true, false, true}, {"nonprod", "Delete", "Delete", false, true, true}} {
 		t.Run(fmt.Sprint(tt), func(t *testing.T) {
 			c := testClaim()
 			r, d := harness(t, c)

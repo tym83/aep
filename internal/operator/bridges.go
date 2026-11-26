@@ -99,7 +99,7 @@ func (s *session) bridges(ctx context.Context) error {
 		if e = s.r.Management.apply(ctx, s.o, "configmaps", cm); e != nil {
 			return e
 		}
-		args := []string{"--organization=" + s.o.Name, "--tier=" + tier, "--tenant-namespace=" + tenant, "--cluster-id=" + string(s.o.UID) + "-" + tier, "--allowed-kinds=" + strings.Join(services.AllowedKinds, ","), "--app-kubeconfig=/credentials/kubeconfig", "--app-token-file=/credentials/token", "--config=/policy/policy.yaml", "--tier-deletion-policy=Retain"}
+		args := s.bridgeArgs(tier)
 		labels := M{"app.kubernetes.io/name": name}
 		bridgeImage, err := s.r.Options.pinnedImage(s.r.Options.BridgeImage)
 		if err != nil {
@@ -120,4 +120,13 @@ func (s *session) bridges(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// The CLI defaults to Retain, so nonprod must explicitly allow claim deletion.
+func (s *session) bridgeArgs(tier string) []string {
+	deletionPolicy := "Delete"
+	if tier == "prod" {
+		deletionPolicy = "Retain"
+	}
+	return []string{"--organization=" + s.o.Name, "--tier=" + tier, "--tenant-namespace=" + TenantNamespace(s.o.Name, tier), "--cluster-id=" + string(s.o.UID) + "-" + tier, "--allowed-kinds=" + strings.Join(s.o.Spec.Tiers[tier].Services.AllowedKinds, ","), "--app-kubeconfig=/credentials/kubeconfig", "--app-token-file=/credentials/token", "--config=/policy/policy.yaml", "--tier-deletion-policy=" + deletionPolicy}
 }

@@ -388,5 +388,8 @@ func (s *suite) sweep() {
 			}
 		}
 	}
+	apps, appFailures := s.verifyApplicationCleanup()
+	remaining += apps
+	failures += appFailures
 	s.t.Logf("cleanup report run=%s swept=%d remaining=%d errors=%d; ChangeRequests retained as audit records", s.run, removed, remaining, failures)
 }
