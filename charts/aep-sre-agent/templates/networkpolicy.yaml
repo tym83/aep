@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.alertRouterNamespace }}
+          podSelector:
+            matchLabels: {{ toYaml .Values.networkPolicy.alertRouterLabels | nindent 14 }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.portalNamespace }}
+          podSelector:
+            matchLabels: {{ toYaml .Values.networkPolicy.portalLabels | nindent 14 }}
+      ports: [{protocol: TCP, port: 8080}]

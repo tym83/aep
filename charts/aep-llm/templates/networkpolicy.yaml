@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  policyTypes: [Ingress]
+  {{- if .Values.networkPolicy.allowedSources }}
+  ingress:
+    - from: {{ toYaml .Values.networkPolicy.allowedSources | nindent 8 }}
+      ports: [{protocol: TCP, port: 8000}]
+  {{- else }}
+  ingress: []
+  {{- end }}

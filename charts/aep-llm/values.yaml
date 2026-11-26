@@ -1,0 +1,25 @@
+dev: false
+image:
+  repository: vllm/vllm-openai
+  tag: v0.11.0
+  # Docker Registry manifest digest for v0.11.0, verified 2026-11-25.
+  digest: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
+model: ""
+gpu: 1
+weights:
+  size: 100Gi
+  storageClass: ""
+  existingClaim: ""
+resources:
+  cpu: "4"
+  memory: 16Gi
+# Required existing Secret with key api-key; pass the same key to the agent.
+apiKeySecret: ""
+extraArgs: []
+
+allowUnauthenticated: false
+networkPolicy:
+  allowedSources:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: aep-sre-agent

@@ -1,0 +1,12 @@
+FROM golang:1.26 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -trimpath -o /rca-eval ./cmd/rca-eval
+FROM gcr.io/distroless/static:nonroot
+COPY --from=build /rca-eval /rca-eval
+COPY eval/cases.yaml /eval/cases.yaml
+WORKDIR /
+USER 65532:65532
+ENTRYPOINT ["/rca-eval"]

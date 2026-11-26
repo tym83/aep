@@ -25,7 +25,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -89,30 +88,7 @@ func (s *Server) withAuth(next authenticated) http.HandlerFunc {
 var roles = []string{"developer", "platform", "approver", "admin", "auditor", "finance"}
 
 func memberships(groups []string) map[string][]string {
-	result := map[string][]string{}
-	for _, group := range groups {
-		group = strings.TrimPrefix(group, "/")
-		if !strings.HasPrefix(group, "aep-") {
-			continue
-		}
-		group = strings.TrimPrefix(group, "aep-")
-		for _, role := range roles {
-			if !strings.HasSuffix(group, "-"+role) {
-				continue
-			}
-			org := strings.TrimSuffix(group, "-"+role)
-			if len(validation.IsDNS1123Label(org)) != 0 {
-				continue
-			}
-			if !contains(result[org], role) {
-				result[org] = append(result[org], role)
-			}
-		}
-	}
-	for org := range result {
-		sort.Strings(result[org])
-	}
-	return result
+	return authn.Memberships(groups, roles)
 }
 func contains(values []string, value string) bool {
 	for _, v := range values {

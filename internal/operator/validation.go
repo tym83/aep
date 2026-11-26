@@ -54,9 +54,10 @@ func Validate(o *api.Organization) error {
 			return fmt.Errorf("registries must be exact registry hosts with optional ports")
 		}
 	}
-	if !regexp.MustCompile(`^[a-z0-9]{1,32}$`).MatchString(o.Name) || slices.Contains([]string{"aep", "root", "cozy", "system"}, o.Name) {
-		return fmt.Errorf("organization name must be 1-32 lowercase alphanumeric characters and not reserved")
+	if err := ValidateName(o.Name); err != nil {
+		return err
 	}
+
 	if o.Spec.Profile == "regulated" {
 		return fmt.Errorf("regulated profile is not implemented")
 	}
@@ -175,4 +176,12 @@ func PhysicalTier(o *api.Organization, tier string) string {
 		return "nonprod"
 	}
 	return tier
+}
+
+// ValidateName is shared by consumers that must not trust invalid registry names.
+func ValidateName(name string) error {
+	if !regexp.MustCompile(`^[a-z0-9]{1,32}$`).MatchString(name) || slices.Contains([]string{"aep", "root", "cozy", "system", "platform", "security"}, name) {
+		return fmt.Errorf("organization name must be 1-32 lowercase alphanumeric characters and not reserved")
+	}
+	return nil
 }

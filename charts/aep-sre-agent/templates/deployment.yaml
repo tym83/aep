@@ -1,0 +1,108 @@
+{{- if and (not .Values.dev) (not .Values.tokenProxy.image.digest) }}{{ fail "tokenProxy.image.digest is required unless dev is true" }}{{ end }}
+{{- if and (not .Values.dev) (not .Values.image.digest) }}{{ fail "image.digest is required unless dev is true" }}{{ end }}
+{{- $org := required "organization is required" .Values.organization -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $org) }}{{ fail "invalid organization" }}{{ end -}}
+{{- if not (hasPrefix "https://" .Values.mcpUrl) }}{{ fail "mcpUrl must use HTTPS" }}{{ end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: aep-sre-agent
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        aep.aenix.io/organization: {{ $org | quote }}
+      annotations:
+        checksum/extensions: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 12000
+        runAsGroup: 12000
+        fsGroup: 12000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: sre-agent
+          image: {{ printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{name: http, containerPort: 8080}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          envFrom:
+            - secretRef: {name: {{ required "secretName is required" .Values.secretName }}}
+          env:
+            - {name: EXTENSIONS_DIR, value: /etc/aep/extensions}
+            - {name: AEP_ORGANIZATION, value: {{ $org | quote }}}
+            - {name: AUTH_CONFIG_PATH, value: /etc/aep/extensions/auth-config.yaml}
+            - {name: RCA_MODEL_NAME, value: {{ required "llm.modelName is required" .Values.llm.modelName | quote }}}
+            - {name: RCA_LLM_BASE_URL, value: {{ required "llm.baseUrl is required" .Values.llm.baseUrl | quote }}}
+            - {name: OBSERVER_API_URL, value: {{ .Values.observerApiUrl | quote }}}
+            - {name: OPENCHOREO_API_URL, value: {{ .Values.openchoreoApiUrl | quote }}}
+            - {name: REPORT_BACKEND, value: {{ .Values.reportBackend | quote }}}
+            - {name: OAUTH_CLIENT_ID, value: {{ printf "aep-%s-sre-agent" $org | quote }}}
+            - {name: OAUTH_TOKEN_URL, value: {{ required "oauth.tokenUrl is required" .Values.oauth.tokenUrl | quote }}}
+            - {name: OAUTH_SCOPE, value: {{ .Values.oauth.scope | quote }}}
+            - {name: JWT_ISSUER, value: {{ required "jwt.issuer is required" .Values.jwt.issuer | quote }}}
+            - {name: JWT_AUDIENCE, value: {{ required "jwt.audience is required" .Values.jwt.audience | quote }}}
+            - {name: JWT_JWKS_URL, value: {{ required "jwt.jwksUrl is required" .Values.jwt.jwksUrl | quote }}}
+            - {name: JWT_INSECURE_ALLOW_UNVERIFIED, value: "false"}
+            - {name: TLS_INSECURE_SKIP_VERIFY, value: "false"}
+            - {name: REMED_AGENT, value: "false"}
+            {{- if .Values.caSecretName }}
+            - {name: SSL_CERT_FILE, value: /etc/aep/ca/ca.crt}
+            {{- end }}
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          readinessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 10}
+          livenessProbe: {tcpSocket: {port: http}, initialDelaySeconds: 60}
+          volumeMounts:
+            - {name: extensions, mountPath: /etc/aep/extensions, readOnly: true}
+            {{- if .Values.caSecretName }}
+            - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
+            {{- end }}
+        - name: token-proxy
+          image: {{ printf "%s%s" .Values.tokenProxy.image.repository (ternary (printf "@%s" .Values.tokenProxy.image.digest) (printf ":%s" .Values.tokenProxy.image.tag) (ne .Values.tokenProxy.image.digest "")) | quote }}
+          args: [{{ printf "--listen=127.0.0.1:%d" (int .Values.tokenProxy.port) | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          env:
+            - {name: OAUTH_CLIENT_ID, value: {{ printf "aep-%s-sre-agent" $org | quote }}}
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secretName }}, key: OAUTH_CLIENT_SECRET}
+            - {name: OAUTH_TOKEN_URL, value: {{ .Values.oauth.tokenUrl | quote }}}
+            - {name: OAUTH_SCOPE, value: {{ .Values.oauth.scope | quote }}}
+            - {name: MCP_URL, value: {{ .Values.mcpUrl | quote }}}
+            {{- if .Values.caSecretName }}
+            - {name: SSL_CERT_FILE, value: /etc/aep/ca/ca.crt}
+          volumeMounts:
+            - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: extensions
+          configMap:
+            name: {{ .Release.Name }}-extensions
+            items:
+              - {key: auth-config.yaml, path: auth-config.yaml}
+              {{- range $agent := list "rca" "chat" }}
+              - {key: mcp.json, path: {{ $agent }}/mcp.json}
+              - {key: CONTEXT.md, path: {{ $agent }}/CONTEXT.md}
+              {{- range $name := list "database-below-service" "tenant-cluster-capacity" "quota-exhaustion" }}
+              - {key: {{ $name }}.md, path: {{ $agent }}/skills/{{ $name }}/SKILL.md}
+              {{- end }}
+              {{- end }}
+        {{- if .Values.caSecretName }}
+        - name: ca
+          secret: {secretName: {{ .Values.caSecretName }}}
+        {{- end }}
