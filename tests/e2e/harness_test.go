@@ -196,6 +196,10 @@ func (s *suite) require(org int, role, endpoint, method, path string, body any, 
 		ok = ok || code == want
 	}
 	if !ok {
+		if os.Getenv("AEP_E2E_SHOW_ERRORS") == "1" && code >= 400 {
+			// Error bodies are API messages, not object data; opt-in for stand debugging.
+			s.t.Fatalf("%s %s %s %s: HTTP %d, want %v: %.300s", role, method, endpoint, path, code, codes, raw)
+		}
 		s.t.Fatalf("%s %s %s: HTTP %d, want %v (body redacted)", role, method, endpoint, code, codes)
 	}
 	out := map[string]any{}
