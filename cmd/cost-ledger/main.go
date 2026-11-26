@@ -22,7 +22,7 @@ func main() {
 func run() error {
 	var kubeconfig, dsn, template, endpoint, bucket, access, secret, region, installation string
 	var secure, once bool
-	flag.StringVar(&kubeconfig, "kubeconfig", "", "Management kubeconfig; default in-cluster")
+	flag.StringVar(&kubeconfig, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&dsn, "dsn", os.Getenv("COST_DSN"), "PostgreSQL DSN; alternatively COST_DSN from a Secret")
 	flag.StringVar(&template, "tier-opencost-url-template", "", "OpenCost base URL with {org} and {tier}; no URL means unallocated")
 	flag.StringVar(&endpoint, "s3-endpoint", os.Getenv("S3_ENDPOINT"), "S3 host[:port]")

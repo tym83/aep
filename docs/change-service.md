@@ -143,7 +143,7 @@ curl -X POST https://change.aep.example/v1/changes/acme/chg-…/decision \
 `cmd/change-api`: `--issuer` (required), `--jwks-url` (defaults to the
 Keycloak realm certs endpoint), `--audience`, `--username-claim`,
 `--groups-claim`, `--listen`, `--tls-cert/--tls-key`,
-`--org-namespace-template`, `--kubeconfig`.
+`--org-namespace-template`, `--mgmt-kubeconfig`.
 
 `cmd/change-controller`: `--oc-api-url` (required), `--oc-token-url`,
 `--oc-client-id-template` (default `aep-change-{org}`), `--oc-secret-name`
@@ -151,7 +151,7 @@ Keycloak realm certs endpoint), `--audience`, `--username-claim`,
 `client-secret` and optional `client-id`/`token-url` keys),
 `--policy-config`, `--approval-ttl` (72h), `--max-attempts` (8),
 `--leader-election-namespace`, `--org-namespace-template`,
-`--instance-id`, `--kubeconfig`.
+`--instance-id`, `--mgmt-kubeconfig`.
 
 RBAC examples: `config/change/rbac.yaml`. The controller needs
 changerequests (+status), leases and per-org Secrets; the API needs

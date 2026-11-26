@@ -108,8 +108,8 @@ Do not append `/v1`. The backend forwards the user's verified upstream access
 token; configure Keycloak to include the required audience and organization
 groups. For traffic outside the cluster, expose an HTTPS endpoint or use the
 binary's `--tls-cert` and `--tls-key` flags. For local access to a management
-cluster, run `go run ./cmd/read-api --kubeconfig=<path> --issuer=<issuer>
---audience=<audience>` (on one line). Without `--kubeconfig`, it uses in-cluster
+cluster, run `go run ./cmd/read-api --mgmt-kubeconfig=<path> --issuer=<issuer>
+--audience=<audience>` (on one line). Without `--mgmt-kubeconfig`, it uses in-cluster
 credentials. See [the API contract](portal-api.md) for authorization rules and
 the conservative application-derived readiness mapping in v0.
 

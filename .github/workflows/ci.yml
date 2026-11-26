@@ -16,6 +16,15 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+      # Flag registration happens at start-up, outside unit tests: catch
+      # duplicate flags and init panics in every shipped binary.
+      - name: Binaries start
+        run: |
+          go build -o bin/ ./cmd/...
+          for b in bin/*; do
+            out=$("$b" -h 2>&1 || true)
+            if grep -q "panic" <<<"$out"; then echo "$b: $out"; exit 1; fi
+          done
   charts:
     runs-on: ubuntu-latest
     steps:
