@@ -17,16 +17,26 @@ async function login(page: Page, role: string) {
   await idp.locator(selector('username', '#username')).fill(required(`AEP_${role}_USER`));
   await idp.locator(selector('password', '#password')).fill(required(`AEP_${role}_PASSWORD`));
   await Promise.all([idp.waitForEvent('close'), idp.locator(selector('submit', '#kc-login')).click()]);
-  await expect(page.locator(selector('signedIn', 'nav'))).toBeVisible();
+  await expect(page.locator(selector('signedIn', 'h1:has-text("Catalog")'))).toBeVisible();
+}
+
+function catalogOf(entityPath: string) {
+  if (process.env.AEP_CATALOG_PATH) return process.env.AEP_CATALOG_PATH;
+  const kind = entityPath.split('/').filter(Boolean)[2];
+  if (!kind) throw new Error('Entity paths must look like /catalog/<namespace>/<kind>/<name>');
+  return `/?filters%5Bkind%5D=${encodeURIComponent(kind)}&filters%5Buser%5D=all`;
 }
 
 test('developer catalog, infrastructure card and organization isolation', async ({ page }) => {
   await login(page, 'DEVELOPER');
-  await page.goto(process.env.AEP_CATALOG_PATH ?? '/catalog');
+  // The catalog lists one kind at a time; check each entity under its own kind.
+  await page.goto(catalogOf(required('AEP_OWN_ENTITY_PATH')));
   await expect(page.getByText(required('AEP_OWN_ENTITY'), { exact: true })).toBeVisible();
+  await page.goto(catalogOf(required('AEP_OTHER_ENTITY_PATH')));
+  await expect(page.locator(selector('pageReady', 'h1'))).toBeVisible();
   await expect(page.getByText(required('AEP_OTHER_ENTITY'), { exact: true })).toHaveCount(0);
   await page.goto(required('AEP_OWN_ENTITY_PATH'));
-  await expect(page.locator(selector('infrastructure', 'text=AEP Infrastructure'))).toBeVisible();
+  await expect(page.locator(selector('infrastructure', 'text=Cozystack resource'))).toBeVisible();
   // Direct navigation also must not reveal an entity hidden by catalog filtering.
   await page.goto(required('AEP_OTHER_ENTITY_PATH'));
   await expect(page.locator(selector('entityDenied', 'text=/not found|access denied|forbidden/i'))).toBeVisible();
@@ -73,9 +83,9 @@ test('approver sees a pending change by another person and approves it', async (
 
 test('auditor has read access and no create controls', async ({ page }) => {
   await login(page, 'AUDITOR');
-  for (const path of [process.env.AEP_CATALOG_PATH ?? '/catalog', '/aep/compliance', '/aep/costs']) {
+  for (const path of [process.env.AEP_CATALOG_PATH ?? '/?filters%5Bkind%5D=component&filters%5Buser%5D=all', '/aep/compliance', '/aep/costs']) {
     await page.goto(path);
-    await expect(page.locator(selector('pageReady', 'main'))).toBeVisible();
+    await expect(page.locator(selector('pageReady', 'h1'))).toBeVisible();
     await expect(page.locator(selector('createButtons', 'button:has-text("Create"), a:has-text("Create"), button:has-text("Request change")'))).toHaveCount(0);
   }
 });
