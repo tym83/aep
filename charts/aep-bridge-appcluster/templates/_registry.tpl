@@ -9,8 +9,10 @@
 {{- else if and (not (contains "." $first)) (not (contains ":" $first)) (ne $first "localhost") -}}{{- $ref = printf "docker.io/%s" $ref -}}{{- end -}}
 {{- $parts := splitList "/" $ref -}}
 {{- $host := first $parts | replace ":" "_" -}}
-{{- if eq $host "index.docker.io" -}}{{- $host = "docker.io" -}}{{- end -}}
-{{- $ref = printf "%s/%s/%s" $mirror $host (join "/" (rest $parts)) -}}
+{{- if or (eq $host "index.docker.io") (eq $host "registry-1.docker.io") -}}{{- $host = "docker.io" -}}{{- end -}}
+{{- $path := join "/" (rest $parts) -}}
+{{- if and (eq $host "docker.io") (not (contains "/" $path)) -}}{{- $path = printf "library/%s" $path -}}{{- end -}}
+{{- $ref = printf "%s/%s/%s" $mirror $host $path -}}
 {{- end -}}
 {{- if $oci -}}oci://{{- end -}}{{- $ref -}}
 {{- end -}}

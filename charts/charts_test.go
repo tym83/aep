@@ -181,3 +181,12 @@ func TestMirrorAllCharts(t *testing.T) {
 		})
 	}
 }
+
+func TestDockerHubAliases(t *testing.T) {
+	for _, host := range []string{"docker.io", "index.docker.io", "registry-1.docker.io"} {
+		out, err := render(t, "aep-llm", "model=test", "apiKeySecret=key", "image.repository="+host+"/ubuntu", "image.tag=v24", "image.digest=", "dev=true", "global.imageRegistry=mirror.local/cache")
+		if err != nil || !strings.Contains(out, "mirror.local/cache/docker.io/library/ubuntu:v24") {
+			t.Fatalf("%s: %v\n%s", host, err, out)
+		}
+	}
+}

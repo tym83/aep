@@ -13,7 +13,7 @@ func Rewrite(ref, mirror string) string {
 		prefix = "oci://"
 		ref = strings.TrimPrefix(ref, prefix)
 	}
-	mirror = strings.TrimSuffix(strings.TrimPrefix(mirror, "oci://"), "/")
+	mirror = strings.TrimRight(strings.TrimPrefix(mirror, "oci://"), "/")
 	if strings.HasPrefix(ref, mirror+"/") {
 		return prefix + ref
 	}
@@ -24,8 +24,11 @@ func Rewrite(ref, mirror string) string {
 		ref = "docker.io/" + ref
 	}
 	host, path, _ := strings.Cut(ref, "/")
-	if host == "index.docker.io" {
+	if host == "index.docker.io" || host == "registry-1.docker.io" {
 		host = "docker.io"
+	}
+	if host == "docker.io" && !strings.Contains(path, "/") {
+		path = "library/" + path
 	}
 	host = strings.ReplaceAll(host, ":", "_")
 	return prefix + mirror + "/" + host + "/" + path
