@@ -1,8 +1,7 @@
 # CzEP draft: trusted machine onboarding and safe retirement
 
-Status: proposal for Cozystack upstream; no AEP node controller is implemented.
-Owner decision: machine lifecycle belongs to Cozystack. AEP supplies optional
-approval workflow and CMDB integration, not Talos configuration or BMC control.
+Status: proposal for Cozystack upstream; the node controller is not implemented.
+Machine lifecycle, Talos configuration and BMC control belong to Cozystack.
 
 ## Motivation
 
@@ -22,7 +21,7 @@ and auditable. Support a local machine inventory and export references to CMDB.
 
 Do not replace initial Cozystack installation, create a global PXE network, make
 Omni mandatory, add a second Cluster API lifecycle for tenant clusters, or put
-Talos/BMC credentials in AEP. Fleet API federation is distinct from hardware
+Talos/BMC credentials in an external approval system. Fleet API federation is distinct from hardware
 inventory. Until upstream accepts a global catalog, site GitOps repositories own
 pool definitions and hardware allow-lists.
 
@@ -110,12 +109,13 @@ attestation and authorization; secrets remain in the local secret manager.
 
 ## Approval integration
 
-Without AEP, tenant-root super-admin approves through Cozystack. With AEP enabled,
+By default, tenant-root super-admin approves through Cozystack. When integrated
+with an external approval system,
 admission permits Machine approval/decommission transitions only to the dedicated
 change executor identity. `machine-approve` references Machine UID, identity hash,
 pool revision, expiry, initiator and independent approver; retries are idempotent
 and stale identity/pool revisions require new approval. The interface returns an
-audit correlation ID. AEP must not write `status` or treat discovery as approval.
+audit correlation ID. The external approval system must not write `status` or treat discovery as approval.
 Control-plane additions/replacements always require manual approval; maintain
 three or five healthy members and never automate a quorum-breaking transition.
 
