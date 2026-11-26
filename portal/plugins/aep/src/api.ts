@@ -3,6 +3,26 @@ import {
   DiscoveryApi,
   FetchApi,
 } from '@backstage/core-plugin-api';
+export type ComplianceTier = {
+  tier: string;
+  stale: boolean;
+  snapshot: {
+    collectedAt: string;
+    policies: Record<
+      string,
+      { pass: number; fail: number; warn: number; error: number; skip: number }
+    >;
+    failingResources: {
+      policy: string;
+      rule: string;
+      apiVersion: string;
+      kind: string;
+      namespace: string;
+      name: string;
+    }[];
+    failuresTruncated: boolean;
+  } | null;
+};
 export type Session = {
   username: string;
   organizations: { name: string; roles: string[] }[];
@@ -83,6 +103,11 @@ export class AepApi {
   services(org: string) {
     return this.request<{ items: Service[] }>(
       `/v1/organizations/${encodeURIComponent(org)}/services`,
+    );
+  }
+  compliance(org: string) {
+    return this.request<{ organization: string; items: ComplianceTier[] }>(
+      `/v1/organizations/${encodeURIComponent(org)}/compliance`,
     );
   }
   changes(org: string) {

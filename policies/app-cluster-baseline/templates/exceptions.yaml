@@ -1,0 +1,81 @@
+# A native admission guard cannot itself be bypassed by a PolicyException.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: aep-policy-exceptions
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kyverno.io, policies.kyverno.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE]
+        resources: [policyexceptions]
+  validations:
+    - expression: "request.userInfo.username == '{{ .Values.exceptionUsername }}'"
+      message: Only the approved change executor may manage exceptions.
+    - expression: "object.metadata.namespace == 'aep-system'"
+      message: Exceptions must be in aep-system.
+    - expression: >-
+        has(object.metadata.annotations) &&
+        'aep.aenix.io/change-request' in object.metadata.annotations &&
+        size(object.metadata.annotations['aep.aenix.io/change-request']) > 0 &&
+        'aep.aenix.io/expires' in object.metadata.annotations &&
+        object.metadata.annotations['aep.aenix.io/expires'].matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$') &&
+        timestamp(object.metadata.annotations['aep.aenix.io/expires']) > timestamp('1970-01-01T00:00:00Z')
+      message: A change request and an RFC3339 expiry are required.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: aep-policy-exceptions
+spec:
+  policyName: aep-policy-exceptions
+  validationActions: [Deny]
+---
+# Delivered through Flux, including upgrades of already bootstrapped tier clusters.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-policy-collector
+rules:
+  - apiGroups: [wgpolicyk8s.io]
+    resources: [policyreports, clusterpolicyreports]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-policy-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-policy-collector
+subjects:
+  - kind: ServiceAccount
+    name: aep-operator
+    namespace: aep-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aep-exception-cleaner
+  namespace: aep-system
+rules:
+  - apiGroups: [kyverno.io, policies.kyverno.io]
+    resources: [policyexceptions]
+    verbs: [list, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aep-exception-cleaner
+  namespace: aep-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aep-exception-cleaner
+subjects:
+  - kind: ServiceAccount
+    name: aep-operator
+    namespace: aep-system

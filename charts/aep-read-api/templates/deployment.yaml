@@ -20,6 +20,7 @@ spec:
           image: {{ .Values.image | quote }}
           args:
             - --listen=:8080
+            - {{ printf "--namespace=%s" .Values.complianceNamespace | quote }}
             - {{ printf "--issuer=%s" (required "oidc.issuer is required" .Values.oidc.issuer) | quote }}
             - {{ printf "--audience=%s" (required "oidc.audience is required" .Values.oidc.audience) | quote }}
             - {{ printf "--jwks-url=%s" .Values.oidc.jwksUrl | quote }}

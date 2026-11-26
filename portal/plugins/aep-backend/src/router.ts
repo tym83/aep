@@ -13,7 +13,9 @@ export function createRouter(options: {
     const read =
       req.method === 'GET' &&
       (/^\/v1\/me$/.test(req.path) ||
-        /^\/v1\/organizations\/[a-z0-9-]+\/(services|changes)$/.test(req.path));
+        /^\/v1\/organizations\/[a-z0-9-]+\/(services|changes|compliance)$/.test(
+          req.path,
+        ));
     const change =
       (req.method === 'POST' && req.path === '/v1/changes') ||
       (req.method === 'GET' &&

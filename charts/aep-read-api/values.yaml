@@ -6,6 +6,8 @@ oidc:
   audience: ""
   usernameClaim: preferred_username
   groupsClaim: groups
+# Namespace where the operator collector stores compliance snapshots.
+complianceNamespace: aep-system
 orgNamespaceTemplate: tenant-{org}
 # Example: https://console.example.org/{{.Namespace}}/{{.Kind}}/{{.Name}}
 consoleUrlTemplate: ""

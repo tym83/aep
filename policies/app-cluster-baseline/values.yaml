@@ -1,0 +1,5 @@
+mode: audit
+organizationUID: ""
+registries: []
+agentUsername: system:serviceaccount:openchoreo-data-plane:cluster-agent-dataplane
+exceptionUsername: system:serviceaccount:aep-system:policy-exception-manager

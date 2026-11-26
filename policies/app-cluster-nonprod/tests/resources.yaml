@@ -1,0 +1,112 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "safe",
+    "namespace": "apps"
+  },
+  "spec": {
+    "securityContext": {
+      "runAsNonRoot": true,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:v1",
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "resources": {
+          "limits": {
+            "cpu": "100m",
+            "memory": "64Mi"
+          }
+        }
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "unsafe",
+    "namespace": "apps"
+  },
+  "spec": {
+    "securityContext": {
+      "runAsNonRoot": true,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:latest",
+        "securityContext": {
+          "privileged": true
+        },
+        "resources": {}
+      }
+    ],
+    "hostNetwork": true,
+    "hostPID": true,
+    "hostIPC": true,
+    "volumes": [
+      {
+        "name": "host",
+        "hostPath": {
+          "path": "/"
+        }
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "system",
+    "namespace": "kube-system"
+  },
+  "spec": {
+    "securityContext": {
+      "runAsNonRoot": true,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      }
+    },
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:latest",
+        "securityContext": {
+          "privileged": true
+        },
+        "resources": {}
+      }
+    ],
+    "hostNetwork": true,
+    "hostPID": true,
+    "hostIPC": true,
+    "volumes": [
+      {
+        "name": "host",
+        "hostPath": {
+          "path": "/"
+        }
+      }
+    ]
+  }
+}

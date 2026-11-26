@@ -1,0 +1,72 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-openchoreo-labels
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: reserved-labels
+      match:
+        any:
+          - resources:
+              kinds: [Pod, Deployment]
+              operations: [CREATE, UPDATE]
+      exclude:
+        any:
+          - resources:
+              namespaces: ["dp-*"]
+          - subjects:
+              - kind: ServiceAccount
+                namespace: {{ index (splitList ":" .Values.agentUsername) 2 }}
+                name: {{ index (splitList ":" .Values.agentUsername) 3 }}
+      validate:
+        message: Only the OpenChoreo agent may set openchoreo.dev labels outside dp namespaces.
+        deny:
+          conditions:
+            any:
+              - key: {{ "{{ keys(request.object.metadata.labels || `{}`)[?starts_with(@, 'openchoreo.dev/')] | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
+              - key: {{ "{{ keys(request.object.spec.template.metadata.labels || `{}`)[?starts_with(@, 'openchoreo.dev/')] | length(@) }}" | quote }}
+                operator: GreaterThan
+                value: 0
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-openchoreo-routes
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: reserved-gateway
+      match:
+        any:
+          - resources:
+              kinds: [gateway.networking.k8s.io/*/HTTPRoute, gateway.networking.k8s.io/*/TLSRoute, gateway.networking.k8s.io/*/GRPCRoute]
+      exclude:
+        any:
+          - resources:
+              namespaces: ["dp-*"]
+      validate:
+        message: Only dp namespaces may attach to the OpenChoreo gateway.
+        foreach:
+          - list: request.object.spec.parentRefs || `[]`
+            deny:
+              conditions:
+                all:
+                  - key: {{ "{{ element.name }}" | quote }}
+                    operator: Equals
+                    value: gateway-default
+                  - key: {{ "{{ element.namespace || request.object.metadata.namespace }}" | quote }}
+                    operator: Equals
+                    value: openchoreo-data-plane
+                  - key: {{ "{{ element.kind || 'Gateway' }}" | quote }}
+                    operator: Equals
+                    value: Gateway
+                  - key: {{ "{{ element.group || 'gateway.networking.k8s.io' }}" | quote }}
+                    operator: Equals
+                    value: gateway.networking.k8s.io

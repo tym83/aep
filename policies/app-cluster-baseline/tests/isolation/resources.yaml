@@ -1,0 +1,290 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "spoofed",
+    "namespace": "apps",
+    "labels": {
+      "openchoreo.dev/organization": "victim"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:v1"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "dp-workload",
+    "namespace": "dp-dev",
+    "labels": {
+      "openchoreo.dev/organization": "victim"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "app",
+        "image": "registry.example/app:v1"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "spoofed-template",
+    "namespace": "apps"
+  },
+  "spec": {
+    "selector": {
+      "matchLabels": {
+        "app": "x"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "x",
+          "openchoreo.dev/organization": "victim"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "name": "app",
+            "image": "registry.example/app:v1"
+          }
+        ]
+      }
+    }
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "HTTPRoute",
+  "metadata": {
+    "name": "outside-httproute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "HTTPRoute",
+  "metadata": {
+    "name": "inside-httproute",
+    "namespace": "dp-dev"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "HTTPRoute",
+  "metadata": {
+    "name": "other-httproute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "user-gateway"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "HTTPRoute",
+  "metadata": {
+    "name": "implicit-httproute",
+    "namespace": "openchoreo-data-plane"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1alpha2",
+  "kind": "TLSRoute",
+  "metadata": {
+    "name": "outside-tlsroute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1alpha2",
+  "kind": "TLSRoute",
+  "metadata": {
+    "name": "inside-tlsroute",
+    "namespace": "dp-dev"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1alpha2",
+  "kind": "TLSRoute",
+  "metadata": {
+    "name": "other-tlsroute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "user-gateway"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1alpha2",
+  "kind": "TLSRoute",
+  "metadata": {
+    "name": "implicit-tlsroute",
+    "namespace": "openchoreo-data-plane"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "GRPCRoute",
+  "metadata": {
+    "name": "outside-grpcroute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "GRPCRoute",
+  "metadata": {
+    "name": "inside-grpcroute",
+    "namespace": "dp-dev"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "namespace": "openchoreo-data-plane",
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "GRPCRoute",
+  "metadata": {
+    "name": "other-grpcroute",
+    "namespace": "apps"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "user-gateway"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "gateway.networking.k8s.io/v1",
+  "kind": "GRPCRoute",
+  "metadata": {
+    "name": "implicit-grpcroute",
+    "namespace": "openchoreo-data-plane"
+  },
+  "spec": {
+    "parentRefs": [
+      {
+        "name": "gateway-default"
+      }
+    ]
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "name": "aep-system",
+    "labels": {}
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Namespace",
+  "metadata": {
+    "name": "marked",
+    "labels": {
+      "app.kubernetes.io/managed-by": "aep",
+      "aep.aenix.io/organization": "test-org"
+    }
+  }
+}

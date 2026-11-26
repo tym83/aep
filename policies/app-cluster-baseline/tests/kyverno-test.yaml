@@ -1,0 +1,69 @@
+{
+  "apiVersion": "cli.kyverno.io/v1alpha1",
+  "kind": "Test",
+  "metadata": {
+    "name": "aep-baseline"
+  },
+  "policies": [
+    "rendered.yaml"
+  ],
+  "resources": [
+    "resources.yaml"
+  ],
+  "results": [
+    {
+      "policy": "aep-baseline",
+      "rule": "no-host-access",
+      "resources": [
+        "safe"
+      ],
+      "kind": "Pod",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-baseline",
+      "rule": "no-host-access",
+      "resources": [
+        "unsafe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-baseline",
+      "rule": "safe-containers",
+      "resources": [
+        "safe"
+      ],
+      "kind": "Pod",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-baseline",
+      "rule": "safe-containers",
+      "resources": [
+        "unsafe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-registry",
+      "rule": "allowed-registries",
+      "resources": [
+        "safe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-registry",
+      "rule": "allowed-registries",
+      "resources": [
+        "unsafe"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    }
+  ]
+}

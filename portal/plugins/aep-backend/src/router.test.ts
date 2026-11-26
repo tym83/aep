@@ -45,6 +45,24 @@ describe('AEP proxy', () => {
       }),
     );
   });
+  it('routes compliance to the read API and preserves organization authorization', async () => {
+    upstream.mockResolvedValueOnce(
+      new Response('{"error":"denied"}', { status: 403 }),
+    );
+    const result = await request(app)
+      .get('/v1/organizations/other/compliance')
+      .set('x-openchoreo-token', 'user-token');
+    expect(result.status).toBe(403);
+    expect(upstream).toHaveBeenCalledWith(
+      'http://read/v1/organizations/other/compliance',
+      expect.objectContaining({
+        headers: {
+          Authorization: 'Bearer user-token',
+          Accept: 'application/json',
+        },
+      }),
+    );
+  });
   it('preserves idempotency, optimistic locking and upstream authorization errors', async () => {
     expect(
       (

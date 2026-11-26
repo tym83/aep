@@ -1,0 +1,50 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-prod-images
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: digest-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+{{ include "aep.platformNamespaces" . | indent 16 }}
+      validate:
+        message: Production images must use an explicit sha256 digest.
+        foreach:
+          - list: request.object.spec.[containers, initContainers, ephemeralContainers][]
+            deny:
+              conditions:
+                all:
+                  - key: {{ "{{ regex_match('^.+@sha256:[a-f0-9]{64}$', element.image) }}" | quote }}
+                    operator: Equals
+                    value: false
+    - name: cosign-signatures
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+{{ include "aep.platformNamespaces" . | indent 16 }}
+      verifyImages:
+        - imageReferences: ["*"]
+          mutateDigest: false
+          verifyDigest: true
+          required: true
+          attestors:
+            - count: 1
+              entries:
+                - keys:
+                    publicKeys: {{ required "cosignPublicKey is required in production" .Values.cosignPublicKey | quote }}
+                    rekor:
+                      ignoreTlog: true

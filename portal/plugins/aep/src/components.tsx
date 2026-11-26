@@ -14,6 +14,7 @@ import {
 } from '@material-ui/core';
 import {
   aepApiRef,
+  ComplianceTier,
   Change,
   ChangeInput,
   Service,
@@ -511,6 +512,125 @@ export function ChangesPage() {
             )}
           </>
         )}
+      </Content>
+    </Page>
+  );
+}
+
+export function ComplianceSummary({ tier }: { tier: ComplianceTier }) {
+  return (
+    <InfoCard title={`${tier.tier} compliance`}>
+      {tier.stale && (
+        <Typography role="status" color="error">
+          Stale or unavailable report — compliance is unknown.
+        </Typography>
+      )}
+      {tier.snapshot ? (
+        <>
+          <p>Collected: {tier.snapshot.collectedAt}</p>
+          {Object.keys(tier.snapshot.policies).length === 0 ? (
+            <p>No policy results reported yet.</p>
+          ) : (
+            <table>
+              <caption>Policy results</caption>
+              <thead>
+                <tr>
+                  <th>Policy</th>
+                  {['Pass', 'Fail', 'Warn', 'Error', 'Skip'].map(k => (
+                    <th key={k}>{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(tier.snapshot.policies)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([policy, counts]) => (
+                    <tr key={policy}>
+                      <th scope="row">{policy}</th>
+                      {(['pass', 'fail', 'warn', 'error', 'skip'] as const).map(
+                        k => (
+                          <td key={k}>{counts[k]}</td>
+                        ),
+                      )}
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
+          <h3>Failing resources</h3>
+          {tier.snapshot.failuresTruncated && (
+            <p>
+              Showing the first 50 failures, ordered by policy and resource.
+            </p>
+          )}
+          <ul>
+            {tier.snapshot.failingResources.map(f => (
+              <li
+                key={`${f.policy}/${f.rule}/${f.apiVersion}/${f.kind}/${f.namespace}/${f.name}`}
+              >
+                {f.policy} / {f.rule}: {f.kind} {f.namespace}/{f.name}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p>Waiting for the first collection.</p>
+      )}
+    </InfoCard>
+  );
+}
+
+export function CompliancePage() {
+  const api = useApi(aepApiRef);
+  const ctx = useSession();
+  const [items, setItems] = useState<ComplianceTier[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setItems([]);
+    setError('');
+    if (!ctx.org)
+      return () => {
+        active = false;
+      };
+    const refresh = () => {
+      setLoading(true);
+      api
+        .compliance(ctx.org)
+        .then(result => {
+          if (active) {
+            setItems(result.items);
+            setError('');
+          }
+        })
+        .catch(e => {
+          if (active) {
+            setItems([]);
+            setError(e.message);
+          }
+        })
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+    };
+    refresh();
+    const timer = setInterval(refresh, 60000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [api, ctx.org]);
+  return (
+    <Page themeId="tool">
+      <Header title="Compliance" />
+      <Content>
+        <OrgSelect session={ctx.session} org={ctx.org} onChange={ctx.setOrg} />
+        <ErrorMessage error={ctx.error || error} />
+        {loading && <p role="status">Loading compliance reports…</p>}
+        {items.map(tier => (
+          <ComplianceSummary key={tier.tier} tier={tier} />
+        ))}
       </Content>
     </Page>
   );

@@ -29,7 +29,26 @@ type TierSpec struct {
 	Cluster  ClusterSpec  `json:"cluster"`
 	Services ServicesSpec `json:"services"`
 }
+
+// PlatformImageTrust separates vendor image trust from organization signing keys.
+type PlatformImageTrust struct {
+	Mode             string   `json:"mode,omitempty"`
+	VendorPublicKeys []string `json:"vendorPublicKeys,omitempty"`
+	AllowedImages    []string `json:"allowedImages,omitempty"`
+}
+
+// PolicySpec controls baseline reporting and the platform image trust boundary.
+type PolicySpec struct {
+	// PlatformNamespaces adds exact addon namespace names; dp-* cells cannot be excluded.
+	PlatformNamespaces []string           `json:"platformNamespaces,omitempty"`
+	PlatformImageTrust PlatformImageTrust `json:"platformImageTrust,omitempty"`
+	Registries         []string           `json:"registries,omitempty"`
+	// CosignPublicKey is an inline PEM public key, never a private signing key.
+	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+}
 type OrganizationSpec struct {
+	Policy       PolicySpec          `json:"policy,omitempty"`
 	DisplayName  string              `json:"displayName"`
 	Profile      string              `json:"profile"`
 	CostCenter   string              `json:"costCenter,omitempty"`
