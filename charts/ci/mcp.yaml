@@ -1,0 +1,13 @@
+oidc:
+  issuer: https://id.example.org/realms/cozy
+organizations:
+  - name: acme
+    tiers: [nonprod, prod]
+tls:
+  issuerRef:
+    name: internal-ca
+alertRouter:
+  enabled: true
+  tlsSecret: router-tls
+  clientCASecret: observer-ca
+  hmacSecret: observer-hmac

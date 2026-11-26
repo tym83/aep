@@ -1,0 +1,82 @@
+# Install once per cluster in aep-system; tier namespaces must already exist.
+# Disable MCP for a router-only release in a separate control-plane cluster.
+mcp:
+  enabled: true
+image:
+  repository: ghcr.io/tym83/aep-cozystack-mcp
+  tag: ""
+  digest: ""
+replicas: 1
+oidc:
+  issuer: ""
+  audience: aep-mcp
+  jwksUrl: ""
+maxRows: 100
+maxBytes: 65536
+requestsPerMinute: 60
+metricsQueryUrlTemplate: ""
+redactPatterns: []
+# Example: [{name: acme, tiers: [nonprod, prod]}]
+organizations: []
+rbac:
+  # Only these fixed, documented resource names can be granted. Disable absent CRDs.
+  kinds:
+    postgreses: true
+    redises: true
+    kuberneteses: true
+    kubernetesnodeses: true
+    kafkas: true
+    rabbitmqs: true
+    mysqls: true
+    clickhouses: true
+    helmreleases: true
+    clusters: true
+    tenantcontrolplanes: true
+    virtualmachineinstances: true
+    backups: true
+tls:
+  # Set existingSecret OR issuerRef.name. Secret must contain tls.crt and tls.key.
+  existingSecret: ""
+  issuerRef:
+    name: ""
+    kind: ClusterIssuer
+    group: cert-manager.io
+  # Explicit HTTP backend mode; requires ingress.enabled and ingress.tls.
+  terminationProxy: false
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  annotations: {}
+  # Standard Ingress TLS list: [{hosts: [mcp.example.org], secretName: mcp-ingress}]
+  tls: []
+networkPolicy:
+  # Namespace AND pod selectors are combined. Agent namespaces derive from organizations.
+  agentLabels:
+    app.kubernetes.io/name: aep-sre-agent
+  ingressControllerNamespace: ingress-nginx
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}
+alertRouter:
+  enabled: false
+  image:
+    repository: ghcr.io/tym83/aep-alert-router
+    tag: ""
+    digest: ""
+  # Single replica: HMAC replay cache is per process.
+  agentUrlTemplate: http://sre-agent.aep-{org}.svc:8080
+  tlsSecret: ""
+  # Secret keys: observer-ca.pem for mTLS, hmac for HMAC (at least 32 random bytes).
+  clientCASecret: ""
+  hmacSecret: ""
+  observerNamespace: openchoreo-observability-plane
+  observerLabels:
+    app.kubernetes.io/name: observer
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {memory: 256Mi}
+global:
+  aepVersion: ""
+  aepDigests: {}
+  imageRegistry: ""

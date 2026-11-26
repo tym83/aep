@@ -46,3 +46,7 @@ charts-lint:
 	helm template read charts/aep-read-api --namespace aep-system -f charts/ci/read.yaml -f charts/ci/ingress.yaml > /dev/null
 	helm lint --strict charts/aep-itsm-bridge -f charts/ci/itsm.yaml
 	helm template itsm charts/aep-itsm-bridge --namespace itsm-acme -f charts/ci/itsm.yaml > /dev/null
+	helm lint --strict charts/aep-mcp -f charts/ci/mcp.yaml
+	helm template cozystack-mcp charts/aep-mcp --namespace aep-system -f charts/ci/mcp.yaml > /dev/null
+	helm lint --strict charts/aep-mcp -f charts/ci/mcp.yaml -f charts/ci/mcp-ingress.yaml
+	helm template cozystack-mcp charts/aep-mcp --namespace aep-system -f charts/ci/mcp.yaml -f charts/ci/mcp-ingress.yaml > /dev/null
