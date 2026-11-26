@@ -1,17 +1,23 @@
 name: charts
 on:
-  push:
+  workflow_run:
+    workflows: [images]
+    types: [completed]
     branches: [main]
-    paths: ["policies/**", "charts/**", "internal/release/**", "cmd/aep-release/**", ".github/workflows/charts.yml"]
 permissions:
   contents: read
   packages: write
 jobs:
   publish:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: azure/setup-helm@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -26,6 +32,7 @@ jobs:
       - name: Publish exact release chart layouts
         run: |
           mkdir -p dist
+          go run ./cmd/aep-release manifest --build-version "sha-${{ github.event.workflow_run.head_sha }}"
           go run ./cmd/aep-release publish-charts --chart-registry "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aep" > dist/chart-refs
       - name: Sign published chart digests
         env:
