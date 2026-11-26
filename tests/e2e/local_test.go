@@ -69,6 +69,17 @@ func TestReadinessRequiresCurrentGeneration(t *testing.T) {
 		t.Fatal("current Ready rejected")
 	}
 }
+func TestReadinessWithoutServedGeneration(t *testing.T) {
+	// Shape returned by the OpenChoreo API: metadata without generation.
+	v := map[string]any{"metadata": map[string]any{"name": "db-dev"}, "status": map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": "True", "observedGeneration": float64(1)}}}}
+	if !ready(v) {
+		t.Fatal("Ready rejected when the API omits metadata.generation")
+	}
+	field(v, "status.conditions").([]any)[0].(map[string]any)["status"] = "False"
+	if ready(v) {
+		t.Fatal("Ready=False accepted")
+	}
+}
 func TestMatrixContract(t *testing.T) {
 	m, err := readMatrix()
 	if err != nil {
