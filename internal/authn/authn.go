@@ -13,6 +13,7 @@ import (
 
 // Identity is the authenticated caller.
 type Identity struct {
+	ClientID string
 	Subject  string
 	Username string
 	Groups   []string
@@ -78,7 +79,8 @@ func (v *OIDCVerifier) Verify(ctx context.Context, rawToken string) (*Identity, 
 			}
 		}
 	}
-	return &Identity{Subject: token.Subject, Username: username, Groups: groups}, nil
+	clientID, _ := claims["client_id"].(string)
+	return &Identity{ClientID: clientID, Subject: token.Subject, Username: username, Groups: groups}, nil
 }
 
 // BearerToken extracts the bearer token from an Authorization header.

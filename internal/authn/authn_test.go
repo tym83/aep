@@ -55,7 +55,8 @@ func TestOIDCVerifier(t *testing.T) {
 	}
 	claims := func(mutate func(map[string]any)) map[string]any {
 		c := map[string]any{
-			"iss": issuer, "sub": "user-1", "preferred_username": "alice",
+			"client_id": "aep-acme-sre-agent",
+			"iss":       issuer, "sub": "user-1", "preferred_username": "alice",
 			"groups": []string{"/aep-acme-developer", "aep-platform-team"},
 			"iat":    time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix(),
 		}
@@ -70,7 +71,7 @@ func TestOIDCVerifier(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if id.Username != "alice" || id.Subject != "user-1" || len(id.Groups) != 2 {
+		if id.ClientID != "aep-acme-sre-agent" || id.Username != "alice" || id.Subject != "user-1" || len(id.Groups) != 2 {
 			t.Fatalf("unexpected identity %+v", id)
 		}
 	})
