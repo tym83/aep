@@ -41,13 +41,17 @@ func main() {
 }
 func run() error {
 	args := os.Args[1:]
+	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
+		fmt.Fprintln(os.Stdout, "Usage: aep-fleet <command>\n\nCommands:\n  join   Bootstrap an approved cluster\n  stage  Stage pinned charts for offline delivery")
+		return nil
+	}
 	if len(args) > 0 && args[0] == "stage" {
 		return stage(args[1:])
 	}
 	if len(args) > 0 && args[0] == "join" {
 		args = args[1:]
 	} else if len(args) == 0 || args[0] != "-h" && args[0] != "--help" {
-		return fmt.Errorf("usage: aep-fleet join -h")
+		return fmt.Errorf("usage: aep-fleet <join|stage> -h")
 	}
 	fs := flag.NewFlagSet("aep-fleet join", flag.ContinueOnError)
 	var management, hub, target, ns, name, mirror string
