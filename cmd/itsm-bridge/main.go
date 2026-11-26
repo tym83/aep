@@ -179,7 +179,10 @@ func run() error {
 		keys[id] = []byte(previous)
 	}
 
-	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB, CompanyID: cfg.CompanyID, MirrorSince: mirrorSince}
+	poller := &itsm.Poller{Client: cl, Apps: apps, Engine: engine, Organization: cfg.Organization, Namespace: cfg.ChangeNamespace, ConfirmationURL: cfg.ConfirmationURL, Services: cfg.Services, SyncCMDB: cfg.SyncCMDB, CompanyID: cfg.CompanyID, MirrorSince: mirrorSince, Notes: notes}
+	if reader, ok := vendor.(itsm.ApprovalReader); ok {
+		poller.Approvals = reader
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/events", &itsm.Receiver{Engine: engine, NoteEngine: notes, Keys: keys, Organization: cfg.Organization})
 	mux.Handle("GET /metrics", itsm.MetricsHandler(engine, notes))
