@@ -122,6 +122,12 @@ func TestExternalPlanePreservesIngressAndChangeControl(t *testing.T) {
 	if ref != dp.GetName() {
 		t.Fatal("environment references wrong assignment")
 	}
+	for tier, want := range map[string]bool{"prod": true, "nonprod": false} {
+		ec.Spec.Tier = tier
+		if got, _, _ := unstructured.NestedBool(fleetEnvironment(o, ec).Object, "spec", "isProduction"); got != want {
+			t.Fatalf("%s external environment isProduction=%v", tier, got)
+		}
+	}
 }
 
 func TestApprovalCacheMissDoesNotRevokeHub(t *testing.T) {
