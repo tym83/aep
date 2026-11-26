@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /rca-eval ./cmd/rca-eval
+ARG AEP_VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/tym83/aep/internal/version.Version=${AEP_VERSION}" -trimpath -o /rca-eval ./cmd/rca-eval
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /rca-eval /rca-eval
 COPY eval/cases.yaml /eval/cases.yaml

@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /bridge ./cmd/bridge
+ARG AEP_VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/tym83/aep/internal/version.Version=${AEP_VERSION}" -trimpath -o /bridge ./cmd/bridge
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /bridge /bridge
 USER 65532:65532

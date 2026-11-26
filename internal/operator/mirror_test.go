@@ -3,6 +3,7 @@ package operator
 import (
 	"context"
 	api "github.com/tym83/aep/api/v1alpha1"
+	"github.com/tym83/aep/internal/version"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -173,17 +174,26 @@ func TestArgoMirroredDelivery(t *testing.T) {
 }
 
 func TestMirroredBridgePin(t *testing.T) {
+	old := version.Version
+	version.Version = "sha-1234567"
+	defer func() { version.Version = old }()
 	o := Options{ImageRegistryMirror: "mirror.local/cache"}
-	upstream := "ghcr.io/tym83/aep-bridge:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83"
-	a, err := o.pinnedImage(upstream)
-	if err != nil {
-		t.Fatal(err)
+	ref := "ghcr.io/tym83/aep-bridge:sha-1234567"
+	a, err := o.pinnedImage(ref)
+	if err != nil || a != o.ImageRegistryMirror+"/"+ref {
+		t.Fatal(a, err)
 	}
 	b, err := o.pinnedImage(a)
-	if err != nil || a != b || !strings.HasPrefix(a, "mirror.local/cache/") || !strings.Contains(a, "@sha256:") {
+	if err != nil || a != b {
 		t.Fatal(a, b, err)
 	}
-	if _, err = o.pinnedImage(upstream + "@sha256:" + strings.Repeat("0", 64)); err == nil {
-		t.Fatal("accepted different digest")
+	for _, ref := range []string{"ghcr.io/tym83/aep-bridge:sha-7654321", "ghcr.io/tym83/aep-bridge@sha256:" + strings.Repeat("0", 64), "ghcr.io/tym83/aep-unlisted:sha-1234567", "example.org/upstream:v1"} {
+		if _, err := o.pinnedImage(ref); err == nil {
+			t.Fatal("accepted", ref)
+		}
+	}
+	explicit := "ghcr.io/tym83/aep-bridge:v1.2.3@sha256:" + strings.Repeat("a", 64)
+	if got, err := o.pinnedImage(explicit); err != nil || got != o.ImageRegistryMirror+"/"+explicit {
+		t.Fatal(got, err)
 	}
 }

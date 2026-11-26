@@ -3,7 +3,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /aep-cp-backup ./cmd/aep-cp-backup
+ARG AEP_VERSION=dev
+RUN CGO_ENABLED=0 go build -ldflags "-X github.com/tym83/aep/internal/version.Version=${AEP_VERSION}" -trimpath -o /aep-cp-backup ./cmd/aep-cp-backup
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /aep-cp-backup /aep-cp-backup
 USER 65532:65532
