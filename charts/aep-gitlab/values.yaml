@@ -72,6 +72,11 @@ gitlab:
         providers:
           - secret: gitlab-keycloak
             key: provider
+  # Umbrella-chart pods only (the shared-secrets Job writes Secrets through the
+  # Kubernetes API); Cozystack keeps tenant pods off the API unless labelled.
+  # Not global.pod.labels, which would open the API to every GitLab pod.
+  podLabels:
+    policy.cozystack.io/allow-to-apiserver: "true"
   traefik: {install: false}
   haproxy: {install: false}
   openbao: {install: false}
