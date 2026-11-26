@@ -32,7 +32,7 @@ func main() {
 func run() error {
 	var dsn string
 	flag.StringVar(&dsn, "cost-dsn", os.Getenv("COST_DSN"), "Read-only cost PostgreSQL DSN")
-	var namespace, kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey, consoleURLTemplate string
+	var namespace, kubeconfig, listen, issuer, jwksURL, audience, usernameClaim, groupsClaim, orgNamespaceTemplate, tlsCert, tlsKey, consoleURLTemplate, openChoreoURL string
 	flag.StringVar(&kubeconfig, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
 	flag.StringVar(&listen, "listen", ":8080", "Listen address")
 	flag.StringVar(&issuer, "issuer", "", "OIDC issuer URL (required)")
@@ -45,6 +45,7 @@ func run() error {
 	flag.StringVar(&tlsCert, "tls-cert", "", "TLS certificate file; serve plain HTTP when empty")
 	flag.StringVar(&tlsKey, "tls-key", "", "TLS key file")
 	flag.StringVar(&namespace, "namespace", "aep-system", "Management namespace containing compliance snapshots")
+	flag.StringVar(&openChoreoURL, "openchoreo-url", "", "OpenChoreo API URL for environment-scoped log access; disabled when empty")
 	logOptions := zap.Options{}
 	logOptions.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -86,7 +87,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	handler, e := readapi.New(direct, apps, verifier, orgNamespaceTemplate, consoleURLTemplate, readapi.WithComplianceNamespace(namespace))
+	handler, e := readapi.New(direct, apps, verifier, orgNamespaceTemplate, consoleURLTemplate, readapi.WithComplianceNamespace(namespace), readapi.WithOpenChoreo(openChoreoURL, nil))
 	if e != nil {
 		return e
 	}

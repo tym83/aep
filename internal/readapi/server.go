@@ -39,6 +39,8 @@ type Server struct {
 	orgNamespaceTemplate string
 	console              *template.Template
 	mux                  *http.ServeMux
+	openChoreoURL        string
+	openChoreo           *http.Client
 }
 
 func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNamespaceTemplate, consoleURLTemplate string, options ...func(*Server)) (*Server, error) {
@@ -62,6 +64,8 @@ func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNa
 	s.mux.HandleFunc("GET /v1/organizations/{org}/services", s.withAuth(s.organization(s.services, []string{"developer", "platform", "approver", "admin", "auditor"})))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/changes", s.withAuth(s.organization(s.changes, []string{"approver", "auditor"})))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/compliance", s.withAuth(s.compliance))
+	// Any member may ask; logs:view for the environment decides.
+	s.mux.HandleFunc("GET /v1/organizations/{org}/projects/{project}/components/{component}/environments/{environment}/logs", s.withAuth(s.organization(s.logs, nil)))
 	return s, nil
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
