@@ -28,6 +28,8 @@ spec:
             - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}
             - {{ printf "--gateway-host-template=%s" .Values.gatewayHostTemplate | quote }}
             - {{ printf "--tenant-egress-workaround=%t" .Values.tenantEgressWorkaround | quote }}
+            - {{ printf "--prune-bootstrap-bindings=%t" .Values.pruneBootstrapBindings | quote }}
+            - {{ printf "--bootstrap-binding-system-clients=%s" .Values.bootstrapBindingSystemClients | quote }}
             - {{ printf "--keycloak-enabled=%t" .Values.keycloak.enabled | quote }}
             {{- if .Values.keycloak.enabled }}
             - {{ printf "--keycloak-url=%s" .Values.keycloak.url | quote }}

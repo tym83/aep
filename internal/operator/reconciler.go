@@ -17,6 +17,8 @@ import (
 
 type Options struct {
 	PolicyBundleRepository, KyvernoChartURL                                               string
+	PruneBootstrapBindings                                                                bool
+	BootstrapBindingSystemClients                                                         string
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
@@ -46,10 +48,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	if e := r.Get(ctx, req.NamespacedName, o); e != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(e)
 	}
+	s := &session{r: r, o: o, tiers: map[string]*Cluster{}}
+	s.hardenControlPlane(ctx)
+	if e := r.Status().Update(ctx, o); e != nil {
+		return ctrl.Result{}, e
+	}
 	if !o.DeletionTimestamp.IsZero() {
 		return r.finalize(ctx, o)
 	}
-	s := &session{r: r, o: o, tiers: map[string]*Cluster{}}
 	if slices.Contains(o.Finalizers, finalizer) {
 		if e := s.renewCredentials(ctx); e != nil {
 			setCondition(o, "BridgesReady", false, "CredentialRenewalFailed", e.Error())
@@ -65,7 +71,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			setCondition(o, t, false, "InvalidSpec", e.Error())
 		}
 		o.Status.Phase = "Rejected"
-		return ctrl.Result{}, r.Status().Update(ctx, o)
+		return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
 	}
 	if !slices.Contains(o.Finalizers, finalizer) {
 		base := o.DeepCopy()
@@ -146,6 +152,9 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
 	o.Status.Phase = "Ready"
+	if !meta.IsStatusConditionTrue(o.Status.Conditions, "ControlPlaneHardened") {
+		o.Status.Phase = "Pending"
+	}
 	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
 }
 func setCondition(o *api.Organization, t string, ok bool, reason, msg string) {

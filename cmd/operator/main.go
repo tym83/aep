@@ -36,6 +36,8 @@ func run() error {
 	flag.StringVar(&o.GatewayHostTemplate, "gateway-host-template", "cluster-gateway.{{.DashedIP}}.nip.io", "Go template with ClusterIP and DashedIP")
 	flag.BoolVar(&o.TenantEgressWorkaround, "tenant-egress-workaround", true, "Allow root etcd and ingress until cozystack#5442 ships")
 	flag.StringVar(&o.BridgeImage, "bridge-image", "", "Bridge container image (required)")
+	flag.BoolVar(&o.PruneBootstrapBindings, "prune-bootstrap-bindings", true, "Remove chart-managed cluster-wide bootstrap authorization bindings")
+	flag.StringVar(&o.BootstrapBindingSystemClients, "bootstrap-binding-system-clients", operator.DefaultBootstrapBindingSystemClients, "Comma-separated client IDs exempt from bootstrap binding pruning; empty exempts none")
 	flag.BoolVar(&o.KeycloakEnabled, "keycloak-enabled", false, "Create groups in an existing Keycloak realm")
 	flag.StringVar(&o.KeycloakURL, "keycloak-url", "", "Keycloak HTTPS URL")
 	flag.StringVar(&o.KeycloakRealm, "keycloak-realm", "", "Existing isolated realm")
