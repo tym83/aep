@@ -97,6 +97,8 @@ objects or intermediate states. API-server audit must fill this gap.
   `OPENSEARCH_USERNAME` / `OPENSEARCH_PASSWORD`. Provision index permissions and
   a 30-day ISM retention policy separately; the forwarder never administers it.
 - **Syslog:** TLS 1.2+, RFC5424 with RFC6587 octet framing, local0/info, JSON MSG.
+  The header timestamp uses microseconds as required by
+  [RFC5424](https://www.rfc-editor.org/rfc/rfc5424); JSON retains full precision.
   Configure `--syslog-address=host:6514`; system CA roots verify the server.
   TCP/TLS confirms transport only: RFC5424 offers no durable application ACK.
   Receiver-side loss after a successful write is not covered. Use S3/OpenSearch

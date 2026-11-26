@@ -256,3 +256,15 @@ func TestLargeIntegerChainAndUnknownField(t *testing.T) {
 		t.Fatal("unknown field accepted")
 	}
 }
+
+func TestSyslogTimestampPrecision(t *testing.T) {
+	e := event()
+	e.Time = "2026-11-25T23:59:59.123456789Z"
+	m := syslogMessage(e)
+	if !strings.HasPrefix(m, "<134>1 2026-11-25T23:59:59.123456Z - aep-audit - event - ") {
+		t.Fatal(m)
+	}
+	if !strings.Contains(m, e.Time) {
+		t.Fatal("original event precision lost")
+	}
+}

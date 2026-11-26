@@ -90,13 +90,23 @@ func (s Syslog) Send(ctx context.Context, events []Event) error {
 		return e
 	}
 	for _, v := range events {
-		b, _ := json.Marshal(v)
-		m := fmt.Sprintf("<134>1 %s - aep-audit - event - %s", v.Time, b)
+		m := syslogMessage(v)
 		if _, e = fmt.Fprintf(c, "%d %s", len(m), m); e != nil {
 			return e
 		}
 	}
 	return nil
+}
+
+// RFC5424 permits at most six fractional digits in the header timestamp.
+// Preserve the original precision in the JSON message and thus its chain hash.
+func syslogMessage(e Event) string {
+	timestamp := "-"
+	if t, err := time.Parse(time.RFC3339Nano, e.Time); err == nil {
+		timestamp = t.UTC().Format("2006-01-02T15:04:05.000000Z")
+	}
+	b, _ := json.Marshal(e)
+	return fmt.Sprintf("<134>1 %s - aep-audit - event - %s", timestamp, b)
 }
 
 type ObjectWriter interface {
