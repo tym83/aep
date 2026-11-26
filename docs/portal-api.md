@@ -29,12 +29,16 @@ includes a development mock.
 Return only existing cluster-scoped `aep.aenix.io/v1alpha1` Organizations,
 using their DNS-label names. Membership and roles come exclusively from verified
 token groups `aep-<org>-<role>` or `/aep-<org>-<role>`, with roles `developer`,
-`platform`, `approver`, `admin`, and `auditor`. Organizations and roles are sorted
+`platform`, `approver`, `admin`, `auditor`, and `finance`. Organizations and roles are sorted
 and deduplicated. Unknown roles and missing Organizations are not returned.
 Organization routes return 403 for non-members, or 404 for members of an
 Organization that no longer exists. The portal
 selects the first organization by default and offers a selector for others.
 Role `approver` enables the Changes page for that organization.
+
+Finance-only membership permits `/v1/me` and organization costs (200), but
+returns 403 on services, changes and compliance. Membership in additional roles
+is additive and retains their permissions. Finance has no OpenChoreo role.
 
 ### GET /v1/organizations/{org}/services
 

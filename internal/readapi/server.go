@@ -59,8 +59,8 @@ func New(c client.Reader, apps dynamic.Interface, verifier authn.Verifier, orgNa
 	}
 	s.mux.HandleFunc("GET /v1/organizations/{org}/costs", s.withAuth(s.costAccess))
 	s.mux.HandleFunc("GET /v1/me", s.withAuth(s.me))
-	s.mux.HandleFunc("GET /v1/organizations/{org}/services", s.withAuth(s.organization(s.services, false)))
-	s.mux.HandleFunc("GET /v1/organizations/{org}/changes", s.withAuth(s.organization(s.changes, true)))
+	s.mux.HandleFunc("GET /v1/organizations/{org}/services", s.withAuth(s.organization(s.services, []string{"developer", "platform", "approver", "admin", "auditor"})))
+	s.mux.HandleFunc("GET /v1/organizations/{org}/changes", s.withAuth(s.organization(s.changes, []string{"approver", "auditor"})))
 	s.mux.HandleFunc("GET /v1/organizations/{org}/compliance", s.withAuth(s.compliance))
 	return s, nil
 }
@@ -123,11 +123,15 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request, id *authn.Identity) 
 		Organizations []organizationView `json:"organizations"`
 	}{id.Username, result})
 }
-func (s *Server) organization(next func(http.ResponseWriter, *http.Request, *api.Organization), changes bool) authenticated {
+func (s *Server) organization(next func(http.ResponseWriter, *http.Request, *api.Organization), allowedRoles []string) authenticated {
 	return func(w http.ResponseWriter, r *http.Request, id *authn.Identity) {
 		org := r.PathValue("org")
 		rs := memberships(id.Groups)[org]
-		if len(rs) == 0 || (changes && !contains(rs, "approver") && !contains(rs, "auditor")) {
+		allowed := allowedRoles == nil && len(rs) > 0
+		for _, role := range allowedRoles {
+			allowed = allowed || contains(rs, role)
+		}
+		if !allowed {
 			fail(w, 403, "organization access denied")
 			return
 		}

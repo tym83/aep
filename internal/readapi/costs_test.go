@@ -37,3 +37,33 @@ func TestCostAuthorization(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+// Finance is additive: finance alone cannot enumerate operational data, but
+// membership in another authorized role must keep that role's permissions.
+func TestFinanceOnlyAccess(t *testing.T) {
+	s, _, _, sign := fixture(t)
+	s.Costs = &costReader{}
+	for _, tc := range []struct {
+		path string
+		code int
+	}{
+		{"/v1/me", 200},
+		{"/v1/organizations/acme/costs?from=2026-11-01&to=2026-12-01", 200},
+		{"/v1/organizations/acme/services", 403},
+		{"/v1/organizations/acme/changes", 403},
+		{"/v1/organizations/acme/compliance", 403},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			w := call(s, tc.path, sign([]string{"aep-acme-finance"}, nil))
+			if w.Code != tc.code {
+				t.Fatalf("got %d, want %d", w.Code, tc.code)
+			}
+		})
+	}
+	for _, endpoint := range []string{"services", "changes", "compliance"} {
+		w := call(s, "/v1/organizations/acme/"+endpoint, sign([]string{"aep-acme-finance", "aep-acme-auditor"}, nil))
+		if w.Code != 200 {
+			t.Fatalf("finance + auditor %s: %d", endpoint, w.Code)
+		}
+	}
+}
