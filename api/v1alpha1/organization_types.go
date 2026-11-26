@@ -25,7 +25,24 @@ type ServicesSpec struct {
 	MaxPreset    string   `json:"maxPreset,omitempty"`
 	BackupPolicy string   `json:"backupPolicy,omitempty"`
 }
+type ArgoCDSpec struct {
+	Enabled bool   `json:"enabled"`
+	Version string `json:"version,omitempty"`
+}
+type SecretNameReference struct {
+	Name string `json:"name"`
+}
+type VCSSpec struct {
+	Provider             string               `json:"provider"`
+	URL                  string               `json:"url"`
+	GroupPath            string               `json:"groupPath,omitempty"`
+	Org                  string               `json:"org,omitempty"`
+	EnsureGroup          bool                 `json:"ensureGroup,omitempty"`
+	CredentialsSecretRef SecretNameReference  `json:"credentialsSecretRef"`
+	CABundleSecretRef    *SecretNameReference `json:"caBundleSecretRef,omitempty"`
+}
 type TierSpec struct {
+	ArgoCD   *ArgoCDSpec  `json:"argocd,omitempty"`
 	Cluster  ClusterSpec  `json:"cluster"`
 	Services ServicesSpec `json:"services"`
 }
@@ -48,6 +65,7 @@ type PolicySpec struct {
 	Mode            string `json:"mode,omitempty"`
 }
 type OrganizationSpec struct {
+	VCS          *VCSSpec            `json:"vcs,omitempty"`
 	Policy       PolicySpec          `json:"policy,omitempty"`
 	DisplayName  string              `json:"displayName"`
 	Profile      string              `json:"profile"`
@@ -64,6 +82,7 @@ type Remediation struct {
 	Reason    string      `json:"reason"`
 }
 type OrganizationStatus struct {
+	ArgoCDURL              string                 `json:"argocdURL,omitempty"`
 	DeletionStarted        bool                   `json:"deletionStarted,omitempty"`
 	Phase                  string                 `json:"phase,omitempty"`
 	Conditions             []metav1.Condition     `json:"conditions,omitempty"`

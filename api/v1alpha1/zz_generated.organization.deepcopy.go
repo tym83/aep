@@ -8,6 +8,14 @@ import (
 func (in *Organization) DeepCopyInto(out *Organization) {
 	*out = *in
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	if in.Spec.VCS != nil {
+		v := *in.Spec.VCS
+		out.Spec.VCS = &v
+		if v.CABundleSecretRef != nil {
+			ref := *v.CABundleSecretRef
+			out.Spec.VCS.CABundleSecretRef = &ref
+		}
+	}
 	out.Spec.Policy.Registries = append([]string(nil), in.Spec.Policy.Registries...)
 	out.Spec.Policy.PlatformNamespaces = append([]string(nil), in.Spec.Policy.PlatformNamespaces...)
 	out.Spec.Policy.PlatformImageTrust.VendorPublicKeys = append([]string(nil), in.Spec.Policy.PlatformImageTrust.VendorPublicKeys...)
@@ -20,6 +28,10 @@ func (in *Organization) DeepCopyInto(out *Organization) {
 	out.Spec.Tiers = make(map[string]TierSpec, len(in.Spec.Tiers))
 	for k, v := range in.Spec.Tiers {
 		n := v
+		if v.ArgoCD != nil {
+			a := *v.ArgoCD
+			n.ArgoCD = &a
+		}
 		n.Cluster.NodeGroups = make(map[string]NodeGroup, len(v.Cluster.NodeGroups))
 		for a, b := range v.Cluster.NodeGroups {
 			n.Cluster.NodeGroups[a] = b
