@@ -5,12 +5,14 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/change"
 	ext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"testing"
+	"time"
 )
 
 func TestFleetRegistrationRequiresAppliedApproval(t *testing.T) {
@@ -53,6 +55,28 @@ func TestFleetRegistrationRequiresAppliedApproval(t *testing.T) {
 		if _, e = hub.get(ctx, item.av, item.r, item.ns, item.name); e != nil {
 			t.Fatal(e)
 		}
+	}
+
+	newer := ec.DeepCopy()
+	newer.Name = "newer"
+	newer.ResourceVersion = ""
+	newer.UID = "newer-uid"
+	newer.Spec.ChangeRequestRef = "newer-change"
+	newer.CreationTimestamp = metav1.NewTime(time.Now())
+	if err := c.Create(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	d.ClearActions()
+	if err := f.reconcileFleet(ctx, newer); err != nil {
+		t.Fatal(err)
+	}
+	pending := meta.FindStatusCondition(newer.Status.Conditions, "Registered")
+	if pending == nil || pending.Reason != "Pending" || len(d.Actions()) != 0 {
+		t.Fatal("new assignment did not wait", pending, d.Actions())
+	}
+	// The established assignment ignores an unapproved competitor.
+	if err := c.Delete(ctx, newer); err != nil {
+		t.Fatal(err)
 	}
 	for _, a := range d.Actions() {
 		if a.GetResource().Resource == "manifestworks" {

@@ -167,13 +167,15 @@ func (h clusterAttachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *ap
 	}
 	for _, existing := range assigned.Items {
 		if existing.Name != ec.Name && existing.Spec.Organization == s.Organization && existing.Spec.Environment == s.Environment {
-			return Result{}, fmt.Errorf("environment already assigned to %s", existing.Name)
+			return Result{Pending: true, Message: "waiting for environment assignment cleanup: " + existing.Name}, nil
 		}
 	}
 	old := &api.ExternalCluster{}
 	e = h.c.Get(ctx, client.ObjectKeyFromObject(ec), old)
 	if errors.IsNotFound(e) {
 		e = h.c.Create(ctx, ec)
+	} else if e == nil && !old.DeletionTimestamp.IsZero() {
+		return Result{Pending: true, Message: "waiting for assignment cleanup"}, nil
 	} else if e == nil && !reflect.DeepEqual(old.Spec, s) {
 		e = fmt.Errorf("cluster already assigned by a different change")
 	}

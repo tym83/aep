@@ -95,16 +95,6 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if ec.Spec.Suspended {
 		return f.quarantine(ctx, ec, "Assignment suspended")
 	}
-	if e := change.VerifyExternalApproval(ctx, f.Client, ec); e != nil {
-		var mismatch *change.ApprovalMismatchError
-		if !errors.As(e, &mismatch) {
-			return e
-		}
-		if q := f.quarantine(ctx, ec, e.Error()); q != nil {
-			return fmt.Errorf("%v; quarantine: %w", e, q)
-		}
-		return e
-	}
 	o := &api.Organization{}
 	if e := f.Get(ctx, client.ObjectKey{Name: ec.Spec.Organization}, o); e != nil {
 		return e
@@ -114,14 +104,37 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if e := f.List(ctx, &list, client.InNamespace(ec.Namespace)); e != nil {
 		return e
 	}
+
 	for _, other := range list.Items {
-		if other.Name != ec.Name && other.Spec.Organization == o.Name && other.Spec.Environment == ec.Spec.Environment {
-			reason := fmt.Sprintf("environment already assigned to %s", other.Name)
-			if err := f.quarantine(ctx, ec, reason); err != nil {
-				return err
-			}
-			return fmt.Errorf("%s", reason)
+		if other.Name == ec.Name || other.Spec.Organization != o.Name || other.Spec.Environment != ec.Spec.Environment {
+			continue
 		}
+		if !other.DeletionTimestamp.IsZero() {
+			fleetCondition(ec, "Registered", false, "Pending", "Waiting for assignment detach: "+other.Name)
+			return nil
+		}
+		err := change.VerifyExternalApproval(ctx, f.Client, &other)
+		if err != nil {
+			var mismatch *change.ApprovalMismatchError
+			if errors.As(err, &mismatch) {
+				continue
+			}
+			return err
+		}
+		if assignmentBefore(&other, ec) {
+			fleetCondition(ec, "Registered", false, "Pending", "Waiting for older approved assignment: "+other.Name)
+			return nil
+		}
+	}
+	if e := change.VerifyExternalApproval(ctx, f.Client, ec); e != nil {
+		var mismatch *change.ApprovalMismatchError
+		if !errors.As(e, &mismatch) {
+			return e
+		}
+		if q := f.quarantine(ctx, ec, e.Error()); q != nil {
+			return fmt.Errorf("%v; quarantine: %w", e, q)
+		}
+		return e
 	}
 	id := FleetID(ec)
 	ec.Status.PlaneID = id
@@ -396,4 +409,11 @@ func fleetEnvironment(o *api.Organization, ec *api.ExternalCluster) *unstructure
 // The Environment reference is immutable across assignment recreation.
 func fleetDataPlaneName(ec *api.ExternalCluster) string {
 	return fmt.Sprintf("ext-%x", sha256.Sum256([]byte(ec.Spec.Organization+"/"+ec.Spec.Environment)))[:36]
+}
+
+func assignmentBefore(a, b *api.ExternalCluster) bool {
+	if a.CreationTimestamp.Equal(&b.CreationTimestamp) {
+		return a.Name < b.Name
+	}
+	return a.CreationTimestamp.Before(&b.CreationTimestamp)
 }

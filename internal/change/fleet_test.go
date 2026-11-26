@@ -204,3 +204,25 @@ func TestDetachRequiresMatchingUIDAndSecurity(t *testing.T) {
 		t.Fatalf("%+v %v", r, err)
 	}
 }
+
+func TestAttachWaitsForDetachOfSameName(t *testing.T) {
+	ctx := context.Background()
+	cr := fleetChange("prod", "standard")
+	cr.Status.Approvals = []api.ChangeApproval{fleetApproval("a", GroupPlatformTeam), fleetApproval("b", GroupSecurity)}
+	spec, err := ExternalSpec(cr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: cr.Spec.Target.Name, Namespace: cr.Namespace, Finalizers: []string{"cleanup"}}, Spec: spec}
+	o := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "prod", Tier: "prod", DataPlane: api.EnvironmentDataPlane{External: ec.Name}}}}}
+	scheme := runtime.NewScheme()
+	_ = api.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ec, o).Build()
+	if err := c.Delete(ctx, ec); err != nil {
+		t.Fatal(err)
+	}
+	result, err := (clusterAttachHandler{c}).Apply(ctx, nil, cr)
+	if err != nil || !result.Pending || result.Executed {
+		t.Fatal(result, err)
+	}
+}
