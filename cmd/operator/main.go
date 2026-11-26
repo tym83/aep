@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metrics "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -112,7 +113,7 @@ func run() error {
 			}
 		}
 		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: fleetCharts}, Gateway: fleetGateway}
-		if e = ctrl.NewControllerManagedBy(mgr).For(&api.ExternalCluster{}).Complete(fleet); e != nil {
+		if e = ctrl.NewControllerManagedBy(mgr).For(&api.ExternalCluster{}, builder.WithPredicates(operator.FleetPredicate())).Complete(fleet); e != nil {
 			return e
 		}
 	}

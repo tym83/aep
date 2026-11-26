@@ -202,3 +202,29 @@ DataPlane, even before attachment or while ExternalCluster approval is invalid.
 OpenChoreo `dataPlaneRef` is immutable: migration requires a new Environment.
 Admission forbids removing an external declaration or changing its tier or
 assignment. Retain the declaration during detach as an audit record.
+
+## Suspension and detach
+
+`spec.suspended: true` revokes hub acceptance and removes the external DataPlane,
+so its client CA no longer authorizes connections. Invalid assignment approvals or
+Organization mismatches use the same quarantine path. Registered records the
+accepted registration; Ready aggregates current join, connection and policy health.
+An external outage never fails the Organization's environment reconciliation.
+
+Request `cluster-detach` with model `normal`, the Cluster target and environment,
+and `desired: {tier: prod, uid: <ExternalCluster UID>}`. Platform approval is always
+required, with a distinct security approver for prod. The UID prevents a stale
+request from detaching a recreated assignment. Drain workloads before requesting it.
+The change waits for finalization before Applied. Organization deletion also waits
+for every ExternalCluster finalizer before deleting the control-plane namespace.
+
+Cleanup revokes hub acceptance, removes ManifestWorks with **Orphan**, waits for
+work finalizers, removes the DataPlane and management CA/leaf Secrets, deletes
+bootstrap credentials and ClusterProfile, then removes ManagedCluster. Orphan is
+intentional: customer workloads and agent resources remain for site-admin removal;
+detach does not promise remote erasure on an offline cluster. Environment records
+remain with a now-missing immutable DataPlane reference. Each new assignment UID
+gets a distinct plane identity, CA and leaf; detached credentials cannot be reused.
+The management cluster is the default hub; a separate hub remains optional.
+ClusterProfile discovery prefers v1alpha2 when served and falls back to v1alpha1
+(OCM 1.4.0). Its API version is not part of immutable assignment approval.

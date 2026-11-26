@@ -205,7 +205,7 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
 	}
-	if cr.Spec.Operation == api.OperationClusterAttach {
+	if cr.Spec.Operation == api.OperationClusterAttach || cr.Spec.Operation == api.OperationClusterDetach {
 		locked, e := r.acquireLease(ctx, cr)
 		if e != nil {
 			return r.retry(ctx, cr, "LeaseUnavailable", e, now)

@@ -10,8 +10,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"slices"
 	"time"
 )
 
@@ -25,29 +27,49 @@ type FleetReconciler struct {
 }
 
 func FleetID(ec *api.ExternalCluster) string {
-	return fmt.Sprintf("ext-%x", sha256.Sum256([]byte(ec.Namespace+"/"+ec.Name)))[:36]
+	return fmt.Sprintf("ext-%x", sha256.Sum256([]byte(ec.Namespace+"/"+ec.Name+"/"+string(ec.UID))))[:36]
 }
 func (f *FleetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	ec := &api.ExternalCluster{}
 	if e := f.Get(ctx, req.NamespacedName, ec); e != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(e)
 	}
-	// An assignment is intentionally not an automatic destructive detach API.
 	if !ec.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return f.finalizeFleet(ctx, ec)
 	}
-	for _, t := range []string{"Registered", "Joined", "DataPlaneConnected", "PoliciesReady"} {
-		fleetCondition(ec, t, false, "Pending", "Waiting for approved assignment and observed readiness")
+	if !slices.Contains(ec.Finalizers, fleetFinalizer) {
+		base := ec.DeepCopy()
+		ec.Finalizers = append(ec.Finalizers, fleetFinalizer)
+		if err := f.Patch(ctx, ec, client.MergeFrom(base)); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	before := ec.DeepCopy()
+	for _, t := range fleetConditions {
+		if meta.FindStatusCondition(ec.Status.Conditions, t) == nil {
+			fleetCondition(ec, t, false, "Pending", "Waiting for observed readiness")
+		}
 	}
 	e := f.reconcileFleet(ctx, ec)
 	if e != nil {
-		fleetCondition(ec, "Registered", false, "ReconcileFailed", e.Error())
+		fleetCondition(ec, "Ready", false, "ReconcileFailed", e.Error())
+	} else {
+		ok := true
+		for _, t := range fleetConditions {
+			ok = ok && meta.IsStatusConditionTrue(ec.Status.Conditions, t)
+		}
+		fleetCondition(ec, "Ready", ok, "Observed", "Aggregated fleet readiness")
 	}
-	if err := f.Status().Update(ctx, ec); err != nil {
-		return ctrl.Result{}, err
+	if !reflect.DeepEqual(before.Status, ec.Status) {
+		if err := f.Status().Update(ctx, ec); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	return ctrl.Result{RequeueAfter: time.Minute}, e
 }
+
+var fleetConditions = []string{"Registered", "Joined", "DataPlaneConnected", "PoliciesReady"}
+
 func fleetCondition(ec *api.ExternalCluster, t string, ok bool, reason, msg string) {
 	status := metav1.ConditionFalse
 	if ok {
@@ -67,7 +89,13 @@ func observed(u *unstructured.Unstructured, t string) bool {
 	return false
 }
 func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCluster) error {
+	if ec.Spec.Suspended {
+		return f.quarantine(ctx, ec, "Assignment suspended")
+	}
 	if e := change.VerifyExternalApproval(ctx, f.Client, ec); e != nil {
+		if q := f.quarantine(ctx, ec, e.Error()); q != nil {
+			return fmt.Errorf("%v; quarantine: %w", e, q)
+		}
 		return e
 	}
 	o := &api.Organization{}
@@ -95,7 +123,6 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		{"managedclustersets", obj("cluster.open-cluster-management.io/v1beta2", "ManagedClusterSet", "", set, M{"clusterSelector": M{"selectorType": "ExclusiveClusterSetLabel"}})},
 		{"namespaces", obj("v1", "Namespace", "", set, nil)},
 		{"managedclustersetbindings", obj("cluster.open-cluster-management.io/v1beta2", "ManagedClusterSetBinding", set, set, M{"clusterSet": set})},
-		{"placements", obj("cluster.open-cluster-management.io/v1beta1", "Placement", set, id, M{"clusterSets": []any{set}, "numberOfClusters": int64(1), "predicates": []any{M{"requiredClusterSelector": M{"labelSelector": M{"matchLabels": M{"aep.aenix.io/fleet-id": id}}}}}})},
 	} {
 		if item.u.GetKind() == "Namespace" {
 			item.u.SetLabels(map[string]string{"multicluster.x-k8s.io/clusterset": set})
@@ -109,7 +136,11 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if e := f.Hub.apply(ctx, o, "managedclusters", mc); e != nil {
 		return e
 	}
-	profile := obj(ec.Spec.ClusterProfileRef.APIVersion, "ClusterProfile", set, ec.Spec.ClusterProfileRef.Name, M{"displayName": ec.Name, "clusterManager": M{"name": "aep-ocm"}})
+	profileVersion, e := f.profileVersion()
+	if e != nil {
+		return e
+	}
+	profile := obj(profileVersion, "ClusterProfile", set, ec.Spec.ClusterProfileRef.Name, M{"displayName": ec.Name, "clusterManager": M{"name": "aep-ocm"}})
 	profile.SetLabels(map[string]string{"x-k8s.io/cluster-manager": "aep-ocm", "aep.aenix.io/trust": ec.Spec.TrustLevel})
 	if e := f.Hub.apply(ctx, o, "clusterprofiles", profile); e != nil {
 		return e
@@ -118,7 +149,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return e
 	}
 	fleetCondition(ec, "Registered", true, "Accepted", "Approved assignment accepted by OCM")
-	mc, e := f.Hub.get(ctx, mc.GetAPIVersion(), "managedclusters", "", id)
+	mc, e = f.Hub.get(ctx, mc.GetAPIVersion(), "managedclusters", "", id)
 	if e != nil {
 		return e
 	}
@@ -126,7 +157,12 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	joined := ocmCondition(mc, "ManagedClusterJoined") && ocmCondition(mc, "ManagedClusterConditionAvailable")
 	fleetCondition(ec, "Joined", joined, "Observed", "OCM join and availability observed")
 	if !joined {
+		fleetCondition(ec, "PoliciesReady", false, "JoinPending", "Waiting for available joined cluster")
+		fleetCondition(ec, "DataPlaneConnected", false, "JoinPending", "Waiting for available joined cluster")
 		return nil
+	}
+	if e := f.cleanupBootstrap(ctx, ec); e != nil {
+		return e
 	}
 	if e := s.controlPlane(ctx); e != nil {
 		return e
@@ -146,7 +182,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	if len(gateway.Data["ca.crt"]) == 0 {
 		return fmt.Errorf("gateway CA missing")
 	}
-	dp := obj(ocAPI, "DataPlane", o.Name, id, M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(data["tls.crt"])}}, "secretStoreRef": M{"name": "default"}})
+	dp := obj(ocAPI, "DataPlane", o.Name, id, M{"planeID": id, "clusterAgent": M{"clientCA": M{"value": string(data["tls.crt"])}}, "secretStoreRef": M{"name": "default"}, "gateway": M{"ingress": M{"external": M{"name": "gateway-default", "namespace": "openchoreo-data-plane", "http": M{"host": ec.Spec.GatewayHost, "port": int64(80)}}}}})
 	if e = s.cp.apply(ctx, o, "dataplanes", dp); e != nil {
 		return e
 	}
@@ -176,7 +212,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		}
 		manifests = append(manifests, rendered...)
 	}
-	bridge, err := f.Renderer.Render(ctx, "aep-bridge-appcluster", "0.1.0", "aep-system", M{})
+	bridge, err := f.Renderer.Render(ctx, "aep-bridge-appcluster", "0.1.2", "aep-system", M{})
 	if err != nil {
 		return err
 	}
@@ -228,6 +264,11 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		return nil
 	}
 	env := obj(ocAPI, "Environment", o.Name, ec.Spec.Environment, M{"dataPlaneRef": M{"kind": "DataPlane", "name": id}})
+	for _, decl := range o.Spec.Environments {
+		if decl.Name == ec.Spec.Environment {
+			env.SetAnnotations(map[string]string{"aep.aenix.io/change-model": decl.ChangeModel})
+		}
+	}
 	return s.cp.apply(ctx, o, "environments", env)
 }
 func ocmCondition(u *unstructured.Unstructured, t string) bool {

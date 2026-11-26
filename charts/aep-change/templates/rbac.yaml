@@ -43,7 +43,7 @@ rules:
   {{- if eq $component "api" }}
   - apiGroups: [aep.aenix.io]
     resources: [changerequests]
-    verbs: [get, list, create]
+    verbs: [get, list, create, delete]
   {{- end }}
   - apiGroups: [aep.aenix.io]
     resources: [changerequests/status]
@@ -51,7 +51,7 @@ rules:
   {{- if eq $component "controller" }}
   - apiGroups: [aep.aenix.io]
     resources: [externalclusters]
-    verbs: [get, list, create]
+    verbs: [get, list, create, delete]
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     verbs: [get, create, update, delete]

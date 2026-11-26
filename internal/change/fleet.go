@@ -180,8 +180,54 @@ func (h clusterAttachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *ap
 	return Result{Executed: e == nil, Message: "external cluster assignment recorded"}, e
 }
 func (r *Reconciler) handler(op api.ChangeOperation) Handler {
+	if op == api.OperationClusterDetach {
+		return clusterDetachHandler{clusterAttachHandler{r.Client}}
+	}
 	if op == api.OperationClusterAttach {
 		return clusterAttachHandler{r.Client}
 	}
 	return HandlerFor(op, r.Granter)
+}
+
+func requireClusterDetach(s api.ChangeRequestSpec, d map[string]any, _ time.Time) error {
+	if s.Model != api.ModelNormal {
+		return fmt.Errorf("cluster-detach requires normal approval")
+	}
+	if len(d) != 2 || (d["tier"] != "prod" && d["tier"] != "nonprod") || d["uid"] == nil || d["uid"] == "" {
+		return fmt.Errorf("cluster-detach requires tier and assignment uid")
+	}
+	return nil
+}
+
+type clusterDetachHandler struct{ clusterAttachHandler }
+
+func (h clusterDetachHandler) Apply(ctx context.Context, _ *ocapi.Client, cr *api.ChangeRequest) (Result, error) {
+	if p, _, _ := EvaluateFleetApprovals(cr.Spec, cr.Status.Approvals); p != api.PhaseApproved {
+		return Result{}, fmt.Errorf("detach approval missing")
+	}
+	if cr.Namespace != OrgNamespace("", cr.Spec.Organization) {
+		return Result{}, fmt.Errorf("foreign namespace")
+	}
+	d, e := DesiredMap(cr.Spec)
+	if e != nil {
+		return Result{}, e
+	}
+	if e = requireClusterDetach(cr.Spec, d, time.Now()); e != nil {
+		return Result{}, e
+	}
+	ec := &api.ExternalCluster{}
+	e = h.c.Get(ctx, client.ObjectKey{Namespace: cr.Namespace, Name: cr.Spec.Target.Name}, ec)
+	if errors.IsNotFound(e) {
+		return Result{Executed: true, Message: "assignment detached"}, nil
+	}
+	if e != nil {
+		return Result{}, e
+	}
+	if ec.Spec.Organization != cr.Spec.Organization || ec.Spec.Environment != cr.Spec.Target.Environment || ec.Spec.Tier != d["tier"] || string(ec.UID) != d["uid"] {
+		return Result{}, fmt.Errorf("detach target differs from approval")
+	}
+	if e = h.c.Delete(ctx, ec); client.IgnoreNotFound(e) != nil {
+		return Result{}, e
+	}
+	return Result{}, fmt.Errorf("waiting for ordered assignment cleanup")
 }

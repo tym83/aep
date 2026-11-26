@@ -7,7 +7,7 @@ import (
 
 // ChangeOperation is the typed operation a ChangeRequest asks for. Every
 // operation has its own desired-payload schema and handler.
-// +kubebuilder:validation:Enum=promote;rollback;resource-update;resource-restore;credential-rotate;policy-exception;breakglass;organization-change;cluster-attach;machine-approve;machine-decommission;decommission
+// +kubebuilder:validation:Enum=promote;rollback;resource-update;resource-restore;credential-rotate;policy-exception;breakglass;organization-change;cluster-attach;cluster-detach;machine-approve;machine-decommission;decommission
 type ChangeOperation string
 
 const (
@@ -20,6 +20,7 @@ const (
 	OperationBreakglass          ChangeOperation = "breakglass"
 	OperationOrganizationChange  ChangeOperation = "organization-change"
 	OperationClusterAttach       ChangeOperation = "cluster-attach"
+	OperationClusterDetach       ChangeOperation = "cluster-detach"
 	OperationMachineApprove      ChangeOperation = "machine-approve"
 	OperationMachineDecommission ChangeOperation = "machine-decommission"
 	OperationDecommission        ChangeOperation = "decommission"

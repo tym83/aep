@@ -59,7 +59,7 @@ func IsBindingOp(op api.ChangeOperation) bool {
 // per target binding, a newer one supersedes an older one.
 func TargetKey(spec api.ChangeRequestSpec) string {
 	id := spec.Organization + "|" + spec.Target.Kind + "|" + spec.Target.Name + "|" + spec.Target.Environment
-	if spec.Operation == api.OperationClusterAttach {
+	if spec.Operation == api.OperationClusterAttach || spec.Operation == api.OperationClusterDetach {
 		id = spec.Organization + "|fleet-environment|" + spec.Target.Environment
 	}
 	if IsBindingOp(spec.Operation) {

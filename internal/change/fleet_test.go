@@ -162,3 +162,45 @@ func TestFleetEnvironmentDeclarationAndNamespace(t *testing.T) {
 		t.Fatal("accepted foreign namespace")
 	}
 }
+
+func TestDetachRequiresMatchingUIDAndSecurity(t *testing.T) {
+	ctx := context.Background()
+	cr := fleetChange("prod", "standard")
+	cr.Spec.Operation = api.OperationClusterDetach
+	cr.Spec.Desired = &ext.JSON{Raw: []byte(`{"tier":"prod","uid":"assignment-1"}`)}
+	ec := &api.ExternalCluster{ObjectMeta: metav1.ObjectMeta{Name: cr.Spec.Target.Name, Namespace: cr.Namespace, UID: "assignment-1", Finalizers: []string{"aep.aenix.io/fleet-cleanup"}}, Spec: api.ExternalClusterSpec{Organization: "acme", Environment: "prod", Tier: "prod"}}
+	scheme := runtime.NewScheme()
+	_ = api.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(ec).Build()
+	h := clusterDetachHandler{clusterAttachHandler{c}}
+	cr.Status.Approvals = []api.ChangeApproval{fleetApproval("a", GroupPlatformTeam)}
+	if _, err := h.Apply(ctx, nil, cr); err == nil {
+		t.Fatal("detached without security")
+	}
+	cr.Status.Approvals = append(cr.Status.Approvals, fleetApproval("b", GroupSecurity))
+	if err := ValidateSpec(cr.Spec, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	cr.Spec.Desired = &ext.JSON{Raw: []byte(`{"tier":"prod","uid":"stale"}`)}
+	if _, err := h.Apply(ctx, nil, cr); err == nil {
+		t.Fatal("detached replacement assignment")
+	}
+	current := &api.ExternalCluster{}
+	_ = c.Get(ctx, client.ObjectKeyFromObject(ec), current)
+	if !current.DeletionTimestamp.IsZero() {
+		t.Fatal("invalid request deleted assignment")
+	}
+	cr.Spec.Desired = &ext.JSON{Raw: []byte(`{"tier":"prod","uid":"assignment-1"}`)}
+	if _, err := h.Apply(ctx, nil, cr); err == nil {
+		t.Fatal("reported complete before finalization")
+	}
+	_ = c.Get(ctx, client.ObjectKeyFromObject(ec), current)
+	if current.DeletionTimestamp.IsZero() {
+		t.Fatal("approved detach did not start cleanup")
+	}
+	current.Finalizers = nil
+	_ = c.Update(ctx, current)
+	if r, err := h.Apply(ctx, nil, cr); err != nil || !r.Executed {
+		t.Fatalf("%+v %v", r, err)
+	}
+}
