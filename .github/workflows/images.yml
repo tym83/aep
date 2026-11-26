@@ -26,6 +26,8 @@ jobs:
             dockerfile: Dockerfile.cost-ledger
           - name: aep-read-api
             dockerfile: Dockerfile.read-api
+          - name: aep-itsm-bridge
+            dockerfile: Dockerfile.itsm-bridge
           - name: aep-change-api
             dockerfile: Dockerfile.change-api
           - name: aep-change-controller

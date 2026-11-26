@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aep.aenix.io/itsm/v1/events.schema.json",
+  "title": "AEP ITSM structured CloudEvent v1",
+  "description": "Inbound accepts only change.note and trusted-sender alerts; CMDB is outbound-only.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type", "subject", "time", "datacontenttype", "data"],
+  "properties": {
+    "specversion": {"const": "1.0"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 255},
+    "source": {"const": "aep"},
+    "type": {"enum": ["change.created", "change.updated", "change.note", "cmdb.sync", "ci.upserted", "ci.retired", "alert.raised", "alert.resolved"]},
+    "subject": {"type": "string", "minLength": 1, "maxLength": 512},
+    "time": {"type": "string", "format": "date-time"},
+    "datacontenttype": {"const": "application/json"},
+    "data": {"type": "object"}
+  },
+  "$defs": {
+    "changeSummary": {
+      "type": "object", "required": ["id", "text"], "additionalProperties": false,
+      "properties": {"id": {"type": "string", "maxLength": 512}, "text": {"type": "string", "maxLength": 1200}}
+    },
+    "note": {
+      "type": "object", "required": ["organization", "change", "text"],
+      "properties": {
+        "organization": {"type": "string"}, "change": {"type": "string"},
+        "text": {"type": "string", "minLength": 1, "maxLength": 3000},
+        "externalId": {"type": "string", "maxLength": 255}, "approverId": {"type": "string", "maxLength": 255},
+        "decision": {"enum": ["approve", "reject"]}
+      }
+    },
+    "alert": {
+      "type": "object", "required": ["key", "summary"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1, "maxLength": 400}, "node": {"type": "string", "maxLength": 255},
+        "summary": {"type": "string", "maxLength": 3000}, "severity": {"enum": ["0", "1", "2", "3", "4", "5"]}
+      }
+    },
+    "graph": {
+      "type": "object", "required": ["organization", "epoch", "items", "relationships"],
+      "properties": {
+        "organization": {"type": "string"}, "epoch": {"type": "string"},
+        "items": {"type": "array", "items": {"type": "object", "required": ["uid", "kind", "name"], "properties": {
+          "uid": {"type": "string"}, "name": {"type": "string"}, "externalId": {"type": "string"}, "retired": {"type": "boolean"},
+          "k8sUid": {"type": "string"}, "instanceName": {"type": "string"}, "fqdn": {"type": "string"}, "port": {"type": "string"}, "hostSysId": {"type": "string"},
+          "kind": {"enum": ["organization", "application-service", "cluster", "database", "business-application", "technical-service", "service-offering"]}
+        }}},
+        "relationships": {"type": "array", "items": {"type": "object", "required": ["parent", "child", "type"], "properties": {
+          "parent": {"type": "string"}, "child": {"type": "string"},
+          "type": {"enum": ["Contains::Contained by", "Depends on::Used by", "Runs on::Runs", "Consumes::Consumed by"]}
+        }}}
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"type": {"enum": ["change.created", "change.updated"]}}}, "then": {"properties": {"data": {"$ref": "#/$defs/changeSummary"}}}},
+    {"if": {"properties": {"type": {"const": "change.note"}}}, "then": {"properties": {"data": {"$ref": "#/$defs/note"}}}},
+    {"if": {"properties": {"type": {"enum": ["alert.raised", "alert.resolved"]}}}, "then": {"properties": {"data": {"$ref": "#/$defs/alert"}}}},
+    {"if": {"properties": {"type": {"enum": ["cmdb.sync", "ci.upserted", "ci.retired"]}}}, "then": {"properties": {"data": {"$ref": "#/$defs/graph"}}}}
+  ]
+}

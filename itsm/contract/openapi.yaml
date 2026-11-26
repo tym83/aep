@@ -136,18 +136,28 @@ paths:
   /v1/changes/{org}/{name}/notes:
     post:
       operationId: addChangeNote
-      summary: Add a note
-      description: Appends a note to the change. Service accounts (ITSM adapters) may add notes; their notes are marked with source `itsm`.
+      summary: Add an idempotent note
+      description: An optional Idempotency-Key deduplicates notes per caller and change; reuse with different text returns 409. Appends a note to the change. Service accounts (ITSM adapters) may add notes; their notes are marked with source `itsm`.
       tags: [changes]
       parameters:
         - $ref: '#/components/parameters/OrgParam'
         - $ref: '#/components/parameters/NameParam'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 255 }
+          description: Deduplicates notes per caller and change; conflicting text returns 409.
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/Note' }
       responses:
+        '200':
+          description: Idempotent replay of an existing note.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChangeView' }
         '201':
           description: Note recorded.
           content:
@@ -284,6 +294,7 @@ components:
       type: object
       required: [user, time, text, source]
       properties:
+        id: { type: string, description: Server-derived idempotency identifier. }
         user: { type: string }
         time: { type: string, format: date-time }
         text: { type: string, maxLength: 4000 }

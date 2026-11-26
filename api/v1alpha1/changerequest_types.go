@@ -133,6 +133,7 @@ type ChangeApproval struct {
 
 // ChangeNote is a free-form comment recorded on the change.
 type ChangeNote struct {
+	ID     string      `json:"id,omitempty"`
 	User   string      `json:"user"`
 	Time   metav1.Time `json:"time"`
 	Text   string      `json:"text"`

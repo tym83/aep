@@ -1,0 +1,37 @@
+image:
+  repository: ghcr.io/tym83/aep-itsm-bridge
+  # Required: use the digest produced by the image workflow. No image is published by this branch.
+  digest: ""
+  pullPolicy: IfNotPresent
+# Existing Secret with ITSM_INBOUND_HMAC_SECRET and ITSM_INBOUND_HMAC_KEY_ID, AEP_CLIENT_SECRET and vendor credentials:
+# ITSM_CLIENT_SECRET for ServiceNow; ITSM_TOKEN for Jira.
+credentialsSecret: ""
+config:
+  organization: ""
+  changeNamespace: ""
+  adapter: servicenow
+  vendorUrl: ""
+  tokenUrl: ""
+  clientId: ""
+  aepUrl: ""
+  aepTokenUrl: ""
+  aepClientId: ""
+  confirmationUrl: ""
+  # null selects true for ServiceNow and false for Jira/webhook.
+  syncCmdb: null
+  standardTemplate: ""
+  companySysId: ""
+  jiraEmail: ""
+  services: []
+  jiraProject: ""
+  jiraServiceDesk: ""
+  jiraRequestType: ""
+  jiraTransitions: {}
+tiers: []
+pollInterval: 15s
+# Existing TLS Secret. With no Secret, terminate TLS on a trusted private gateway.
+tlsSecret: ""
+caBundleConfigMap: ""
+resources:
+  requests: {cpu: 50m, memory: 64Mi}
+  limits: {memory: 256Mi}

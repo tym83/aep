@@ -124,7 +124,8 @@ Contract: `itsm/contract/openapi.yaml` (OpenAPI 3.1). Summary:
   `If-Match: <resourceVersion>` (missing → 428, stale → 412), a human token,
   and an eligible group; one decision per user, only while `Pending`.
 - `POST /v1/changes/{org}/{name}/notes` — comment; service accounts allowed
-  (recorded as `source: itsm`).
+  (recorded as `source: itsm`). Optional `Idempotency-Key` deduplicates by
+  caller and change; conflicting text returns 409.
 
 ```sh
 curl -X POST https://change.aep.example/v1/changes \
@@ -192,3 +193,5 @@ reconcile without a restart.
   own cascade; only the three main binding kinds are managed.
 - There is no list endpoint; the portal lists ChangeRequests through the
   Kubernetes API.
+
+ITSM delivery and the human-confirmation flow are documented in [itsm.md](itsm.md).

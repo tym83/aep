@@ -337,6 +337,15 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "text must be nonempty and at most 4000 characters")
 		return
 	}
+	key := r.Header.Get("Idempotency-Key")
+	if len(key) > 255 {
+		writeError(w, http.StatusBadRequest, "Idempotency-Key too long")
+		return
+	}
+	noteID := ""
+	if key != "" {
+		noteID = changeName("note", id.Subject+"/"+id.Username, key)
+	}
 	source := "portal"
 	if change.IsServiceAccount(id.Username) {
 		source = "itsm"
@@ -351,12 +360,22 @@ func (s *Server) addNote(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "organization access denied")
 			return
 		}
+		for _, note := range cr.Status.Notes {
+			if noteID != "" && note.ID == noteID {
+				if note.Text != req.Text {
+					writeError(w, http.StatusConflict, "Idempotency-Key reused with different note")
+					return
+				}
+				writeJSON(w, http.StatusOK, view(cr))
+				return
+			}
+		}
 		if len(cr.Status.Notes) >= maxNotesPerChange {
 			writeError(w, http.StatusConflict, "the change has too many notes")
 			return
 		}
 		cr.Status.Notes = append(cr.Status.Notes, api.ChangeNote{
-			User: id.Username, Time: metav1.NewTime(s.now()), Text: req.Text, Source: source,
+			ID: noteID, User: id.Username, Time: metav1.NewTime(s.now()), Text: req.Text, Source: source,
 		})
 		e := s.Client.Status().Update(r.Context(), cr)
 		if apierrors.IsConflict(e) {

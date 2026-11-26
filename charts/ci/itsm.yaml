@@ -1,0 +1,15 @@
+# Rendering fixture only: this is deliberately not a published image digest.
+image:
+  digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+credentialsSecret: itsm-acme
+tiers: [nonprod, prod]
+config:
+  organization: acme
+  changeNamespace: tenant-acme
+  vendorUrl: https://dev.example.service-now.com
+  tokenUrl: https://dev.example.service-now.com/oauth_token.do
+  clientId: aep
+  aepUrl: https://aep-change.example
+  aepTokenUrl: https://id.example/realms/aep/protocol/openid-connect/token
+  aepClientId: aep-itsm-acme
+  confirmationUrl: https://portal.example/changes

@@ -1,0 +1,178 @@
+{{- $sync := eq .Values.config.adapter "servicenow" -}}
+{{- if ne .Values.config.syncCmdb nil -}}{{- $sync = .Values.config.syncCmdb -}}{{- end -}}
+{{- $org := required "config.organization is required" .Values.config.organization -}}
+{{- $changeNS := required "config.changeNamespace is required" .Values.config.changeNamespace -}}
+{{- $digest := required "image.digest is required; use an image workflow digest" .Values.image.digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) }}{{ fail "image.digest must be a sha256 digest" }}{{ end -}}
+{{- $secret := required "credentialsSecret is required" .Values.credentialsSecret -}}
+{{- $name := printf "%s-itsm" .Release.Name | trunc 63 | trimSuffix "-" -}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+data:
+  config.json: |
+    {{- $config := deepCopy .Values.config }}
+    {{- $_ := set $config "stateNamespace" .Release.Namespace }}
+    {{- $_ := set $config "syncCmdb" $sync }}
+    {{ $config | toJson }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app.kubernetes.io/name: {{ $name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: {{ $name }}}
+      annotations:
+        checksum/config: {{ .Values.config | toJson | sha256sum }}
+    spec:
+      serviceAccountName: {{ $name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bridge
+          image: {{ printf "%s@%s" .Values.image.repository $digest | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/itsm/config.json
+            - --poll-interval={{ .Values.pollInterval }}
+            {{- if .Values.tlsSecret }}
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            {{- end }}
+          envFrom:
+            - secretRef: {name: {{ $secret }}}
+          {{- if .Values.caBundleConfigMap }}
+          env:
+            - name: SSL_CERT_FILE
+              value: /ca/ca.crt
+          {{- end }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: http, scheme: {{ ternary "HTTPS" "HTTP" (not (empty .Values.tlsSecret)) }}}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http, scheme: {{ ternary "HTTPS" "HTTP" (not (empty .Values.tlsSecret)) }}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ .Values.resources | toJson }}
+          volumeMounts:
+            - {name: config, mountPath: /etc/itsm, readOnly: true}
+            {{- if .Values.tlsSecret }}
+            - {name: tls, mountPath: /tls, readOnly: true}
+            {{- end }}
+            {{- if .Values.caBundleConfigMap }}
+            - {name: ca, mountPath: /ca, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap: {name: {{ $name }}}
+        {{- if .Values.tlsSecret }}
+        - name: tls
+          secret: {secretName: {{ .Values.tlsSecret }}}
+        {{- end }}
+        {{- if .Values.caBundleConfigMap }}
+        - name: ca
+          configMap: {name: {{ .Values.caBundleConfigMap }}}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+spec:
+  selector: {app.kubernetes.io/name: {{ $name }}}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-state
+rules:
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, create, update, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-state
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-state}
+subjects:
+  - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-changes
+  namespace: {{ $changeNS }}
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-changes
+  namespace: {{ $changeNS }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-changes}
+subjects:
+  - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ .Release.Namespace }}}
+{{- if $sync }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-{{ $name }}-inventory
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [organizations]
+    resourceNames: [{{ $org | quote }}]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-{{ $name }}-inventory
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: {{ .Release.Namespace }}-{{ $name }}-inventory}
+subjects:
+  - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ .Release.Namespace }}}
+{{- range $tier := .Values.tiers }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-inventory
+  namespace: tenant-{{ $org }}-{{ $tier }}
+rules:
+  - apiGroups: [apps.cozystack.io]
+    resources: [kuberneteses, postgreses, redises]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-inventory
+  namespace: tenant-{{ $org }}-{{ $tier }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $name }}-inventory}
+subjects:
+  - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ $.Release.Namespace }}}
+{{- end }}
+{{- end }}
