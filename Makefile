@@ -44,3 +44,5 @@ charts-lint:
 	helm template read charts/aep-read-api --namespace aep-system -f charts/ci/read.yaml > /dev/null
 	helm lint --strict charts/aep-read-api -f charts/ci/read.yaml -f charts/ci/ingress.yaml
 	helm template read charts/aep-read-api --namespace aep-system -f charts/ci/read.yaml -f charts/ci/ingress.yaml > /dev/null
+	helm lint --strict charts/aep-itsm-bridge -f charts/ci/itsm.yaml
+	helm template itsm charts/aep-itsm-bridge --namespace itsm-acme -f charts/ci/itsm.yaml > /dev/null
