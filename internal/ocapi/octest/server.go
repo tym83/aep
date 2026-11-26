@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 type Call struct {
@@ -25,7 +26,9 @@ type Server struct {
 	Token string
 	// FailWrites makes the next N mutating calls fail with 500.
 	FailWrites int
-	Calls      []Call
+	// HoldFinalizers simulates a controller that has not finished cleanup.
+	HoldFinalizers bool
+	Calls          []Call
 }
 
 func New(t *testing.T) *Server {
@@ -159,6 +162,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
+		// Metadata managed by Kubernetes survives whole-spec replacement.
+		oldMeta := s.bindings[k]["metadata"]
+		obj["metadata"] = oldMeta
 		// The API replaces the whole spec without a precondition.
 		obj["kind"] = kind
 		s.bindings[k] = obj
@@ -174,7 +180,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
-		delete(s.bindings, k)
+		obj := s.bindings[k]
+		spec, _ := obj["spec"].(map[string]any)
+		if s.HoldFinalizers || (kind == "ResourceReleaseBinding" && spec["retainPolicy"] == "Retain") {
+			meta := obj["metadata"].(map[string]any)
+			meta["deletionTimestamp"] = time.Now().UTC().Format(time.RFC3339)
+			meta["finalizers"] = []string{"openchoreo.dev/resourcereleasebinding-cleanup"}
+		} else {
+			delete(s.bindings, k)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

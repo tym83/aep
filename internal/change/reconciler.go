@@ -208,7 +208,10 @@ func (r *Reconciler) applying(ctx context.Context, cr *api.ChangeRequest, now ti
 	res, e := handler.Apply(ctx, oc, cr)
 	if e == nil {
 		cr.Status.Attempts++
-		reason := "Applied"
+		reason := res.Reason
+		if reason == "" {
+			reason = "Applied"
+		}
 		if !res.Executed {
 			reason = "Recorded"
 		}

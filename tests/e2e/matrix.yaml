@@ -85,6 +85,7 @@
       ]
     },
     "projects": {
+      "list": true,
       "endpoint": "openchoreo",
       "path": "/api/v1/namespaces/{org}/projects",
       "method": "GET",
@@ -418,7 +419,7 @@
       },
       "fixture": "self"
     },
-    "approve-other": {
+    "approve-others": {
       "endpoint": "change",
       "path": "/v1/changes/{org}/{change}/decision",
       "method": "POST",
@@ -567,7 +568,7 @@
       },
       "fixture": "self"
     },
-    "portal-approve-other": {
+    "portal-approve-others": {
       "endpoint": "portal",
       "path": "/v1/changes/{org}/{change}/decision",
       "method": "POST",

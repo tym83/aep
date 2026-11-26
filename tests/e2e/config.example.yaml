@@ -29,8 +29,13 @@ resources:
     componentType: {kind: ClusterComponentType, name: deployment/service}
     parameters: {}
   secretSpec:
-    secretStores: []
-    data: []
+    # The nonprod DataPlane uses secretStoreRef.name: default, resolving to
+    # ClusterSecretStore default. Provision this application key in that store.
+    # secretStores is a status field, not part of the spec.
+    template: {type: Opaque}
+    data:
+      - secretKey: password
+        remoteRef: {key: acceptance/application, property: password}
   # Optional schema-specific payloads for protected-object denial probes:
   # protectedSpecs:
   #   create-environments: {dataPlaneRef: {kind: DataPlane, name: nonprod}}

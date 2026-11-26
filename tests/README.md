@@ -23,8 +23,13 @@ optional `resources.protectedSpecs` overrides for the three protected-object
 creation payloads,
 actual log/output routes and output field paths. For logs, set per-organization
 `logsProject`/`logsComponent` to an existing running application in dev and prod
-(the suite only reads it); otherwise the new fixture names are used. These vary by OpenChoreo
-version and are configuration, not skipped tests. Supply two disposable
+(the suite only reads it). Without both fields, logs cells skip with an explicit
+reason. Routes and specs vary by OpenChoreo version. `secretSpec` must include
+a `template` object and at least one `data` entry with `secretKey` and
+`remoteRef.key`; configuration loading rejects missing fields. The example
+uses an application key in ClusterSecretStore `default`, selected by the
+nonprod DataPlane's `secretStoreRef.name: default`. `secretStores` belongs to
+status and must not be placed in the spec. Supply two disposable
 organizations with working release controllers, Postgres and cost ledgers.
 Then explicitly run against that stand:
 
@@ -35,7 +40,10 @@ go test -v -count=1 -timeout=100m -tags e2e ./tests/e2e -config /private/path/co
 The token helpers are argv arrays executed without a shell. OIDC and Backstage
 helpers receive the username as their final argument and print only the token.
 The cleanup helper receives an empty username and returns its dedicated platform
-identity. Never commit credentials, private endpoints or helper scripts. Each
+identity. Tokens are refreshed on each call (both OIDC and Backstage for the
+portal). Transport failures retry once with the same body and idempotency key;
+errors include only the URL path, never tokens, query strings or response bodies.
+Never commit credentials, private endpoints or helper scripts. Each
 role identity must have only its named organization role. The extra
 `breakglass-requester` identity has developer + breakglass: the current create
 API requires a creator role as well as the breakglass group. `security-oncall`
@@ -80,17 +88,21 @@ stand execution is required to establish actual acceptance.
 
 [matrix.yaml](e2e/matrix.yaml) is JSON-form YAML, ordered and reviewable, with
 nine roles and explicit actions, methods, payloads, success codes and allow
-lists. Default denial is 403, anonymous 401; cross-org accepts 403/404 only and
-checks that neither organization nor fixture/private marker names occur in the
+lists. Default denial is 403, anonymous 401; cross-org object reads and writes
+accept 403/404. OpenChoreo list cells also accept 200 with no items belonging to
+the target organization. All denied lists and cross-org responses check that neither organization nor fixture/private marker names occur in the
 body. `/me` is identity-scoped: it returns 200 and must exclude the other org.
 Each failing subtest prints a role/action/target/expected/actual row. There are
 **no pending cells**. Portal equivalents cover every route the backend exposes;
 notes have no portal proxy route. Decisions use fresh Pending decommission
 records for absent run-owned targets, so allowed matrix approvals cannot create
-production data. Only creator roles can generate an own request; other roles'
-"approve-own" cells verify the decision denial on a developer-created record.
+production data. `approve-own` applies only to creator roles in their own org.
+`approve-others` uses a different creator and allows the approver; other roles
+expect denial. Portal cells follow the same rules. The admin journey copies
+the operator binding's exact nonprod conditions for its namespaced role and
+also checks that an unrestricted delegated binding is rejected with 422.
 
-- Finance has no OpenChoreo role: all OpenChoreo actions return 403. Finance-only
+- Finance has no OpenChoreo role: object actions return 403, lists are filtered. Finance-only
   read API access is `/me` and costs; services, changes and compliance return 403.
 - Developer/platform production logs return 403 under RenderAuthz conditions;
   their nonprod log reads succeed. Breakglass-only has no generated OpenChoreo
@@ -115,15 +127,22 @@ OpenChoreo user roles cannot delete projects/components/resources by design.
 Tests register cleanup before each create and delete only exact run-named
 objects (also labeled `aep.aenix.io/e2e-run`). Nonprod cleanup uses the dedicated
 `cleanup.tokenCommand` platform identity, or, when absent,
-`kubectl --kubeconfig cleanup.aepcpKubeconfig` against **aep-cp**. It never deletes
-a namespace, selects an entire organization, or touches existing resources.
-Deletion is idempotent; cleanup errors fail the run. Objects with a production
-binding are retained if approved decommission cannot confirm its removal.
+the Kubernetes Go client with `cleanup.aepcpKubeconfig` against **aep-cp**.
+Discovery and namespace reads must succeed before setup; an unreachable API
+fails fast with a diagnostic. No kubectl process is used for cleanup. It never
+deletes a namespace, selects an entire organization, or touches existing resources.
+Deletion is retried until absence is confirmed or the configured timeout expires.
+A final sweep, registered before setup, finds run-owned objects including
+controller-generated releases, then lists again and reports swept/remaining/error
+counts. Kubeconfig mode discovers OpenChoreo resource kinds; token mode uses the
+fixture kinds and follows list pagination. Cleanup errors or leftovers fail
+the run. Objects with a production binding are retained if approved decommission cannot confirm its removal.
 
 Production resource bindings are removed exclusively by a `decommission`
-ChangeRequest created by the developer, approved by a separate approver and
-observed Applied. This also handles a regression that unexpectedly permits a
-direct prod write. No privileged production binding deletion is used.
+ChangeRequest with `desired.deleteData: true`, created by the developer,
+approved by a separate approver, observed Applied and verified absent.
+Applied/Finalizing alone is insufficient. This also handles a regression that
+unexpectedly permits a direct prod write. No privileged production binding deletion is used.
 ChangeRequests are audit records and are **never deleted**. Each justification
 and note contains the run id printed at test start. An interrupted process may
 leave run-owned objects: locate that run's records, complete approved production

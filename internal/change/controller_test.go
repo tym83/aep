@@ -476,3 +476,42 @@ func TestDecommissionFlow(t *testing.T) {
 		t.Fatalf("unexpected rollback plan %+v", got.Status.RollbackPlan)
 	}
 }
+
+func TestDecommissionRetentionOutcomeAndApprovalGate(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		deleteData, hold bool
+		reason           string
+	}{
+		{name: "retained", reason: "Retained"},
+		{name: "finalizing", deleteData: true, hold: true, reason: "Finalizing"},
+		{name: "removed", deleteData: true, reason: "Applied"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := promoteSpec(api.ModelNormal, "")
+			spec.Operation = api.OperationDecommission
+			spec.Target = api.ChangeTarget{Kind: "Resource", Name: "db", Project: "shop", Environment: "prod"}
+			spec.Desired = nil
+			if tc.deleteData {
+				spec.Desired = rawJSON(`{"deleteData":true}`)
+			}
+			cr := changeRequest("chg-1", spec, "", testNow)
+			h := newHarness(t, &cr)
+			h.name = types.NamespacedName{Namespace: "tenant-acme", Name: "chg-1"}
+			h.oc.HoldFinalizers = tc.hold
+			h.oc.Seed("acme", "ResourceReleaseBinding", "db-prod", map[string]any{"owner": map[string]any{"projectName": "shop", "resourceName": "db"}, "environment": "prod", "retainPolicy": "Retain"})
+			h.step(t)
+			phaseIs(t, h.step(t), api.PhasePending)
+			if writes(h.oc) != 0 {
+				t.Fatal("decommission mutated binding before human approval")
+			}
+			h.decide(t, approval("bob", []string{"aep-acme-approver"}, DecisionApprove, testNow))
+			got := h.run(t, 4)
+			phaseIs(t, got, api.PhaseApplied)
+			cond := meta.FindStatusCondition(got.Status.Conditions, "Applied")
+			if cond == nil || cond.Status != metav1.ConditionTrue || cond.Reason != tc.reason {
+				t.Fatalf("untruthful condition: %+v", cond)
+			}
+		})
+	}
+}

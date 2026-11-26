@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/ocapi"
@@ -311,6 +312,60 @@ func TestPromoteAddsRetainToExistingProdResourceBinding(t *testing.T) {
 		}
 		if got := s.Binding("acme", "ResourceReleaseBinding", tc.name+"-prod"); got["retainPolicy"] != tc.want {
 			t.Fatalf("%s: retainPolicy %v, want %s", tc.name, got["retainPolicy"], tc.want)
+		}
+	}
+}
+
+func TestDecommissionRetainedDataRequiresExplicitRelease(t *testing.T) {
+	s := octest.New(t)
+	s.Seed("acme", "ResourceReleaseBinding", "db-prod", map[string]any{"owner": map[string]any{"projectName": "shop", "resourceName": "db"}, "environment": "prod", "retainPolicy": "Retain"})
+	spec := promoteSpec(api.ModelNormal, "")
+	spec.Operation = api.OperationDecommission
+	spec.Target = api.ChangeTarget{Kind: "Resource", Project: "shop", Name: "db", Environment: "prod"}
+	spec.Desired = nil
+	h := HandlerFor(spec.Operation, nil)
+	for i := 0; i < 2; i++ {
+		res, err := h.Apply(context.Background(), ocClient(s), crFor(spec))
+		if err != nil || res.Reason != "Retained" || !res.Executed {
+			t.Fatalf("retention: %+v %v", res, err)
+		}
+		if s.Binding("acme", "ResourceReleaseBinding", "db-prod") == nil {
+			t.Fatal("retained binding removed")
+		}
+	}
+	spec.Desired = rawJSON(`{"deleteData":true}`)
+	s.HoldFinalizers = true
+	res, err := h.Apply(context.Background(), ocClient(s), crFor(spec))
+	if err != nil || res.Reason != "Finalizing" {
+		t.Fatalf("finalizing: %+v %v", res, err)
+	}
+	if s.Binding("acme", "ResourceReleaseBinding", "db-prod")["retainPolicy"] != "Delete" {
+		t.Fatal("data release not requested")
+	}
+	s.HoldFinalizers = false
+	res, err = h.Apply(context.Background(), ocClient(s), crFor(spec))
+	if err != nil || !res.Executed || res.Reason != "" || s.Binding("acme", "ResourceReleaseBinding", "db-prod") != nil {
+		t.Fatalf("release: %+v %v", res, err)
+	}
+}
+
+func TestValidateDecommissionPayload(t *testing.T) {
+	for _, tc := range []struct {
+		payload string
+		model   api.ChangeModel
+		valid   bool
+	}{
+		{`{}`, api.ModelNormal, true}, {`{"deleteData":false}`, api.ModelNormal, true},
+		{`{"deleteData":true}`, api.ModelNormal, true}, {`{"deleteData":"true"}`, api.ModelNormal, false},
+		{`{"retainPolicy":"Delete"}`, api.ModelNormal, false}, {`{"deleteData":true}`, api.ModelStandard, false},
+		{`{"deleteData":true}`, api.ModelEmergency, false},
+	} {
+		spec := promoteSpec(tc.model, "")
+		spec.Operation = api.OperationDecommission
+		spec.Target = api.ChangeTarget{Kind: "Resource", Project: "shop", Name: "db", Environment: "prod"}
+		spec.Desired = rawJSON(tc.payload)
+		if err := ValidateSpec(spec, time.Now()); (err == nil) != tc.valid {
+			t.Errorf("%s/%s: %v", tc.payload, tc.model, err)
 		}
 	}
 }

@@ -5,6 +5,10 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	api "github.com/tym83/aep/api/v1alpha1"
+	"github.com/tym83/aep/internal/operator"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -39,8 +43,8 @@ func TestResponseLimitAndRedactedTransportErrors(t *testing.T) {
 		t.Fatal("oversize response accepted")
 	}
 	server.Close()
-	_, _, err := exchange(context.Background(), server.URL, "/secret", "GET", "secret", nil, nil)
-	if err == nil || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), server.URL) {
+	_, _, err := exchange(context.Background(), server.URL, "/probe", "GET", "secret", nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "/probe") || strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), server.URL) {
 		t.Fatal("transport details leaked")
 	}
 }
@@ -176,5 +180,262 @@ func TestTemplateExpansionUsesConfiguredLogFixtures(t *testing.T) {
 	s.c.Resources.ProdEnvironment = "prod"
 	if got := s.expand("{logsPath}", 0, "x"); got != "/namespaces/a/projects/running/components/service?env=prod" {
 		t.Fatalf("incorrect log fixture: %v", got)
+	}
+}
+
+func TestFilteredListDenial(t *testing.T) {
+	for _, tc := range []struct {
+		raw  string
+		deny bool
+	}{
+		{`{"items":[]}`, true}, {`{"items":[{"metadata":{"namespace":"other"}}]}`, true},
+		{`{"items":[{"metadata":{"namespace":"target"}}]}`, false}, {`{"items":[{}]}`, false},
+		{`{}`, false}, {`{"items":null}`, false}, {`{"items":"bad"}`, false},
+	} {
+		if got := emptyTargetList(tc.raw, "target"); got != tc.deny {
+			t.Errorf("%s: %v", tc.raw, got)
+		}
+	}
+}
+
+func TestSecretFixtureValidation(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"data":[]}`, `{"template":{},"data":[{}]}`, `{"template":{},"data":[{"secretKey":"p","remoteRef":{"key":""}}]}`} {
+		var spec map[string]any
+		_ = json.Unmarshal([]byte(raw), &spec)
+		if validateSecretSpec(spec) == nil {
+			t.Errorf("invalid fixture accepted: %s", raw)
+		}
+	}
+}
+
+func TestTransportRetriesWithFreshCredentials(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Header.Get("Authorization") != "Bearer fresh" {
+			t.Error("cached token used")
+		}
+		if calls == 1 {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+	s := &suite{t: t, c: config{Endpoints: map[string]string{"change": server.URL}, TokenCommand: []string{"sh", "-c", "printf fresh"}, Organizations: []organization{{Users: map[string]string{"developer": "dev"}}}}, tokens: map[string]string{"0/developer/false": "expired"}}
+	s.require(0, "developer", "change", "POST", "/probe", map[string]any{}, nil, 200)
+	if calls != 2 {
+		t.Fatalf("requests: %d", calls)
+	}
+}
+
+func TestDelegatedBindingUsesRenderedRestrictions(t *testing.T) {
+	org := &api.Organization{ObjectMeta: metav1.ObjectMeta{Name: "acme"}, Spec: api.OrganizationSpec{Environments: []api.Environment{{Name: "dev", Tier: "nonprod"}, {Name: "stage", Tier: "nonprod"}, {Name: "prod", Tier: "prod"}}}}
+	for _, obj := range operator.RenderAuthz(org) {
+		if obj.GetKind() != "AuthzRoleBinding" || obj.GetName() != "aep-developer" {
+			continue
+		}
+		spec, err := delegatedBinding(obj.Object, "custom", "local")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mappings := spec["roleMappings"].([]any)
+		mapping := mappings[0].(map[string]any)
+		if str(mapping, "roleRef.name") != "custom" || str(mapping, "roleRef.kind") != "AuthzRole" {
+			t.Fatal("delegated role changed")
+		}
+		b, _ := json.Marshal(mapping["conditions"])
+		if !strings.Contains(string(b), `acme/stage`) || strings.Contains(string(b), `acme/prod`) {
+			t.Fatalf("wrong restriction: %s", b)
+		}
+		return
+	}
+	t.Fatal("operator binding missing")
+}
+
+func TestCleanupRetriesDeletionAndVerifiesAbsence(t *testing.T) {
+	deletes := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			deletes++
+			if deletes == 1 {
+				w.WriteHeader(503)
+				return
+			}
+			w.WriteHeader(204)
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer server.Close()
+	s := &suite{t: t, run: "local", c: config{Endpoints: map[string]string{"openchoreo": server.URL}, Organizations: []organization{{Name: "a"}}, TimeoutSeconds: 3}}
+	s.c.Cleanup.TokenCommand = []string{"printf", "%s", "cleanup"}
+	if err := s.cleanupNow(0, "secretreferences", "secret-local-1"); err != nil {
+		t.Fatal(err)
+	}
+	if deletes != 2 {
+		t.Fatalf("delete attempts: %d", deletes)
+	}
+}
+
+func TestCleanupProductionUsesApprovedDeleteData(t *testing.T) {
+	phase := "Pending"
+	binding := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			if r.Method != "GET" {
+				t.Error("raw production deletion attempted")
+			}
+			if !binding {
+				w.WriteHeader(404)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"spec": map[string]any{"owner": map[string]any{"projectName": "p-local-1", "resourceName": "db-local-1"}}})
+			return
+		}
+		if r.Method == "POST" {
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if r.URL.Path == "/v1/changes" {
+				if body["model"] != "normal" || body["operation"] != "decommission" || field(body, "desired.deleteData") != true {
+					t.Error("cleanup must request approved data deletion")
+				}
+				w.WriteHeader(201)
+			} else {
+				if r.Header.Get("Authorization") != "Bearer approver" || r.Header.Get("If-Match") != "7" {
+					t.Error("cleanup approval identity or version incorrect")
+				}
+				phase = "Applied"
+				binding = false
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"request": map[string]any{"metadata": map[string]any{"name": "cleanup-change", "resourceVersion": "7"}, "status": map[string]any{"phase": phase}}})
+	}))
+	defer server.Close()
+	s := &suite{t: t, run: "local", c: config{Endpoints: map[string]string{"openchoreo": server.URL, "change": server.URL}, TokenCommand: []string{"printf", "%s"}, Organizations: []organization{{Name: "a", Users: map[string]string{"developer": "developer", "approver": "approver"}}}, TimeoutSeconds: 5}}
+	s.c.Resources.ProdEnvironment = "prod"
+	s.c.Cleanup.TokenCommand = []string{"printf", "%s", "cleanup"}
+	if err := s.cleanupNow(0, "resourcereleasebindings", "db-local-1-prod"); err != nil {
+		t.Fatal(err)
+	}
+	if binding || phase != "Applied" {
+		t.Fatal("production cleanup incomplete")
+	}
+}
+
+func TestSweepIncludesUnregisteredRunObjects(t *testing.T) {
+	exists := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			if !strings.HasSuffix(r.URL.Path, "/secret-local-1") {
+				t.Error("sweep touched another run")
+			}
+			exists = false
+			w.WriteHeader(204)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/secretreferences") {
+			items := []any{object("secret-foreign-1", nil, "foreign")}
+			if exists {
+				items = append(items, object("secret-local-1", nil, "local"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+			return
+		}
+		w.WriteHeader(404)
+	}))
+	defer server.Close()
+	s := &suite{t: t, run: "local", cleanupKinds: []string{"secretreferences"}, c: config{Endpoints: map[string]string{"openchoreo": server.URL}, Organizations: []organization{{Name: "a"}}, TimeoutSeconds: 1}}
+	s.c.Cleanup.TokenCommand = []string{"printf", "%s", "cleanup"}
+	s.sweep()
+	if exists {
+		t.Fatal("unregistered run object survived sweep")
+	}
+}
+
+func TestCleanupPreflightChecksAPIWithoutMutations(t *testing.T) {
+	for _, available := range []bool{true, false} {
+		t.Run(fmt.Sprint(available), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != "GET" {
+					t.Error("preflight must be read only")
+				}
+				if !available {
+					w.WriteHeader(503)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/apis/openchoreo.dev/v1alpha1" {
+					_, _ = w.Write([]byte(`{"kind":"APIResourceList","apiVersion":"v1","groupVersion":"openchoreo.dev/v1alpha1","resources":[{"name":"projects","namespaced":true,"kind":"Project","verbs":["get","list","delete"]}]}`))
+				} else {
+					_, _ = w.Write([]byte(`{"kind":"ProjectList","apiVersion":"openchoreo.dev/v1alpha1","items":[]}`))
+				}
+			}))
+			defer server.Close()
+			path := filepath.Join(t.TempDir(), "kubeconfig")
+			raw := fmt.Sprintf("apiVersion: v1\nkind: Config\nclusters:\n- name: fake\n  cluster:\n    server: %s\ncontexts:\n- name: fake\n  context:\n    cluster: fake\ncurrent-context: fake\n", server.URL)
+			if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s := &suite{t: t, c: config{Organizations: []organization{{Name: "a"}}}}
+			s.c.Cleanup.AepcpKubeconfig = path
+			err := s.configureCleanup()
+			if available && err != nil {
+				t.Fatal(err)
+			}
+			if !available && (err == nil || !strings.Contains(err.Error(), "before rerunning")) {
+				t.Fatalf("missing fail-fast diagnostic: %v", err)
+			}
+		})
+	}
+}
+
+func TestCleanupListsEveryPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") == "second" {
+			_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"secret-local-1"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[],"pagination":{"nextCursor":"second"}}`))
+	}))
+	defer server.Close()
+	s := &suite{t: t, c: config{Endpoints: map[string]string{"openchoreo": server.URL}, Organizations: []organization{{Name: "a"}}}}
+	s.c.Cleanup.TokenCommand = []string{"printf", "%s", "cleanup"}
+	items, err := s.cleanupList(0, "secretreferences")
+	if err != nil || len(items) != 1 || str(items[0], "metadata.name") != "secret-local-1" {
+		t.Fatalf("pagination lost an object: %v %v", items, err)
+	}
+}
+
+func TestProjectCleanupCannotCascadePastFailedProductionDecommission(t *testing.T) {
+	deletes := 0
+	binding := object("db-local-1-prod", map[string]any{"owner": map[string]any{"projectName": "project-local-1", "resourceName": "db-local-1"}, "environment": "prod"}, "local")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "DELETE" {
+			deletes++
+			w.WriteHeader(204)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/db-local-1-prod") {
+			_ = json.NewEncoder(w).Encode(binding)
+			return
+		}
+		items := []any{}
+		if strings.HasSuffix(r.URL.Path, "/resourcereleasebindings") {
+			items = append(items, binding)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+	}))
+	defer server.Close()
+	s := &suite{t: t, run: "local", c: config{Endpoints: map[string]string{"openchoreo": server.URL}, Organizations: []organization{{Name: "a", Users: map[string]string{"developer": "dev"}}}, TimeoutSeconds: 1}}
+	s.c.Resources.ProdEnvironment = "prod"
+	s.c.Cleanup.TokenCommand = []string{"printf", "%s", "cleanup"}
+	// No change credentials: the child cannot be decommissioned.
+	if err := s.cleanupNow(0, "projects", "project-local-1"); err == nil {
+		t.Fatal("failed child decommission did not block project deletion")
+	}
+	if deletes != 0 {
+		t.Fatal("project deletion bypassed production approval")
 	}
 }
