@@ -50,6 +50,16 @@ bin/aep-release manifest --build-version v1.2.3
 bin/aep-release manifest --check
 ```
 
+Repository-built charts and images are inventoried before CI publishes their
+signatures. Generation records their local chart digests or reviewed image pins
+with `signature: required-at-publish`, without querying remote signatures. New
+image tags still require digest resolution. Exact image names come from the
+repository's image build matrix; upstream signature discovery is unchanged.
+`mirror` and `bundle` resolve this marker to the published signature digest and
+fail if it is absent. With a key, they verify that signature normally. Bundles
+record the resolved signature digest so `load` verifies it offline with the
+operator's trusted key. The marker never exempts an artifact from verification.
+
 Generation resolves real digests; any missing image/chart or signature discovery
 error fails generation. It renders upstream charts by digest using the operator's
 values, and local charts with representative required identity values. It packages

@@ -24,6 +24,8 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+const SignatureRequiredAtPublish = "required-at-publish"
+
 type Artifact struct {
 	Own       bool   `json:"own,omitempty"`
 	Kind      string `json:"kind"`
@@ -294,9 +296,7 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 			if e != nil {
 				return m, e
 			}
-			if err := client.discoverSignature(ctx, &a); err != nil {
-				return m, err
-			}
+			a.Signature = SignatureRequiredAtPublish
 			artifacts[a.Ref] = a
 			rendered, e := render(ctx, filepath.Dir(p), "", values)
 			if e != nil {
@@ -333,7 +333,7 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 			continue
 		}
 		fmt.Fprintln(os.Stderr, "Resolving", s)
-		a, e := client.Resolve(ctx, "image", s, "")
+		a, e := client.resolveInventoryImage(ctx, root, s)
 		if e != nil {
 			return m, e
 		}
@@ -357,6 +357,10 @@ func LocalValues(chart string) map[string]any {
 	return map[string]any{"gitlab": map[string]any{"global": map[string]any{"ingress": map[string]any{"class": "nginx"}}}, "global": map[string]any{"aepVersion": "@build"}, "dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
 }
 func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifact, error) {
+	return c.resolve(ctx, kind, ref, version, true)
+}
+
+func (c *Client) resolve(ctx context.Context, kind, ref, version string, signatures bool) (Artifact, error) {
 	raw := strings.TrimPrefix(ref, "oci://")
 	if version != "" {
 		raw += ":" + version
@@ -383,11 +387,106 @@ func (c *Client) Resolve(ctx context.Context, kind, ref, version string) (Artifa
 			return a, fmt.Errorf("mutable release tag: %s", raw)
 		}
 	}
-	if err := c.discoverSignature(ctx, &a); err != nil {
-		return a, err
+	if signatures {
+		if err := c.discoverSignature(ctx, &a); err != nil {
+			return a, err
+		}
 	}
 	return a, nil
 }
+
+// Only exact image names built by this repository qualify for deferred signing.
+// A registry prefix alone would also exempt unrelated upstream artifacts.
+func (c *Client) resolveInventoryImage(ctx context.Context, root, ref string) (Artifact, error) {
+	r, err := c.ref(ref)
+	if err != nil {
+		return Artifact{}, err
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".github/workflows/images.yml"))
+	if err != nil {
+		return Artifact{}, err
+	}
+	var workflow struct {
+		Jobs struct {
+			Build struct {
+				Strategy struct {
+					Matrix struct {
+						Include []struct {
+							Name       string
+							Dockerfile string
+						}
+					}
+				}
+			}
+		}
+	}
+	if err := yaml.Unmarshal(data, &workflow); err != nil {
+		return Artifact{}, err
+	}
+	local := false
+	for _, image := range workflow.Jobs.Build.Strategy.Matrix.Include {
+		if r.Context().Name() == "ghcr.io/tym83/"+image.Name {
+			if _, err := os.Stat(filepath.Join(root, image.Dockerfile)); err != nil {
+				return Artifact{}, err
+			}
+			local = true
+			break
+		}
+	}
+	if !local {
+		return c.Resolve(ctx, "image", ref, "")
+	}
+	version := r.Identifier()
+	if tagged, _, ok := strings.Cut(ref, "@"); ok && strings.LastIndex(tagged, ":") > strings.LastIndex(tagged, "/") {
+		tag, err := name.NewTag(tagged)
+		if err != nil {
+			return Artifact{}, err
+		}
+		version = tag.TagStr()
+	}
+	if !immutableVersion(version) {
+		return Artifact{}, fmt.Errorf("mutable release tag: %s", ref)
+	}
+	// Reuse reviewed local pins when available; unpublished digest references need
+	// no registry access at all. New tags still need their actual image digest.
+	if m, err := Read(filepath.Join(root, "release/manifest.yaml")); err == nil {
+		for _, a := range m.Artifacts {
+			if a.Kind == "image" && a.Ref == r.Context().Name() && (a.Version == r.Identifier() || a.Digest == r.Identifier()) {
+				a.Signature = SignatureRequiredAtPublish
+				return a, nil
+			}
+		}
+	}
+	if digest, ok := r.(name.Digest); ok {
+		return Artifact{Kind: "image", Ref: r.Context().Name(), Version: version, Digest: digest.DigestStr(), Signature: SignatureRequiredAtPublish}, nil
+	}
+	a, err := c.resolve(ctx, "image", ref, "", false)
+	if err == nil {
+		a.Signature = SignatureRequiredAtPublish
+	}
+	return a, err
+}
+
+// Resolve publish-time signatures before transport and persist their digests in
+// bundles. The inventory marker is never evidence of a verified signature.
+func (c *Client) publishedSignatures(ctx context.Context, m Manifest) (Manifest, error) {
+	m.Artifacts = append([]Artifact(nil), m.Artifacts...)
+	for i := range m.Artifacts {
+		a := &m.Artifacts[i]
+		if a.Signature != SignatureRequiredAtPublish {
+			continue
+		}
+		a.Signature = ""
+		if err := c.discoverSignature(ctx, a); err != nil {
+			return m, err
+		}
+		if a.Signature == "" {
+			return m, fmt.Errorf("published signature required for %s", a.Ref)
+		}
+	}
+	return m, nil
+}
+
 func (c *Client) discoverSignature(ctx context.Context, a *Artifact) error {
 	r, err := c.ref(strings.TrimPrefix(a.Ref, "oci://") + "@" + a.Digest)
 	if err != nil {

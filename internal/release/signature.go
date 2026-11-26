@@ -116,7 +116,7 @@ func (c *Client) signaturePolicy(a Artifact) (string, bool) {
 }
 func (c *Client) requireSignature(a Artifact) error {
 	key, required := c.signaturePolicy(a)
-	if required && (key == "" || a.Signature == "") {
+	if a.Signature == SignatureRequiredAtPublish || required && (key == "" || a.Signature == "") {
 		return fmt.Errorf("trusted signature required for %s", a.Ref)
 	}
 	return nil
