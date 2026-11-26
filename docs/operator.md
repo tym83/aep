@@ -25,8 +25,35 @@ organization namespaces, OpenChoreo objects and admission policies, read gateway
 Deployments/Secrets, and create SelfSubjectReviews. Its Kubernetes identity must
 be dedicated to the operator, distinct from OpenChoreo's API identity and users.
 
-Remove OpenChoreo's broad bootstrap bindings (`admins`, `developers`, shared
-publisher clients) before onboarding real users. Configure Keycloak as OIDC IdP
+The operator checks installation-wide `ClusterAuthzRoleBindings` before tenant
+provisioning on every Organization reconciliation, including startup reconciliation.
+`ControlPlaneHardened` reports False with the sorted names of remaining bindings
+for any `groups` claim, `client_id=service_mcp_client`, or the shared
+`workload-publisher-binding`. Failed inspection also reports False. Ready requires
+this condition to be True. Invalid Organizations still poll every minute; pending
+ones retry with their normal provisioning cadence/backoff. At least one Organization
+must exist for this reconciliation-based installation check to run.
+
+By default it deletes matching objects only when `app.kubernetes.io/managed-by=Helm`
+and either `app.kubernetes.io/instance=openchoreo-control-plane` or
+`release=openchoreo-control-plane` are present. Any `aep.aenix.io/*` label protects
+an object from deletion. Unmanaged offenders remain visible for manual review.
+Allow-listed client IDs are exempt (only for a `client_id` claim).
+Each successful deletion emits a `BootstrapBindingPruned` Event on the triggering
+Organization. The control-plane credentials need list/delete permission on
+`clusterauthzrolebindings`. Helm upgrades may recreate bootstrap bindings; the
+operator removes them again on reconciliation. This is eventual cleanup, so verify
+`ControlPlaneHardened=True` before onboarding users and after upgrades.
+With `--prune-bootstrap-bindings=false`, the operator only reports this condition.
+The chart exposes `pruneBootstrapBindings` and `bootstrapBindingSystemClients`
+values for these flags.
+
+Each organization receives an owned `aep-workload-publisher` AuthzRoleBinding in
+its namespace, mapping `client_id=aep-<org>-publisher` to the existing
+`ClusterAuthzRole/workload-publisher`. Provision that distinct IdP client and its
+credentials separately; the operator does not create publisher clients in the IdP.
+
+Configure Keycloak as OIDC IdP
 and emit the `groups` claim without a Kubernetes audience in portal tokens.
 The isolated stand realm was `aepdev`; this operator never assumes `cozy`.
 
@@ -161,6 +188,8 @@ justify transferring ownership to pre-existing objects.
 | `--gateway-host-template` | `cluster-gateway.{{.DashedIP}}.nip.io`; also exposes `.ClusterIP` |
 | `--tenant-egress-workaround` | `true`; false removes the owned workaround |
 | `--bridge-image` | Required |
+| `--prune-bootstrap-bindings` | `true`; false only reports unsafe installation bindings |
+| `--bootstrap-binding-system-clients` | Comma-separated client IDs; defaults to `openchoreo-backstage-client,openchoreo-observer-resource-reader-client,openchoreo-rca-agent,openchoreo-finops-agent`; empty exempts none |
 | `--keycloak-enabled` | `false` |
 | `--keycloak-url` | Required when enabled; trusted HTTPS endpoint |
 | `--keycloak-realm` | Required when enabled; existing isolated realm |
@@ -195,7 +224,7 @@ of expiration to require a planned trust rotation.
 
 ## Still manual / follow-up
 
-- aep-cp installation, SAN configuration/restart, OIDC and bootstrap-binding cleanup.
+- aep-cp installation, SAN configuration/restart, OIDC and review of unsafe bindings without chart management labels.
 - ESO and the `default` ClusterSecretStore/backend on every data plane. The core
   charts do not provision a secret backend; components needing SecretReference
   require that prerequisite.

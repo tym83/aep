@@ -5,6 +5,8 @@ aepcpTenantNamespace: tenant-aep-cp
 aepcpCluster: aepcp
 gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
 tenantEgressWorkaround: true
+pruneBootstrapBindings: true
+bootstrapBindingSystemClients: openchoreo-backstage-client,openchoreo-observer-resource-reader-client,openchoreo-rca-agent,openchoreo-finops-agent
 keycloak:
   enabled: false
   url: ""

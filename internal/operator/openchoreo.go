@@ -92,5 +92,9 @@ func RenderAuthz(o *api.Organization) []*unstructured.Unstructured {
 		entitlement := M{"claim": "groups", "value": "aep-" + o.Name + "-" + role}
 		out = append(out, obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-"+role, M{"entitlement": entitlement, "effect": "allow", "roleMappings": []any{mapping}}), obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-"+role+"-deny-platform", M{"entitlement": entitlement, "effect": "deny", "roleMappings": []any{M{"roleRef": M{"kind": "AuthzRole", "name": "aep-platform-protected"}}}}))
 	}
+	out = append(out, obj(ocAPI, "AuthzRoleBinding", o.Name, "aep-workload-publisher", M{
+		"entitlement": M{"claim": "client_id", "value": "aep-" + o.Name + "-publisher"},
+		"effect":      "allow", "roleMappings": []any{M{"roleRef": M{"kind": "ClusterAuthzRole", "name": "workload-publisher"}}},
+	}))
 	return out
 }

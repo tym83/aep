@@ -396,3 +396,18 @@ spec:
       kind: AuthzRole
       name: aep-platform-protected
 ---
+apiVersion: openchoreo.dev/v1alpha1
+kind: AuthzRoleBinding
+metadata:
+  name: aep-workload-publisher
+  namespace: acme
+spec:
+  effect: allow
+  entitlement:
+    claim: client_id
+    value: aep-acme-publisher
+  roleMappings:
+  - roleRef:
+      kind: ClusterAuthzRole
+      name: workload-publisher
+---

@@ -72,6 +72,10 @@ func TestReconcilePendingAndFailures(t *testing.T) {
 			if err := r.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
 				t.Fatal(err)
 			}
+			hardening := meta.FindStatusCondition(o.Status.Conditions, "ControlPlaneHardened")
+			if hardening == nil || hardening.Status != "False" || hardening.Reason != "InspectionFailed" {
+				t.Fatalf("installation inspection missing while tenants pending: %+v", hardening)
+			}
 			condition := meta.FindStatusCondition(o.Status.Conditions, "TenantsReady")
 			if o.Status.Phase != "Pending" || condition == nil || condition.Reason != "Pending" || condition.Status != "False" {
 				t.Fatalf("unexpected status: %+v", o.Status)
