@@ -62,7 +62,11 @@ func (s *suite) expand(v any, org int, name string) any {
 		}
 		return path
 	}
-	r := strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{project}", f.project, "{resource}", f.resource, "{component}", f.component, "{resourceType}", s.c.Resources.ResourceType, "{environment}", s.c.Resources.Environment, "{prod}", s.c.Resources.ProdEnvironment, "{projectRelease}", f.projectRelease, "{resourceRelease}", f.resourceRelease, "{name}", name, "{run}", s.run, "{logsPath}", logs(s.c.Resources.ProdEnvironment), "{nonprodLogsPath}", logs(s.c.Resources.Environment))
+	// The read API is the supported log route; it decides logs:view per environment.
+	readLogs := func(env string) string {
+		return "/v1/organizations/" + s.c.Organizations[org].Name + "/projects/" + logsProject + "/components/" + logsComponent + "/environments/" + env + "/logs"
+	}
+	r := strings.NewReplacer("{org}", s.c.Organizations[org].Name, "{project}", f.project, "{resource}", f.resource, "{component}", f.component, "{resourceType}", s.c.Resources.ResourceType, "{environment}", s.c.Resources.Environment, "{prod}", s.c.Resources.ProdEnvironment, "{projectRelease}", f.projectRelease, "{resourceRelease}", f.resourceRelease, "{name}", name, "{run}", s.run, "{logsPath}", logs(s.c.Resources.ProdEnvironment), "{nonprodLogsPath}", logs(s.c.Resources.Environment), "{readProdLogsPath}", readLogs(s.c.Resources.ProdEnvironment), "{readNonprodLogsPath}", readLogs(s.c.Resources.Environment))
 	var out any
 	if err := json.Unmarshal([]byte(r.Replace(string(b))), &out); err != nil {
 		s.t.Fatal("invalid expanded fixture")

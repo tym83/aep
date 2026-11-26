@@ -98,7 +98,7 @@ func TestMatrixContract(t *testing.T) {
 			}
 		}
 	}
-	if contains(m.Actions["read-services"].Allow, "finance") || len(m.Actions["prod-logs"].Allow) != 0 {
+	if contains(m.Actions["read-services"].Allow, "finance") || len(m.Actions["prod-logs"].Allow) != 0 || len(m.Actions["direct-nonprod-logs"].Allow) != 0 || m.Actions["nonprod-logs"].Endpoint != "read" {
 		t.Fatal("resolved expectations regressed")
 	}
 }
