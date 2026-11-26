@@ -1,0 +1,7 @@
+oidc:
+  issuer: https://id.example.org/realms/aep
+  audience: aep-portal
+openchoreo:
+  apiUrl: https://openchoreo.example.org
+  tokenUrl: https://id.example.org/realms/aep/protocol/openid-connect/token
+organizations: [acme, example]

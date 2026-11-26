@@ -17,3 +17,11 @@ resources:
 
 # Existing Secret containing COST_DSN for a SELECT-only ledger role.
 costCredentialsSecret: ""
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tlsSecret: ""
+  clusterIssuer: ""
+  annotations: {}

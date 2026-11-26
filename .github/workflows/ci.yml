@@ -16,3 +16,15 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test ./...
+  charts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4.3.0
+        with:
+          version: v3.17.3
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make charts-lint
+      - run: go test ./internal/manifests

@@ -1,0 +1,107 @@
+{{- $root := . }}
+{{- $prefix := printf "%s-%s" .Release.Namespace .Release.Name }}
+{{- range $component := list "api" "controller" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $root.Release.Name }}-{{ $component }}
+{{- end }}
+---
+# The manager's informer watches ChangeRequests across all namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $prefix }}-watch
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $prefix }}-watch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $prefix }}-watch
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-controller
+    namespace: {{ .Release.Namespace }}
+{{- range $org := required "organizations must contain at least one organization name" .Values.organizations }}
+{{- $namespace := replace "{org}" $org $root.Values.orgNamespaceTemplate }}
+{{- range $component := list "api" "controller" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $prefix }}-{{ $org }}-{{ $component }}
+  namespace: {{ $namespace | quote }}
+rules:
+  {{- if eq $component "api" }}
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests]
+    verbs: [get, list, create]
+  {{- end }}
+  - apiGroups: [aep.aenix.io]
+    resources: [changerequests/status]
+    verbs: [get, update, patch]
+  {{- if eq $component "controller" }}
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [{{ replace "{org}" $org $root.Values.openchoreo.secretNameTemplate | quote }}]
+    verbs: [get]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $prefix }}-{{ $org }}-{{ $component }}
+  namespace: {{ $namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $prefix }}-{{ $org }}-{{ $component }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $root.Release.Name }}-{{ $component }}
+    namespace: {{ $root.Release.Namespace }}
+{{- end }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $prefix }}-leader
+  namespace: {{ .Values.controller.leaseNamespace | default .Release.Namespace | quote }}
+rules:
+  # Kubernetes RBAC cannot restrict create by resourceNames.
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    resourceNames: [aep-change-controller]
+    verbs: [get, update]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $prefix }}-leader
+  namespace: {{ .Values.controller.leaseNamespace | default .Release.Namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $prefix }}-leader
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-controller
+    namespace: {{ .Release.Namespace }}

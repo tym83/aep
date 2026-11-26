@@ -1,0 +1,3 @@
+oidc:
+  issuer: https://id.example.org/realms/aep
+  audience: aep-portal

@@ -11,6 +11,7 @@ lint:
 generate:
 	go run sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION) object crd paths=./api/... output:crd:artifacts:config=config/crd
 	cp config/crd/aep.aenix.io_serviceclaims.yaml charts/aep-bridge-appcluster/crds/
+	cp config/crd/aep.aenix.io_changerequests.yaml charts/aep-change/crds/
 docker-build:
 	docker build -t $(IMAGE) .
 
@@ -28,3 +29,15 @@ policies-test: policies-render
 policies-package:
 	mkdir -p dist/policies
 	for bundle in baseline nonprod prod; do helm package policies/app-cluster-$$bundle --destination dist/policies; done
+
+.PHONY: charts-lint
+charts-lint:
+	cmp config/crd/aep.aenix.io_changerequests.yaml charts/aep-change/crds/aep.aenix.io_changerequests.yaml
+	helm lint --strict charts/aep-change -f charts/ci/change.yaml
+	helm template change charts/aep-change --namespace aep-system --include-crds -f charts/ci/change.yaml > /dev/null
+	helm lint --strict charts/aep-change -f charts/ci/change.yaml -f charts/ci/ingress.yaml -f charts/ci/change-tls.yaml
+	helm template change charts/aep-change --namespace aep-system --include-crds -f charts/ci/change.yaml -f charts/ci/ingress.yaml -f charts/ci/change-tls.yaml > /dev/null
+	helm lint --strict charts/aep-read-api -f charts/ci/read.yaml
+	helm template read charts/aep-read-api --namespace aep-system -f charts/ci/read.yaml > /dev/null
+	helm lint --strict charts/aep-read-api -f charts/ci/read.yaml -f charts/ci/ingress.yaml
+	helm template read charts/aep-read-api --namespace aep-system -f charts/ci/read.yaml -f charts/ci/ingress.yaml > /dev/null
