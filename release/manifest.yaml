@@ -23,71 +23,71 @@ artifacts:
   kind: image
   ref: ghcr.io/kyverno/readiness-checker
   version: v1.19.2
-- digest: ""
+- digest: sha256:d2699a19073331ad3825e98fa3a8837b862c6c7c6ea111d45f056add757fe68a
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-alert-router
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:a03745a99bf05636ccab15e19a63c7bf86a5da60ce9b6106e8fe58ee8a1dae4c
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-audit-forwarder
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-29e886e8fa23cc232371e08106182fb8fb47957d
+- digest: sha256:3b1f6ba35e7d43e7ff3df5f18f797c5dc52aea370bba1dda2c2acfbc5bfe7414
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-bridge
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:bb48e6e36c9798a66ced1c2b6a6e78490ff59898de175740c1866051f2085fdb
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-change-api
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:1c877d5b550aa88607de7029e70b71e568f0387a3fdeae5eb41e077f2ea42432
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-change-controller
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:9cf30d8ae4e7de52082774cceab74357cee3a4560f57ac315bf1b1e42ed85cfa
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-cost-ledger
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:bc3a8816678a5c593714f9b1697afdb142672f4363ed7cc87f05a7cae279d820
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-cozystack-mcp
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:9a06bf3c272a1976f69536607a7a621bd849e8bf3a1e196002f7084d2b0a91c5
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-cp-backup
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-29e886e8fa23cc232371e08106182fb8fb47957d
+- digest: sha256:3f663228c520d65146e0b25b61f1fc2c67b64e0dd7b9fc1b37fc4635c94ba263
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-itsm-bridge
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha256:3f663228c520d65146e0b25b61f1fc2c67b64e0dd7b9fc1b37fc4635c94ba263
+- digest: sha256:aadcbd350a065133bac69b1dc7071ef02b376b62cff8ce58b1611e0c9923ed28
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-operator
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:d3b40bba341afc9406cc44af017f898fed3f2faf4a4210c8e3e36c7caad30677
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-portal
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:c77fcc71261cfccfd0f386fcb095e3bbce8d7af435e7ba5591d69241bdc452bd
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-read-api
-  version: '@build'
-- digest: ""
+  signature: required-at-publish
+  version: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+- digest: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
   kind: image
-  own: true
   ref: ghcr.io/tym83/aep-token-proxy
-  version: '@build'
+  signature: required-at-publish
+  version: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
 - digest: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
   kind: image
   ref: index.docker.io/vllm/vllm-openai
@@ -113,80 +113,117 @@ artifacts:
   kind: chart
   ref: oci://ghcr.io/kyverno/charts/kyverno
   version: 3.9.2
-- digest: sha256:abb54b73013c9a2bd1153633b8d71b1e61bcf9775407911b5baf543016db1417
+- digest: sha256:6f11e09adf26f7b7f02974163d56ebfea0dbeba887685ec3d19ac615cdabb597
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-audit-forwarder
-  version: 0.1.3
-- digest: sha256:cc6b65816fb8fc4308fdc1f5dd6aba9015a228d943ee0cd5abffda5b48653fc9
+  signature: required-at-publish
+  version: 0.1.2
+- digest: sha256:7c3be6bb76b5ed7bd70e9eb2e964a7260e8bf15112b48a707e0088b8806500c9
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge
-  version: 0.1.4
+  signature: required-at-publish
+  version: 0.1.3
 - digest: sha256:a3c32c0e7f20e3740193194474a792ac3faca2ae02f2a4d95075321a506bfdba
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
+  signature: required-at-publish
   version: 0.1.2
-- digest: sha256:3c419d05b26c02307030c85e8bac978321ad50f1b6e2f9a5c9774edcc19fda2b
+- digest: sha256:b0d25e2c051987edbb0e51244fcdae7cf6f63bacfdc09e9795750ec40f28f895
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
-  version: 0.1.4
-- digest: sha256:1578f2a817f586447a56e554b25f3cfcdcfe8c80005e0d593ea84c300153a70e
+  signature: required-at-publish
+  version: 0.1.3
+- digest: sha256:b704350ff31598d5adaac90d969761ce3c6795efd558b6a66ba28c3b8a0a80bb
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-cost-ledger
-  version: 0.1.4
-- digest: sha256:e2683528e435bbdd1876ddd884a830b7899f3157845d8ec481f38fa7fe046229
+  signature: required-at-publish
+  version: 0.1.3
+- digest: sha256:809355be33984fe5366b54d9886b8a620517a36f99d0a39be81291a74c7f84e6
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-cp-backup
-  version: 0.1.3
-- digest: sha256:a38c60d157e6fad91bd6b337c85189af094dd6b736e33ef59ffad425d3f75d7f
+  signature: required-at-publish
+  version: 0.1.2
+- digest: sha256:0c0cc105eec896ea77d241fe57e1b00df72eb2818711a77b7d33137fb62aa451
+  kind: chart
+  layout: release/artifacts
+  ref: oci://ghcr.io/tym83/aep/charts/aep-gitlab
+  signature: required-at-publish
+  version: 0.1.0
+- digest: sha256:d377e9b4635a28f97fe7b3d712e55710462456c8640f92864ce56868146e9a21
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-itsm-bridge
-  version: 0.1.2
+  signature: required-at-publish
+  version: 0.1.1
 - digest: sha256:aaefafec42b2a583a259499ec9affe3da7c55ea393c9ad132f7a6e6be0f98aef
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-llm
+  signature: required-at-publish
   version: 0.1.2
-- digest: sha256:518e4adb769db80c5e159a29842ec6685c16d1c633ad7068917862e05cbc8af7
+- digest: sha256:7dde8ed3d8b95e4056da23d27b830e21b522ae9a34d4c9c6c4caa248c2b961c7
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-operator
-  version: 0.1.4
-- digest: sha256:b6737d782673784bcf73e976b87ff2fd1d19cfe1a2ec07f27c73f911c8410b03
+  signature: required-at-publish
+  version: 0.1.3
+- digest: sha256:663ebfab1d411a6f7348c3326d83b8fed4b22c8cbceb80f32af4f93f4c8e48dc
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-read-api
-  version: 0.1.4
-- digest: sha256:9eaae5a8f8c074afd69c358793907962e57306e5e88d6a3106bf3a26b22d94af
+  signature: required-at-publish
+  version: 0.1.3
+- digest: sha256:ddec6b2efb37775e0413b097cda7cef6e760a3ed5686f30f53769c8b56b8d936
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-sre-agent
-  version: 0.1.4
+  signature: required-at-publish
+  version: 0.1.3
+- digest: sha256:37a1505f8cdfd3111c817d77b3857dfa80d9196237dfb95473abeba33373d224
+  kind: chart
+  layout: release/artifacts
+  ref: oci://ghcr.io/tym83/aep/charts/klusterlet
+  version: 1.4.0
 - digest: sha256:5e44fb984d188a3709fa8dfd3b3fd726027509b0f6b97d13256d5577340f56fc
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
+  signature: required-at-publish
   version: 0.1.3
 - digest: sha256:4a9551c8f150bb9e8104d47f1cd3aa4836c842696077458e1f960f034fd27e45
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-nonprod
+  signature: required-at-publish
   version: 0.1.3
 - digest: sha256:36bec7e31f794be03c09085aadb761c0a42d7c26284b9cea9af18ef7a7ea1732
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-prod
+  signature: required-at-publish
   version: 0.1.3
 - digest: sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09
   kind: image
   ref: quay.io/argoproj/argocd
   version: v3.4.4
+- digest: sha256:d7c98339085630210e10d1735008e447503b7095a2baf04f867a7bc585e4a0ef
+  kind: image
+  ref: quay.io/open-cluster-management/registration
+  version: v1.4.0
+- digest: sha256:dd9699e34ce761de289fe00d5a6554cdbba26cf42418d742ed806921aafd3d3e
+  kind: image
+  ref: quay.io/open-cluster-management/registration-operator
+  version: v1.4.0
+- digest: sha256:997310dadb3dbb848795da7f2615cdea585340a8bb93ca3624de866c8e9bca42
+  kind: image
+  ref: quay.io/open-cluster-management/work
+  version: v1.4.0
 - digest: sha256:c46e124f21ef8a6bb4b48de57106808b1007edcd5ddd4ff7df5d23b9efa60ce2
   kind: image
   ref: reg.kyverno.io/kyverno/background-controller
@@ -211,5 +248,60 @@ artifacts:
   kind: image
   ref: reg.kyverno.io/kyverno/reports-controller
   version: v1.19.2
-inputs: 37b59e621ab8c219e00cf07de5162e4530a9d1036f2e20e7475f171c6fa99e73
+- digest: sha256:355ca82066ff3e10a8a510be0281ce9c4a09a139b544d3545f97c89096536b77
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/certificates
+  signature: sha256:7f10453c6e02b0ea86b17eb6d627f7f6d72279f2db72ed229cda5fc360a52eba
+  version: v19.6.2
+- digest: sha256:4f827211fb05533643b4019431af7493b49cf0bce4256fbc8db19112b994a8d8
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitaly
+  signature: sha256:ea5481f37568dd450e913f976946d2cb8b3b92f90406e13e138023b2d3a9adcb
+  version: v19.6.2
+- digest: sha256:4aebd7c58dde5e5020acdaa9ab5d02d9bbbfefc2b14595320a33573216c1354a
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-base
+  signature: sha256:0b7ebf8b879215e0f499f5675e6d8427ccadf6fd41656b93331ce7ecaab92edd
+  version: v19.6.2
+- digest: sha256:c4be219234a4c353cd9560c116c90e1f44b048a34f52b52d721043b8ec72a30c
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-exporter
+  signature: sha256:e666e32b70b7a3fbfff560c7d61ab2b86ba96012a9350fb2573de48ee7b354a1
+  version: 18.0.0
+- digest: sha256:faec608f788493fbd94a0d0466a115ec7ce54865d0d04278a7947c15dc9dfe60
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-kas
+  signature: sha256:a97e4ae0004ba5facb01c47c25e41c63a318e987479479ceb39d4b1d756bce07
+  version: v19.6.2
+- digest: sha256:3004ea9c11e0731716d4d6519d10cd50f500c7abc1c59243e77019e5e094b12e
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-shell
+  signature: sha256:2daf8cf4c0a4f4214b490bdeedd680df6652beb9006938f1bd3d65c8b067c230
+  version: v14.61.0
+- digest: sha256:a57e932929a76cfb4315f5e22d9eaafb8861085a4e208048c7fe4032312a9bef
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-sidekiq-ce
+  signature: sha256:42991efa7bc52d3ce00b834af5d9886ee0ef7c8ce049a1340c866399cef7e655
+  version: v19.6.2
+- digest: sha256:a522fe3769500ff89a2ff896f02c348cd3c8fc25da2d08a4b8f69d1eee6c1385
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-toolbox-ce
+  signature: sha256:b808822be42703498e44f84f175983cd861016f36a436306a24e6474930d948b
+  version: v19.6.2
+- digest: sha256:1c2063ad7416cb3513dad549cd7653022bc6066300bbe4842bfb6d40568e3408
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-webservice-ce
+  signature: sha256:579a2944f696313a14444ea47198e8e082d3ad8cc26463918c4a2dacd5aa649f
+  version: v19.6.2
+- digest: sha256:369f1958d3e3ce4f0b8f409ed96507ec4148f701eec50faa92db20d5831e33a8
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/gitlab-workhorse-ce
+  signature: sha256:3a6065bb855b27c0c42c8fa4d506e2c41c0b7188db994239533b5d0354d2c5c6
+  version: v19.6.2
+- digest: sha256:92f760de7c05277d21a46e8113afecbe94ff3bd75ccb7716f2189588c854bfd5
+  kind: image
+  ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
+  signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
+  version: v19.6.2
+inputs: facb51bed73628146cc262a3347a953769ccf378a66cd824deb438f453d6b8a4
 schema: 1

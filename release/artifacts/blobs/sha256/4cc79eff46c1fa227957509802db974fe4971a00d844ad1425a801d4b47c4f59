@@ -1,0 +1,1 @@
+{"apiVersion":"v2","appVersion":"19.6.2","dependencies":[{"name":"gitlab","repository":"https://charts.gitlab.io","version":"10.6.2"}],"description":"Optional installation-wide GitLab with external Cozystack services","name":"aep-gitlab","type":"application","version":"0.1.0"}
