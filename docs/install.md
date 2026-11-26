@@ -41,6 +41,21 @@ one client-credentials identity per organization with only that organization's
 required OpenChoreo release-binding permissions; only this identity should write
 protected environments. AEP's Kubernetes RBAC does not grant OpenChoreo rights.
 
+### Network path from the ingress controller
+
+Cozystack allows pods of `tenant-root`, including the root ingress controller,
+to reach only tenant namespaces. The public change and read APIs run in
+`aep-system`, so without an explicit path requests and cert-manager HTTP-01
+challenges time out. Apply the policy once per management cluster; it opens
+only the API port and the challenge solver port, only from ingress controller
+pods:
+
+```sh
+kubectl apply -f config/mgmt/ingress-to-aep-system.yaml
+```
+
+Adjust the selector if your ingress controller runs in another tenant.
+
 ## 1. Operator and managed bridges
 
 Create `operator-values.yaml` with your published image versions and locations:
