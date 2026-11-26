@@ -48,7 +48,7 @@ var opRules = map[api.ChangeOperation]opRule{
 	api.OperationPromote:             {kinds: []string{"Component", "Resource", "Project"}, project: true, environment: true, desired: true, validateExtra: requireRelease},
 	api.OperationRollback:            {kinds: []string{"Component", "Resource", "Project"}, project: true, environment: true, desired: true, validateExtra: requireRelease},
 	api.OperationResourceUpdate:      {kinds: []string{"Resource"}, project: true, environment: true, desired: true, validateExtra: requireResourceUpdate},
-	api.OperationDecommission:        {kinds: []string{"Component", "Resource"}, environment: true},
+	api.OperationDecommission:        {kinds: []string{"Component", "Resource"}, environment: true, validateExtra: validateDecommission},
 	api.OperationResourceRestore:     {kinds: []string{"Resource"}, project: true, environment: true, desired: true},
 	api.OperationCredentialRotate:    {kinds: []string{"Resource"}, project: true, environment: true},
 	api.OperationBreakglass:          {kinds: []string{"Organization"}, self: true, validateExtra: validateBreakglass},
@@ -57,6 +57,24 @@ var opRules = map[api.ChangeOperation]opRule{
 	api.OperationClusterAttach:       {kinds: []string{"Cluster"}, desired: true},
 	api.OperationMachineApprove:      {kinds: []string{"Machine"}},
 	api.OperationMachineDecommission: {kinds: []string{"Machine"}},
+}
+
+func validateDecommission(spec api.ChangeRequestSpec, d map[string]any, _ time.Time) error {
+	for k, v := range d {
+		if k != "deleteData" {
+			return fmt.Errorf("desired.%s is not allowed for decommission", k)
+		}
+		if _, ok := v.(bool); !ok {
+			return fmt.Errorf("desired.deleteData must be a boolean")
+		}
+		if spec.Target.Kind != "Resource" {
+			return fmt.Errorf("desired.deleteData is only supported for Resource targets")
+		}
+	}
+	if d["deleteData"] == true && spec.Model != api.ModelNormal {
+		return fmt.Errorf("decommission with deleteData requires the normal model and human approval")
+	}
+	return nil
 }
 
 func requireRelease(_ api.ChangeRequestSpec, d map[string]any, _ time.Time) error {

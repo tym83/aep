@@ -24,6 +24,7 @@ type Result struct {
 	// Executed is false when the change was recorded but the platform side is
 	// a manual step (breakglass grant).
 	Executed bool
+	Reason   string // Optional truthful outcome of an executed operation.
 	Message  string
 }
 
@@ -253,9 +254,9 @@ func (resourceUpdateHandler) Apply(ctx context.Context, oc *ocapi.Client, cr *ap
 	return Result{Executed: true, Message: "environment configuration updated"}, nil
 }
 
-// decommissionHandler removes the protected binding of a component or
-// resource so the object itself can then be deleted: admission on aep-cp
-// blocks deletions while protected bindings exist.
+// decommissionHandler requests deletion of an owner-checked binding and
+// reports whether it is gone, retained, or still finalizing. Admission on
+// aep-cp blocks owner deletion while protected bindings exist.
 type decommissionHandler struct{}
 
 func (decommissionHandler) Before(ctx context.Context, oc *ocapi.Client, cr *api.ChangeRequest, now time.Time) ([]api.BindingSnapshot, error) {
@@ -282,8 +283,32 @@ func (decommissionHandler) Apply(ctx context.Context, oc *ocapi.Client, cr *api.
 	if !b.MatchesOwner(Owner(cr.Spec.Target)) {
 		return Result{}, fmt.Errorf("binding %s/%s belongs to another owner; refusing to delete it", kind, name)
 	}
+	d, e := DesiredMap(cr.Spec)
+	if e != nil {
+		return Result{}, e
+	}
+	if e = validateDecommission(cr.Spec, d, time.Time{}); e != nil {
+		return Result{}, e
+	}
+	if kind == ocapi.KindResourceReleaseBinding && d["deleteData"] == true && b.Spec["retainPolicy"] != "Delete" {
+		b.Spec["retainPolicy"] = "Delete"
+		if _, e = oc.Update(ctx, org, kind, name, b); e != nil {
+			return Result{}, e
+		}
+	}
 	if e = oc.Delete(ctx, org, kind, name); e != nil {
 		return Result{}, e
+	}
+	// DELETE only acknowledges the request; finalizers may keep the object alive.
+	remaining, e := oc.Get(ctx, org, kind, name)
+	if e != nil {
+		return Result{}, e
+	}
+	if remaining != nil {
+		if kind == ocapi.KindResourceReleaseBinding && remaining.Spec["retainPolicy"] == "Retain" {
+			return Result{Executed: true, Reason: "Retained", Message: "binding and data retained; submit a new normal decommission change with desired.deleteData: true and human approval to release them"}, nil
+		}
+		return Result{Executed: true, Reason: "Finalizing", Message: "binding deletion requested; finalization is still pending, verify binding absence before deleting the owner"}, nil
 	}
 	return Result{Executed: true, Message: "protected binding removed; the object can now be deleted"}, nil
 }

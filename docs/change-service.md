@@ -109,7 +109,7 @@ Rules enforced by the controller:
 | `promote` | implemented | Pins the release on the target binding; creates the binding when missing (prod `ResourceReleaseBinding` gets `retainPolicy: Retain`). |
 | `rollback` | implemented | Same mechanics as promote; standard-model eligibility requires the release to have been applied to this target before. |
 | `resource-update` | implemented | Replaces `resourceTypeEnvironmentConfigs` and/or advances `resourceRelease`/`retainPolicy` on an existing `ResourceReleaseBinding`. |
-| `decommission` | implemented | Removes the protected binding (owner-checked) so the object itself can then be deleted; idempotent. |
+| `decommission` | implemented | Requests owner-checked binding deletion and verifies absence. Retain reports `Applied/Retained`, keeping data; a new normal, human-approved change with `desired: {deleteData: true}` sets `retainPolicy: Delete` before deletion. A remaining non-retained binding reports `Applied/Finalizing`; verify absence before deleting its owner. Idempotent. |
 | `breakglass` | records only | Validated (duration ≤ 4h, requester in the breakglass group), approved by security on-call, recorded with reason `Recorded`. The actual grant sits behind the `change.Granter` interface — a TODO: temporary group membership, expiring prod bindings, SIEM alert, post-window credential rotation. |
 | the rest | stored, `NotImplemented` | Validated, approved and stored; the `Applied` condition reports `NotImplemented` until a handler lands. |
 

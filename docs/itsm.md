@@ -378,3 +378,10 @@ audit ledger remain separate work. This bridge is the testable adapter runtime,
 not the certified stage-2 ServiceNow distribution. Customer instances must settle
 Standard Change Templates, transition rules, identity mapping, CSDM relationship
 policy, license availability, and the existing confirmation UI URL before rollout.
+
+Decommission accepts an optional boolean `request.spec.desired.deleteData` for
+Resource targets. `true` requires a normal, human-approved change and switches
+the binding to `retainPolicy: Delete`. Omitted or false preserves Retain data.
+Applied condition reasons `Retained` and `Finalizing` do not mean binding removal;
+only confirmed absence permits owner cleanup. Desired payloads remain inside AEP
+and are not exported to the vendor boundary.
