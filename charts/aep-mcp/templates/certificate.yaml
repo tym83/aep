@@ -1,0 +1,15 @@
+{{- if .Values.mcp.enabled }}
+{{- if and (not .Values.tls.terminationProxy) .Values.tls.issuerRef.name }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ .Release.Name }}
+  namespace: aep-system
+spec:
+  secretName: {{ .Release.Name }}-tls
+  dnsNames:
+    - {{ .Release.Name }}.aep-system.svc
+    - {{ .Release.Name }}.aep-system.svc.cluster.local
+  issuerRef: {{ toYaml .Values.tls.issuerRef | nindent 4 }}
+{{- end }}
+{{- end }}

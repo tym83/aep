@@ -1,0 +1,122 @@
+{{- if .Values.alertRouter.enabled }}
+{{- $router := .Values.alertRouter }}
+{{- if not (or $router.clientCASecret $router.hmacSecret) }}{{ fail "alertRouter requires clientCASecret or hmacSecret" }}{{ end }}
+{{- $_ := required "alertRouter.tlsSecret is required" $router.tlsSecret }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-alert-router
+  namespace: aep-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-system-{{ .Release.Name }}-alert-router
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get]
+  - apiGroups: [aep.aenix.io]
+    resources: [organizations]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-system-{{ .Release.Name }}-alert-router
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-system-{{ .Release.Name }}-alert-router
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}-alert-router
+    namespace: aep-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-alert-router
+  namespace: aep-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: alert-router}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: alert-router}
+    spec:
+      serviceAccountName: {{ .Release.Name }}-alert-router
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: alert-router
+          image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" $router.image))) | quote }}
+          args:
+            - --listen=:8080
+            - {{ printf "--agent-url-template=%s" $router.agentUrlTemplate | quote }}
+            - --tls-cert=/tls/tls.crt
+            - --tls-key=/tls/tls.key
+            {{- if $router.clientCASecret }}
+            - --client-ca=/observer-ca/observer-ca.pem
+            {{- end }}
+            {{- if $router.hmacSecret }}
+            - --hmac-secret-file=/run/observer/hmac
+            {{- end }}
+          ports: [{name: https, containerPort: 8080}]
+          readinessProbe: {tcpSocket: {port: https}}
+          livenessProbe: {tcpSocket: {port: https}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ toYaml $router.resources | nindent 12 }}
+          volumeMounts:
+            - {name: tls, mountPath: /tls, readOnly: true}
+            {{- if $router.clientCASecret }}
+            - {name: observer-ca, mountPath: /observer-ca, readOnly: true}
+            {{- end }}
+            {{- if $router.hmacSecret }}
+            - {name: hmac, mountPath: /run/observer, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: tls
+          secret: {secretName: {{ $router.tlsSecret | quote }}}
+        {{- if $router.clientCASecret }}
+        - name: observer-ca
+          secret: {secretName: {{ $router.clientCASecret | quote }}}
+        {{- end }}
+        {{- if $router.hmacSecret }}
+        - name: hmac
+          secret: {secretName: {{ $router.hmacSecret | quote }}}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-alert-router
+  namespace: aep-system
+spec:
+  selector: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: alert-router}
+  ports: [{name: https, port: 8080, targetPort: https}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-alert-router
+  namespace: aep-system
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/instance: {{ .Release.Name }}, app.kubernetes.io/name: alert-router}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ required "alertRouter.observerNamespace is required" $router.observerNamespace | quote }}
+          podSelector:
+            matchLabels: {{ toYaml (required "alertRouter.observerLabels is required" $router.observerLabels) | nindent 14 }}
+      ports: [{protocol: TCP, port: 8080}]
+{{- end }}

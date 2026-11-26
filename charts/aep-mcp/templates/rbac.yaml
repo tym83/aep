@@ -1,0 +1,77 @@
+{{- if .Values.mcp.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}
+  namespace: aep-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-system-{{ .Release.Name }}
+rules:
+  - apiGroups: [aep.aenix.io]
+    resources: [organizations]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aep-system-{{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aep-system-{{ .Release.Name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Release.Name }}
+    namespace: aep-system
+{{- $seen := dict }}
+{{- range .Values.organizations }}
+{{- $org := .name }}
+{{- if or (not (regexMatch "^[a-z0-9]{1,32}$" $org)) (has $org (list "aep" "root" "cozy" "system" "platform" "security")) }}{{ fail "invalid organization name" }}{{ end }}
+{{- if hasKey $seen $org }}{{ fail "duplicate organization" }}{{ end }}
+{{- $_ := set $seen $org true }}
+{{- $tiers := dict }}
+{{- range .tiers }}
+{{- if not (has . (list "nonprod" "prod")) }}{{ fail "tier must be nonprod or prod" }}{{ end }}
+{{- if hasKey $tiers . }}{{ fail "duplicate tier" }}{{ end }}
+{{- $_ := set $tiers . true }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aep-system-{{ $.Release.Name }}
+  namespace: tenant-{{ $org }}-{{ . }}
+rules:
+  - apiGroups: [""]
+    resources: [events, resourcequotas, persistentvolumeclaims]
+    verbs: [get, list]
+  {{- range $group, $resources := dict "apps.cozystack.io" (list "postgreses" "redises" "kuberneteses" "kubernetesnodeses" "kafkas" "rabbitmqs" "mysqls" "clickhouses") "helm.toolkit.fluxcd.io" (list "helmreleases") "postgresql.cnpg.io" (list "clusters") "kamaji.clastix.io" (list "tenantcontrolplanes") "kubevirt.io" (list "virtualmachineinstances") "backups.cozystack.io" (list "backups") }}
+  {{- $enabled := list }}
+  {{- range $resources }}
+  {{- if index $.Values.rbac.kinds . }}{{ $enabled = append $enabled . }}{{ end }}
+  {{- end }}
+  {{- if $enabled }}
+  - apiGroups: [{{ $group | quote }}]
+    resources: {{ toJson $enabled }}
+    verbs: [get, list]
+  {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aep-system-{{ $.Release.Name }}
+  namespace: tenant-{{ $org }}-{{ . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aep-system-{{ $.Release.Name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $.Release.Name }}
+    namespace: aep-system
+{{- end }}
+{{- end }}
+{{- end }}

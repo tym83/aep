@@ -5,7 +5,74 @@ It does not implement a new agent or apply remediation. Deploy one agent and one
 report database per organization; proposed changes remain ChangeRequest drafts.
 The management-cluster MCP and the control-plane alert router are separate binaries
 with separate Kubernetes credentials. No changes to the organization operator are
-required by this implementation; deployments and RBAC must be installed separately.
+required by this implementation. The `charts/aep-mcp` chart installs the MCP
+deployment, scoped RBAC, TLS and NetworkPolicy, with an optional alert router.
+
+## Installing the evidence chart
+
+Install once per cluster in `aep-system` (component resources target that namespace;
+tier Roles and RoleBindings target the listed tenant namespaces):
+
+```sh
+helm upgrade --install cozystack-mcp charts/aep-mcp --namespace aep-system \
+  --create-namespace -f mcp-values.yaml
+```
+
+Example `mcp-values.yaml` (tier namespaces and Organizations must already exist):
+
+```yaml
+global:
+  aepVersion: v0.1.0 # Use the actual operator release; supply its aepDigests map.
+oidc:
+  issuer: https://identity.example/realms/cozy
+  audience: aep-mcp
+organizations:
+  - name: acme
+    tiers: [nonprod, prod]
+tls:
+  issuerRef:
+    name: internal-ca
+    kind: ClusterIssuer
+```
+
+Set `tls.existingSecret` instead of `tls.issuerRef.name` to use an existing
+`tls.crt`/`tls.key` Secret. cert-manager certificates cover
+`<release>.aep-system.svc` and `<release>.aep-system.svc.cluster.local`.
+The default release name above matches the agent chart's MCP URL.
+Configure `oidc.jwksUrl`, `maxRows`, `maxBytes`, `requestsPerMinute`,
+`metricsQueryUrlTemplate` and repeatable `redactPatterns` as needed.
+`rbac.kinds.<resource>: false` drops any optional CRD grant from the fixed list
+below; it cannot add arbitrary resources. Missing kinds remain evidence gaps.
+
+Optional `ingress` values are `enabled`, `className`, `host`, `annotations` and
+standard Kubernetes `tls` entries. With backend TLS, configure your ingress
+controller's HTTPS backend and internal CA trust through its annotations/configuration.
+For HTTP behind a trusted TLS-terminating ingress, set `tls.terminationProxy: true`,
+clear both backend TLS settings and configure `ingress.enabled` plus `ingress.tls`.
+This renders the binary's explicit `--tls-termination-proxy` flag. Point the agent's
+`mcpUrl` at the HTTPS ingress URL in that mode. Direct service HTTPS is unavailable.
+`networkPolicy.ingressControllerNamespace` allows the ingress controller namespace
+only when ingress is enabled. Agent access requires `networkPolicy.agentLabels`
+(default `app.kubernetes.io/name=aep-sre-agent`) in the listed `aep-<org>` namespaces.
+No organizations and no ingress means deny all MCP ingress.
+
+`alertRouter.enabled` defaults to false. Enable it only where the local Kubernetes
+API contains the control-plane Namespaces and Organizations described below;
+MCP must run against the management API. For separate clusters, install a second
+release in the control-plane cluster with `mcp.enabled: false` and
+`alertRouter.enabled: true`; leave the router disabled in the management release.
+Each component then uses its own local ServiceAccount without kubeconfigs.
+The router uses a separate ServiceAccount and one replica, TLS from
+`alertRouter.tlsSecret`, and requires `alertRouter.clientCASecret` (key
+`observer-ca.pem`) and/or `alertRouter.hmacSecret` (key `hmac`). Secrets are mounted,
+never read through Kubernetes API permissions. Configure `alertRouter.agentUrlTemplate`,
+`observerNamespace` and `observerLabels` for the trusted sender/proxy.
+Its HTTPS service is `<release>-alert-router.aep-system.svc:8080`; pod label
+`app.kubernetes.io/name=alert-router` matches the agent chart's NetworkPolicy.
+
+Both images (`ghcr.io/tym83/aep-cozystack-mcp`, `ghcr.io/tym83/aep-alert-router`)
+follow `global.aepVersion` and `global.aepDigests`, with `image` and
+`alertRouter.image` overrides and `global.imageRegistry` mirror support.
 
 ## MCP evidence service
 
@@ -92,8 +159,8 @@ The configured endpoint must isolate tenant data and inject that label at truste
 scrape/ingestion time. PVC queries use exact namespace and CNPG-labeled PVC names.
 No arbitrary PromQL, endpoint, management Node or LINSTOR topology query is exposed.
 
-Install a ClusterRole with **get/list organizations.aep.aenix.io only**, plus
-RoleBindings in each allowed tier for get/list on the following explicit resources:
+The chart installs a ClusterRole with **get/list organizations.aep.aenix.io only**, plus
+Roles and RoleBindings in each allowed tier for get/list on the following explicit resources:
 
 - core: events, resourcequotas, persistentvolumeclaims;
 - apps.cozystack.io: postgreses, redises, kuberneteses, kubernetesnodeses,
