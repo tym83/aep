@@ -4,7 +4,7 @@ image:
   tag: latest-dev
   digest: ""
   pullPolicy: IfNotPresent
-# Existing per-organization secret: COZYSTACK_MCP_TOKEN, RCA_LLM_API_KEY,
+# Existing per-organization secret: RCA_LLM_API_KEY,
 # OAUTH_CLIENT_SECRET, SQL_BACKEND_URI. Never put credentials in values.
 secretName: ""
 mcpUrl: https://cozystack-mcp.aep-system.svc:8443/mcp
@@ -33,3 +33,10 @@ resources:
   limits: {cpu: "2", memory: 2Gi}
 # Optional CA bundle Secret containing ca.crt for the internal HTTPS endpoints.
 caSecretName: ""
+
+tokenProxy:
+  port: 8081
+  image:
+    repository: ghcr.io/tym83/aep-token-proxy
+    tag: main
+    digest: ""

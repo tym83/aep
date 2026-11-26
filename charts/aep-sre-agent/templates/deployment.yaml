@@ -64,6 +64,29 @@ spec:
             {{- if .Values.caSecretName }}
             - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
             {{- end }}
+        - name: token-proxy
+          image: {{ printf "%s%s" .Values.tokenProxy.image.repository (ternary (printf "@%s" .Values.tokenProxy.image.digest) (printf ":%s" .Values.tokenProxy.image.tag) (ne .Values.tokenProxy.image.digest "")) | quote }}
+          args: [{{ printf "--listen=127.0.0.1:%d" (int .Values.tokenProxy.port) | quote }}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          env:
+            - {name: OAUTH_CLIENT_ID, value: {{ printf "aep-%s-sre-agent" $org | quote }}}
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ .Values.secretName }}, key: OAUTH_CLIENT_SECRET}
+            - {name: OAUTH_TOKEN_URL, value: {{ .Values.oauth.tokenUrl | quote }}}
+            - {name: OAUTH_SCOPE, value: {{ .Values.oauth.scope | quote }}}
+            - {name: MCP_URL, value: {{ .Values.mcpUrl | quote }}}
+            {{- if .Values.caSecretName }}
+            - {name: SSL_CERT_FILE, value: /etc/aep/ca/ca.crt}
+          volumeMounts:
+            - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
+            {{- end }}
       volumes:
         - name: extensions
           configMap:

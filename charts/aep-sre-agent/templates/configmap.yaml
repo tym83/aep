@@ -4,7 +4,7 @@ metadata:
   name: {{ .Release.Name }}-extensions
 data:
   mcp.json: |
-    {"mcpServers":{"cozystack":{"type":"streamable_http","url":{{ .Values.mcpUrl | toJson }},"headers":{"Authorization":"Bearer ${COZYSTACK_MCP_TOKEN}"}}}}
+    {"mcpServers":{"cozystack":{"type":"streamable_http","url":{{ printf "http://127.0.0.1:%d/mcp" (int .Values.tokenProxy.port) | toJson }}}}}
   CONTEXT.md: |
 {{ .Files.Get "files/rca/CONTEXT.md" | indent 4 }}
 {{ range $name := list "database-below-service" "tenant-cluster-capacity" "quota-exhaustion" }}

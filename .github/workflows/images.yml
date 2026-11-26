@@ -28,6 +28,8 @@ jobs:
             dockerfile: Dockerfile.change-controller
           - name: aep-cozystack-mcp
             dockerfile: Dockerfile.cozystack-mcp
+          - name: aep-token-proxy
+            dockerfile: Dockerfile.token-proxy
           - name: aep-alert-router
             dockerfile: Dockerfile.alert-router
           - name: aep-rca-eval
