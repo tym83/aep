@@ -2,5 +2,5 @@ apiVersion: v2
 name: aep-change
 description: Organization-scoped change approval and execution for OpenChoreo
 type: application
-version: 0.1.0
+version: 0.1.3
 appVersion: "0.1.0"

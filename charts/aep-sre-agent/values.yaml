@@ -2,8 +2,8 @@ dev: false
 organization: ""
 image:
   repository: cr.openchoreo.dev/openchoreo/sre-agent
-  tag: latest-dev
-  digest: ""
+  tag: v1.4.0-m.3
+  digest: sha256:da7cc77f187ee94157db39e01b66231f83163e4ca8f5d37537b4a95b2c0e1791
   pullPolicy: IfNotPresent
 # Existing per-organization secret: RCA_LLM_API_KEY,
 # OAUTH_CLIENT_SECRET, SQL_BACKEND_URI. Never put credentials in values.
@@ -39,5 +39,9 @@ tokenProxy:
   port: 8081
   image:
     repository: ghcr.io/tym83/aep-token-proxy
-    tag: main
-    digest: ""
+    tag: sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83
+    digest: sha256:69e41ec3fd5dcb029db2280bccb228f0db56224e8b634c1d3b0f1ac4dbfd5362
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

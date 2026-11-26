@@ -44,7 +44,7 @@ func Validate(o *api.Organization) error {
 		}
 	}
 	for _, image := range trust.AllowedImages {
-		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$`).MatchString(image) {
+		if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*(:[0-9]+)?/[a-z0-9._/-]+(:[a-zA-Z0-9_][a-zA-Z0-9_.-]*)?@sha256:[a-f0-9]{64}$`).MatchString(image) {
 			return fmt.Errorf("allowedImages must be exact registry/repository@sha256:digest references")
 		}
 	}

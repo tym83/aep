@@ -1,5 +1,4 @@
-# Build and publish first, then replace this non-deployable digest placeholder.
-image: ghcr.io/tym83/aep-audit-forwarder@sha256:0000000000000000000000000000000000000000000000000000000000000000
+image: ghcr.io/tym83/aep-audit-forwarder:sha-29e886e8fa23cc232371e08106182fb8fb47957d@sha256:a03745a99bf05636ccab15e19a63c7bf86a5da60ce9b6106e8fe58ee8a1dae4c
 stream: management
 tlsSecret: aep-audit-tls
 tokenSecret: aep-audit-token
@@ -18,3 +17,7 @@ resources:
   limits: {memory: 1Gi}
 nodeSelector: {}
 tolerations: []
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

@@ -46,7 +46,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: bridge
-          image: {{ printf "%s@%s" .Values.image.repository $digest | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s@%s" .Values.image.repository $digest)) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --config=/etc/itsm/config.json

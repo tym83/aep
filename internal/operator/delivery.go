@@ -40,15 +40,22 @@ func (s *session) delivery(ctx context.Context) error {
 			return e
 		}
 		ns := TenantNamespace(s.o.Name, tier)
+		if err := s.mirrorSecrets(ctx, ns); err != nil {
+			return err
+		}
 		for i, ch := range charts {
 			source := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", ns, "aep-"+ch.name, M{"interval": "5m", "url": ch.url + "/" + ch.name, "ref": M{"tag": ch.version}})
+			if err := s.r.Options.chartSource(source); err != nil {
+				return err
+			}
 			if e = s.r.Management.apply(ctx, s.o, "ocirepositories", source); e != nil {
 				return e
 			}
 			values := M{}
 			if ch.name == "openchoreo-data-plane" {
-				values = M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": s.o.Name + "-" + tier, "serverUrl": s.gateway, "tls": M{"generateCerts": false, "caSecretName": "aep-agent-ca"}}}
+				values = DataPlaneValues(s.o.Name+"-"+tier, s.gateway)
 			}
+			values = MirrorValues(ch.name, s.r.Options.ImageRegistryMirror, values)
 			spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.name, "targetNamespace": "openchoreo-data-plane", "storageNamespace": "openchoreo-data-plane", "chartRef": M{"kind": "OCIRepository", "name": "aep-" + ch.name}, "kubeConfig": M{"secretRef": M{"name": "kubernetes-apps-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
 			if i > 0 {
 				spec["dependsOn"] = []any{M{"name": "aep-" + charts[i-1].name}}

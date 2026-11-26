@@ -29,7 +29,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: sre-agent
-          image: {{ printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")))) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports: [{name: http, containerPort: 8080}]
           securityContext:
@@ -67,7 +67,7 @@ spec:
             - {name: ca, mountPath: /etc/aep/ca, readOnly: true}
             {{- end }}
         - name: token-proxy
-          image: {{ printf "%s%s" .Values.tokenProxy.image.repository (ternary (printf "@%s" .Values.tokenProxy.image.digest) (printf ":%s" .Values.tokenProxy.image.tag) (ne .Values.tokenProxy.image.digest "")) | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.tokenProxy.image.repository (ternary (printf "@%s" .Values.tokenProxy.image.digest) (printf ":%s" .Values.tokenProxy.image.tag) (ne .Values.tokenProxy.image.digest "")))) | quote }}
           args: [{{ printf "--listen=127.0.0.1:%d" (int .Values.tokenProxy.port) | quote }}]
           securityContext:
             allowPrivilegeEscalation: false

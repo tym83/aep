@@ -90,7 +90,7 @@ func TestArgoHost(t *testing.T) {
 func TestRenderedArgoSecurity(t *testing.T) {
 	path := os.Getenv("ARGO_RENDERED_INPUT")
 	if path == "" {
-		chart := "../../.cache/argocd/argo-cd"
+		chart := "../../release/.cache/argo-cd"
 		if _, err := os.Stat(filepath.Join(chart, "Chart.yaml")); err != nil {
 			t.Skip("cache pinned chart with tools/check-argocd.sh for offline rendering")
 		}

@@ -21,7 +21,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: bridge
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s:%s" .Values.image.repository .Values.image.tag)) | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --organization={{ required "organization is required" .Values.organization }}

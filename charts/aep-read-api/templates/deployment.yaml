@@ -17,7 +17,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: read-api
-          image: {{ .Values.image | quote }}
+          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.image) | quote }}
           args:
             - --listen=:8080
             - {{ printf "--namespace=%s" .Values.complianceNamespace | quote }}

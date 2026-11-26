@@ -1,4 +1,4 @@
-image: ghcr.io/tym83/aep-cost-ledger:latest
+image: ghcr.io/tym83/aep-cost-ledger:sha-618d4f85c1e90f6afcaf3cbcb26a066f21155e83@sha256:9cf30d8ae4e7de52082774cceab74357cee3a4560f57ac315bf1b1e42ed85cfa
 # Existing Secret: COST_DSN, S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY.
 credentialsSecret: ""
 installation: aep
@@ -8,3 +8,7 @@ s3Region: us-east-1
 resources:
   requests: {cpu: 100m, memory: 128Mi}
   limits: {memory: 512Mi}
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

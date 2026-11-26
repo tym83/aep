@@ -63,11 +63,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          flavor: latest=false
           tags: |
             type=sha,format=long
-            type=ref,event=branch
             type=semver,pattern={{version}}
-      - uses: docker/build-push-action@v6
+      - id: build
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -75,3 +76,16 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.3
+      - name: Sign published image digest
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          if [ -n "$COSIGN_PRIVATE_KEY" ]; then
+            cosign sign --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY "${IMAGE,,}@$DIGEST"
+          fi

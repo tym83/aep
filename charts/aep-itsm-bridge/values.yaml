@@ -1,7 +1,7 @@
 image:
   repository: ghcr.io/tym83/aep-itsm-bridge
-  # Required: use the digest produced by the image workflow. No image is published by this branch.
-  digest: ""
+  # Published from main commit 247f534cf031f70ef4bf3680a98883c3efa787cd.
+  digest: sha256:3f663228c520d65146e0b25b61f1fc2c67b64e0dd7b9fc1b37fc4635c94ba263
   pullPolicy: IfNotPresent
 # Existing Secret with ITSM_INBOUND_HMAC_SECRET and ITSM_INBOUND_HMAC_KEY_ID, AEP_CLIENT_SECRET and vendor credentials:
 # ITSM_CLIENT_SECRET for ServiceNow; ITSM_TOKEN for Jira.
@@ -35,3 +35,7 @@ caBundleConfigMap: ""
 resources:
   requests: {cpu: 50m, memory: 64Mi}
   limits: {memory: 256Mi}
+
+# Mirror prefix; upstream registry hosts are retained as path components.
+global:
+  imageRegistry: ""

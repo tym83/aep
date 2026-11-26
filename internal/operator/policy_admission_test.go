@@ -62,6 +62,7 @@ func TestProductionImageTrust(t *testing.T) {
 		{"addon-tag-audit", "addon-monitoring", image + ":v1", nil, []string{"addon-monitoring"}, false},
 		{"unsigned-cell-digest", "dp-cell", image + "@" + digest, nil, nil, true},
 		{"unsigned-user-digest", "user-apps", image + "@" + digest, nil, nil, true},
+		{"platform-allowed-tag-and-digest", "kube-system", image + ":v1@" + digest, M{"mode": "enforce", "allowedImages": []string{image + "@" + digest}}, nil, false},
 		{"platform-allowed-digest", "kube-system", image + "@" + digest, M{"mode": "enforce", "allowedImages": []string{image + "@" + digest}}, nil, false},
 		{"platform-unlisted-tag", "kube-system", image + ":v1", M{"mode": "enforce", "allowedImages": []string{image + "@" + digest}}, nil, true},
 		{"platform-unsigned-vendor", "cozy-cilium", image + "@" + digest, M{"mode": "enforce", "vendorPublicKeys": []string{string(key)}}, nil, true},

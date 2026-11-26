@@ -18,6 +18,8 @@ import (
 )
 
 const ArgoCDChartVersion = "9.7.1"
+const ArgoCDChartOCI = "oci://argoproj.github.io/argo-helm/argo-cd"
+
 const ArgoCDAppVersion = "v3.4.4"
 
 func argoNamespace(project string) string {
@@ -157,7 +159,7 @@ func (s *session) argocd(ctx context.Context) error {
 		names = append(names, p.GetName())
 	}
 	sort.Strings(names)
-	values := argoValues(s.o, host, issuer, names)
+	values := MirrorValues("argo-cd", opt.ImageRegistryMirror, argoValues(s.o, host, issuer, names))
 	resolve := s.r.ResolveHost
 	if resolve == nil {
 		resolve = net.DefaultResolver.LookupIPAddr
@@ -182,19 +184,33 @@ func (s *session) argocd(ctx context.Context) error {
 		values["configs"].(M)["tls"] = M{"certificates": M{u.Hostname(): string(ca)}}
 	}
 	ns := TenantNamespace(s.o.Name, "nonprod")
-	source := obj("source.toolkit.fluxcd.io/v1", "HelmRepository", ns, "aep-argocd", M{"interval": "1h", "url": argoChartURL(opt)})
-	if e = s.r.Management.apply(ctx, s.o, "helmrepositories", source); e != nil {
+	if err := s.mirrorSecrets(ctx, ns); err != nil {
+		return err
+	}
+	source, hr, e := argoDelivery(s.o, ns, opt, values)
+	if e != nil {
 		return e
 	}
-	hr := policyRelease(s.o, "nonprod", "argocd", values)
+	resource := "helmrepositories"
+	if source.GetKind() == "OCIRepository" {
+		resource = "ocirepositories"
+	}
+	if e = s.r.Management.apply(ctx, s.o, resource, source); e != nil {
+		return e
+	}
 	spec := hr.Object["spec"].(M)
-	delete(spec, "chartRef")
-	spec["chart"] = M{"spec": M{"chart": "argo-cd", "version": ArgoCDChartVersion, "sourceRef": M{"kind": "HelmRepository", "name": "aep-argocd"}}}
 	spec["targetNamespace"] = "argocd"
 	spec["storageNamespace"] = "argocd"
 	spec["releaseName"] = "argocd"
 	spec["dependsOn"] = []any{M{"name": "aep-app-cluster-baseline"}}
 	if e = s.r.Management.apply(ctx, s.o, "helmreleases", hr); e != nil {
+		return e
+	}
+	obsolete := "ocirepositories"
+	if resource == "ocirepositories" {
+		obsolete = "helmrepositories"
+	}
+	if e = s.deleteNamed(ctx, s.r.Management, "source.toolkit.fluxcd.io/v1", obsolete, ns, "aep-argocd"); e != nil {
 		return e
 	}
 	hr, e = s.r.Management.get(ctx, helmAPI, "helmreleases", ns, "aep-argocd")
@@ -259,4 +275,27 @@ func argoApplicationPolicy() *unstructured.Unstructured {
 		"matchConditions": []any{M{"name": "argocd-namespace", "expression": "request.namespace == 'argocd'"}},
 		"validations":     []any{M{"expression": "(!has(object.spec.source) || " + check + ") && (!has(object.spec.sources) || " + multi + ")", "message": "Repository URLs must use HTTPS without traversal, encoding or userinfo"}},
 	})
+}
+
+// Keep the HTTP override for connected installations; disconnected delivery uses
+// the exact OCI package exported by the release manifest.
+func argoDelivery(o *api.Organization, ns string, opt Options, values M) (*unstructured.Unstructured, *unstructured.Unstructured, error) {
+	source := obj("source.toolkit.fluxcd.io/v1", "HelmRepository", ns, "aep-argocd", M{"interval": "1h", "url": argoChartURL(opt)})
+	hr := policyRelease(o, "nonprod", "argocd", values)
+	spec := hr.Object["spec"].(M)
+	if opt.ChartRegistryMirror != "" || strings.HasPrefix(argoChartURL(opt), "oci://") {
+		url := ArgoCDChartOCI
+		if strings.HasPrefix(argoChartURL(opt), "oci://") {
+			url = argoChartURL(opt)
+		}
+		source = obj("source.toolkit.fluxcd.io/v1", "OCIRepository", ns, "aep-argocd", M{"interval": "1h", "url": url, "ref": M{"tag": ArgoCDChartVersion}})
+		if err := opt.chartSource(source); err != nil {
+			return nil, nil, err
+		}
+		spec["chartRef"] = M{"kind": "OCIRepository", "name": "aep-argocd"}
+	} else {
+		delete(spec, "chartRef")
+		spec["chart"] = M{"spec": M{"chart": "argo-cd", "version": ArgoCDChartVersion, "sourceRef": M{"kind": "HelmRepository", "name": "aep-argocd"}}}
+	}
+	return source, hr, nil
 }

@@ -1,5 +1,7 @@
 # Install the AEP management services
 
+For disconnected installation and upgrades, follow [airgap.md](airgap.md) first.
+
 Run these commands from the repository root with kubectl and Helm pointed at the
 **Cozystack management cluster**. This guide installs the organization operator,
 its managed bridges, the change service and the read API. OpenChoreo runs in an

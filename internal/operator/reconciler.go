@@ -18,6 +18,8 @@ import (
 
 type Options struct {
 	ArgoCDHostTemplate, ArgoCDChartURL, VCSWebhookURL                                     string
+	RegistryInsecure                                                                      bool
+	ImageRegistryMirror, ChartRegistryMirror, RegistrySecret, RegistryCASecret            string
 	PolicyBundleRepository, KyvernoChartURL                                               string
 	PruneBootstrapBindings                                                                bool
 	BootstrapBindingSystemClients                                                         string

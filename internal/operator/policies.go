@@ -11,7 +11,7 @@ import (
 )
 
 const KyvernoChartVersion = "3.9.2" // Kyverno 1.19.2; legacy ClusterPolicy rules remain supported.
-const PolicyBundleVersion = "0.1.1"
+const PolicyBundleVersion = "0.1.2"
 
 func policyRelease(o *api.Organization, tier, name string, values M) *unstructured.Unstructured {
 	spec := M{"interval": "5m", "timeout": "10m", "releaseName": name, "targetNamespace": "kyverno", "storageNamespace": "kyverno",
@@ -70,6 +70,9 @@ func (s *session) policies(ctx context.Context) error {
 		repository = "oci://ghcr.io/tym83/aep/policies"
 	}
 	for _, tier := range Tiers(s.o) {
+		if err := s.mirrorSecrets(ctx, TenantNamespace(s.o.Name, tier)); err != nil {
+			return err
+		}
 		values := policyValues(s.o, tier, key)
 
 		if argoEnabled(s.o) {
@@ -91,10 +94,13 @@ func (s *session) policies(ctx context.Context) error {
 				url = s.r.Options.KyvernoChartURL
 			}
 			source := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", TenantNamespace(s.o.Name, tier), "aep-"+name, M{"interval": "5m", "url": url, "ref": M{"tag": version}})
+			if err := s.r.Options.chartSource(source); err != nil {
+				return err
+			}
 			if err := s.r.Management.apply(ctx, s.o, "ocirepositories", source); err != nil {
 				return err
 			}
-			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, values[name])); err != nil {
+			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, MirrorValues(name, s.r.Options.ImageRegistryMirror, values[name]))); err != nil {
 				return err
 			}
 		}

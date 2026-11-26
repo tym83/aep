@@ -148,3 +148,20 @@ func TestCostLedgerChartReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestPlatformTrustAcceptsTaggedDigests(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	ref := "registry.example/platform:v1@" + digest
+	cmd := exec.Command("helm", "template", "test", "../../policies/app-cluster-prod", "--set", "cosignPublicKey=test", "--set", "platformImageTrust.mode=enforce", "--set", "platformImageTrust.allowedImages[0]="+ref)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if !strings.Contains(string(out), `regex_replace_all(':[^/:]+@', element.image, '@')`) || !strings.Contains(string(out), "registry.example/platform@"+digest) {
+		t.Fatal("tagged digest is not normalized in trust policy")
+	}
+	cmd = exec.Command("helm", "template", "test", "../../policies/app-cluster-prod", "--set", "cosignPublicKey=test", "--set", "platformImageTrust.allowedImages[0]=registry.example/platform:v1")
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("tag-only trust accepted: %s", out)
+	}
+}

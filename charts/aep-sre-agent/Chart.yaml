@@ -1,6 +1,6 @@
 apiVersion: v2
 name: aep-sre-agent
 description: Organization-isolated infrastructure RCA extensions for the upstream agent
-version: 0.1.0
-appVersion: latest-dev
+version: 0.1.3
+appVersion: v1.4.0-m.3
 type: application
