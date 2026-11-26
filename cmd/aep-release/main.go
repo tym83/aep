@@ -34,7 +34,8 @@ func run(args []string) error {
 	}
 	f := flag.NewFlagSet("aep-release "+cmd, flag.ContinueOnError)
 	var path, root, to, out, from string
-	var check bool
+	var check, refresh, signatures bool
+	var buildVersion string
 	c := &release.Client{Keys: map[string]string{}}
 	if cmd != "load" && cmd != "publish-charts" {
 		f.StringVar(&path, "manifest", "release/manifest.yaml", "Manifest path relative to --root")
@@ -43,7 +44,12 @@ func run(args []string) error {
 	if cmd == "publish-charts" {
 		f.StringVar(&c.PublishRegistry, "chart-registry", "ghcr.io/tym83/aep", "Chart registry and AEP prefix")
 	}
+	if cmd == "manifest" || cmd == "mirror" || cmd == "bundle" {
+		f.StringVar(&buildVersion, "build-version", "", "Commit or release tag for own build placeholders")
+	}
 	if cmd == "manifest" {
+		f.BoolVar(&signatures, "discover-signatures", false, "Record signatures after publishing local charts")
+		f.BoolVar(&refresh, "refresh-local", false, "Repackage local charts while retaining upstream pins")
 		f.BoolVar(&check, "check", false, "Verify tracked inputs and rendered images offline")
 	}
 	if cmd == "mirror" || cmd == "load" {
@@ -98,9 +104,29 @@ func run(args []string) error {
 		if check {
 			return release.Check(root, path)
 		}
-		m, e := release.Generate(ctx, root, c)
+		var m release.Manifest
+		var e error
+		if refresh || signatures || buildVersion != "" {
+			m, e = release.Read(path)
+			if e == nil && buildVersion != "" {
+				m, e = c.ResolveOwn(ctx, m, buildVersion)
+			}
+			if e == nil && buildVersion != "" {
+				e = release.WriteBuildValues(root, m, buildVersion)
+			}
+			if e == nil {
+				m, e = release.RefreshLocal(root, m)
+			}
+		} else {
+			m, e = release.Generate(ctx, root, c)
+		}
 		if e != nil {
 			return e
+		}
+		if signatures {
+			if e = c.DiscoverSignatures(ctx, &m); e != nil {
+				return e
+			}
 		}
 		b, e := yaml.Marshal(m)
 		if e != nil {
@@ -112,6 +138,10 @@ func run(args []string) error {
 		return c.Load(ctx, from, to)
 	}
 	m, e := release.Read(path)
+	if e != nil {
+		return e
+	}
+	m, e = c.ResolveOwn(ctx, m, buildVersion)
 	if e != nil {
 		return e
 	}
