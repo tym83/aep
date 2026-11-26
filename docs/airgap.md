@@ -197,3 +197,15 @@ renders their mirrored values, scanning workloads and hooks for public reference
 - A controller still contacts an external service: registry mirroring handles
   artifacts, not OIDC, OpenChoreo API endpoints, DNS, model downloads or application
   traffic. Configure those services for the isolated network as well.
+
+
+## Release signing in CI
+
+Set repository secrets COSIGN_PRIVATE_KEY (cosign private key PEM) and
+COSIGN_PASSWORD. Images and exact deterministic chart OCI layouts are signed by
+digest with conventional cosign signature tags. Signing steps check that the key
+is present, so forks without it can build without signing. Distribute the public
+key independently. Do not put private keys into bundles or chart values.
+The charts workflow runs aep-release publish-charts; republishing a version with
+different content fails and requires a version bump. It never silently skips a
+conflicting version or repackages the chart through helm package.

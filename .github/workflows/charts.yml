@@ -14,19 +14,23 @@ jobs:
       - uses: azure/setup-helm@v4
       - name: Log in to the registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-      # Published versions are immutable: tier clusters pin them, so a version
-      # that already exists is skipped instead of overwritten.
-      - name: Publish new chart versions
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.3
+      - name: Publish exact release chart layouts
         run: |
-          set -euo pipefail
-          owner="${GITHUB_REPOSITORY_OWNER,,}"
-          publish() { # dir repository
-            name=$(yq -r .name "$1/Chart.yaml"); version=$(yq -r .version "$1/Chart.yaml")
-            if helm show chart "$2/$name" --version "$version" >/dev/null 2>&1; then
-              echo "$name $version exists"; return
-            fi
-            helm package "$1" -d dist >/dev/null
-            helm push "dist/$name-$version.tgz" "$2"
-          }
-          for d in policies/*/; do publish "$d" "oci://ghcr.io/$owner/aep/policies"; done
-          for d in charts/*/; do publish "$d" "oci://ghcr.io/$owner/aep/charts"; done
+          mkdir -p dist
+          go run ./cmd/aep-release publish-charts --chart-registry "ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/aep" > dist/chart-refs
+      - name: Sign published chart digests
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          if [ -n "$COSIGN_PRIVATE_KEY" ]; then
+            while IFS= read -r ref; do
+              cosign sign --yes --tlog-upload=false --key env://COSIGN_PRIVATE_KEY "$ref"
+            done < dist/chart-refs
+          fi

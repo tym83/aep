@@ -22,24 +22,27 @@ func main() {
 }
 func run(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("subcommand required: manifest, mirror, bundle, load")
+		return fmt.Errorf("subcommand required: manifest, mirror, bundle, load, publish-charts")
 	}
 	if args[0] == "-h" || args[0] == "--help" {
-		fmt.Println("Usage: aep-release <manifest|mirror|bundle|load> [flags]")
+		fmt.Println("Usage: aep-release <manifest|mirror|bundle|load|publish-charts> [flags]")
 		return nil
 	}
 	cmd := args[0]
-	if cmd != "manifest" && cmd != "mirror" && cmd != "bundle" && cmd != "load" {
+	if cmd != "manifest" && cmd != "mirror" && cmd != "bundle" && cmd != "load" && cmd != "publish-charts" {
 		return fmt.Errorf("unknown command %q", cmd)
 	}
 	f := flag.NewFlagSet("aep-release "+cmd, flag.ContinueOnError)
 	var path, root, to, out, from string
 	var check bool
 	c := &release.Client{Keys: map[string]string{}}
-	if cmd != "load" {
+	if cmd != "load" && cmd != "publish-charts" {
 		f.StringVar(&path, "manifest", "release/manifest.yaml", "Manifest path relative to --root")
 	}
 	f.StringVar(&root, "root", ".", "Base directory for repository and local OCI layouts")
+	if cmd == "publish-charts" {
+		f.StringVar(&c.PublishRegistry, "chart-registry", "ghcr.io/tym83/aep", "Chart registry and AEP prefix")
+	}
 	if cmd == "manifest" {
 		f.BoolVar(&check, "check", false, "Verify tracked inputs and rendered images offline")
 	}
@@ -57,7 +60,7 @@ func run(args []string) error {
 	}
 	f.StringVar(&c.InsecureRegistry, "insecure-registry", "", "Exact registry host[:port] allowed to use HTTP")
 	f.StringVar(&c.CA, "ca", "", "PEM registry CA bundle")
-	if cmd != "manifest" {
+	if cmd != "manifest" && cmd != "publish-charts" {
 		f.StringVar(&c.Key, "key", "", "Trusted cosign public key; requires signatures for every artifact")
 		f.StringVar(&c.Verify, "verify", "", "Comma-separated repository prefixes requiring trusted signatures")
 		f.Func("trust-key", "Trusted prefix=public-key-file (repeatable)", func(s string) error {
@@ -85,6 +88,9 @@ func run(args []string) error {
 		return e
 	}
 	ctx := context.Background()
+	if cmd == "publish-charts" {
+		return c.PublishCharts(ctx, root, os.Stdout)
+	}
 	if path != "" && !filepath.IsAbs(path) {
 		path = filepath.Join(root, path)
 	}

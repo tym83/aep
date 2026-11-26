@@ -21,6 +21,7 @@ import (
 
 type Client struct {
 	InsecureRegistry string
+	PublishRegistry  string
 	AllowRetag       bool
 	Verify           string
 	Keys             map[string]string
