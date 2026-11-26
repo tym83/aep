@@ -18,6 +18,9 @@ config:
   confirmationUrl: ""
   # null selects true for ServiceNow and false for Jira/webhook.
   syncCmdb: null
+  # RFC3339 time; changes created earlier are not mirrored. Set it to the
+  # moment the integration is enabled, or the bridge mirrors the whole history.
+  mirrorSince: ""
   standardTemplate: ""
   companySysId: ""
   jiraEmail: ""

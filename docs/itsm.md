@@ -113,6 +113,9 @@ Kubernetes RBAC cannot restrict create/list by label or name prefix. Dynamic
 hashed ConfigMap names prevent an exhaustive resourceNames grant. The namespace
 is the write boundary; only bridge configuration and cursors belong there.
 Cursor names start with `itsm-` and reads/retries filter organization labels.
+Set `config.mirrorSince` (RFC3339) to the moment the integration is enabled:
+changes created earlier are not mirrored, so an existing organization does not
+flood the ITSM with its history. Empty mirrors every change.
 Set `tiers` in chart values to the actual Organization tier names (no built-in
 tier list). `config.syncCmdb: null` selects true for ServiceNow and false for
 Jira/webhook; an explicit boolean overrides it.
