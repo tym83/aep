@@ -47,7 +47,8 @@ identical `(stream, sequence, hash)` records, reject conflicting hashes, then
 verify. Do not concatenate different streams or sort by source timestamp.
 
 Change events include `changerequest.created`, `.decided`, `.applied`, `.failed`
-and `.observed` (status/notes/other transitions). Details carry requester,
+and `.observed` (status/notes/other transitions), plus `.deleted`. Details carry requester,
+requesterGroups, operation, model, desired body/hash, justification, window, externalRef,
 approvals with approver/evidence, notes, phase, target, conditions and the before
 snapshots. `beforeSnapshotRef` identifies CR UID, resourceVersion and a content
 hash; the snapshot is also embedded so deleting the CR does not erase it.
@@ -61,8 +62,8 @@ Kubernetes API audit records for the actual writer and authorization result.
 
 Kubernetes records retain user/groups, impersonated user, object reference,
 response status, stage and authorization annotations. Request/response bodies
-are deliberately excluded. Filtering accepts only `aep.aenix.io` and
-`apps.cozystack.io`; this receiver does not collect workload-cluster audit.
+are deliberately excluded. Filtering accepts `aep.aenix.io`,
+`apps.cozystack.io`, `openchoreo.dev` and its subgroups; this receiver does not collect workload-cluster audit.
 Snapshots, approval evidence and notes can contain confidential information:
 restrict SIEM access and redact at the producer where necessary.
 
@@ -79,13 +80,13 @@ a new stream ID and an explicit gap report; never silently reset a stream.
 The state defaults to 64 MiB, including observation checkpoints. Provision at
 least twice that size for atomic rewrites plus filesystem overhead. This simple
 bounded spool rewrites its state on each append/ack; it is intended for stage-1
-volumes, not high-throughput logging. Checkpoints for deleted objects persist;
-monitor growth and enlarge capacity before exhaustion. No automatic pruning of
-identity history is implemented.
+volumes, not high-throughput logging. Checkpoints for deleted objects are pruned
+after their deletion records are acknowledged. Monitor state size against capacity.
 
 Each export sends at most 100 events to each sink. Only after all sinks succeed
 is the batch acknowledged locally. Failures retry after one second, preserving
-order; a failed sink blocks all progress. Successful sinks can receive duplicates.
+order; a failed sink prevents acknowledgement, but every other sink is still
+attempted. Successful sinks can receive duplicates.
 The receiver returns 503 with Retry-After on capacity/storage failure. Watches
 stop consuming until persistence succeeds. Once admitted to the spool, events
 are at-least-once subject to PVC durability. Watches are observations, not a
@@ -93,7 +94,8 @@ complete audit log: relisting after watch expiry cannot reconstruct deleted
 objects or intermediate states. API-server audit must fill this gap.
 
 - **OpenSearch:** HTTPS `_bulk`, NDJSON, stable document ID = chain record hash.
-  HTTP and per-item failures prevent acknowledgment. Credentials are
+  Retryable failures prevent acknowledgment; permanent per-item 4xx failures
+  are acknowledged after durable S3 dead-letter storage. Credentials are
   `OPENSEARCH_USERNAME` / `OPENSEARCH_PASSWORD`. Provision index permissions and
   a 30-day ISM retention policy separately; the forwarder never administers it.
 - **Syslog:** TLS 1.2+, RFC5424 with RFC6587 octet framing, local0/info, JSON MSG.
