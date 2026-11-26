@@ -29,13 +29,17 @@ Required environment variables:
 `username`, `password`, `submit`, `signedIn`, `infrastructure`, `entityDenied`,
 `changeRow`, `approve`, `pageReady`, `createButtons`. Defaults target a popup
 OIDC login with the Keycloak form (`#username`, `#password`, `#kc-login`),
-Backstage navigation and the current AEP Changes list. For example:
+the catalog at `/` (signed-in marker: its `Catalog` heading), the
+`Cozystack resource` card on resource entities and the current AEP Changes list. For example:
 
 ```sh
 export AEP_SELECTORS='{"signIn":"button:has-text(\"Sign In\")","infrastructure":"text=Infrastructure"}'
 ```
 
 Optional route overrides: `AEP_CATALOG_PATH` and `AEP_CHANGES_PATH`.
+`AEP_BROWSER_CHANNEL` (for example `chrome`) runs an installed browser instead
+of the downloaded Chromium. `AEP_OWN_ENTITY_PATH` should be a resource entity
+(`/catalog/<org>/resource/<name>`) so the infrastructure card is present.
 Use an IdP session without an interactive second factor for these dedicated
 acceptance identities. Login always uses the actual form, never stored browser
 state or a guest bypass. Each test gets a fresh browser context. Entity fixtures
