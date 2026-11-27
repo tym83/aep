@@ -1,4 +1,4 @@
 apiVersion: v2
 name: app-cluster-prod
-version: 0.1.3
+version: 0.1.4
 description: Mandatory offline cosign key verification and immutable production images
