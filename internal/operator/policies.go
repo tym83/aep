@@ -41,8 +41,11 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 	values := map[string]M{
 		"kyverno": {"admissionController": M{"replicas": replicas}, "backgroundController": M{"replicas": replicas}, "cleanupController": M{"replicas": replicas}, "reportsController": M{"replicas": replicas},
 			// Keep namespace exclusions in policies, not in invisible engine defaults.
+			// The one exception is Kyverno's own namespace: with failing-closed
+			// webhooks, evicted Kyverno pods could otherwise never be recreated,
+			// because admitting them needs the very webhook they serve.
 			"config": M{"excludeKyvernoNamespace": false, "resourceFilters": []any{"[Event,*,*]"},
-				"webhooks": M{"namespaceSelector": M{"matchExpressions": []any{}}},
+				"webhooks": M{"namespaceSelector": M{"matchExpressions": []any{M{"key": "kubernetes.io/metadata.name", "operator": "NotIn", "values": []any{"kyverno"}}}}},
 				// A nonempty Helm list renders an explicit empty setting, resetting engine defaults.
 				"excludeGroups": []any{""}},
 			"features":    M{"policyExceptions": M{"enabled": true, "namespace": "aep-system"}},
