@@ -32,7 +32,8 @@ config:
   jiraServiceDesk: ""
   jiraRequestType: ""
   jiraTransitions: {}
-  # Workflow statuses that record a CAB decision, e.g. {approve: [Approved], reject: [Declined]}.
+  # Workflow statuses that record a CAB decision, by status ID (names are localized
+  # per reader) or name, e.g. {approve: ["10012"], reject: ["10013"]}.
   # Transitions into them become approval evidence notes; JSM approval steps always do.
   jiraDecisionStatuses: {}
 tiers: []

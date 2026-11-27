@@ -21,14 +21,15 @@ func TestJiraApprovalDecisions(t *testing.T) {
 				fmt.Fprint(w, `{"isLast":false,"values":[{"id":"100","author":{"accountId":"cab1"},"items":[{"field":"status","toString":"Work in progress"}]},
 					{"id":"101","author":{"accountId":"cab1"},"items":[{"field":"assignee","toString":"Approved"}]}]}`)
 			} else {
-				fmt.Fprint(w, `{"isLast":true,"values":[{"id":"102","author":{"accountId":"cab2"},"items":[{"field":"status","toString":"Declined"}]}]}`)
+				fmt.Fprint(w, `{"isLast":true,"values":[{"id":"102","author":{"accountId":"cab2"},"items":[{"field":"status","toString":"Declined"}]},
+					{"id":"103","author":{"accountId":"cab3"},"items":[{"field":"status","to":"10012","toString":"Подтверждено"}]}]}`)
 			}
 		default:
 			t.Error(r.URL)
 		}
 	}))
 	defer srv.Close()
-	j := &Jira{HTTP: HTTP{BaseURL: srv.URL}, Project: "AEP", DecisionStatuses: map[string]string{"Approved": "approve", "Declined": "reject"}}
+	j := &Jira{HTTP: HTTP{BaseURL: srv.URL}, Project: "AEP", DecisionStatuses: map[string]string{"10012": "approve", "Declined": "reject"}}
 	got, err := j.ApprovalDecisions(context.Background(), "AEP-7")
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +37,7 @@ func TestJiraApprovalDecisions(t *testing.T) {
 	want := []Approval{
 		{ID: "AEP-7-approval-11-712020_abc", Approver: "712020:abc", Decision: "approve"},
 		{ID: "AEP-7-status-102", Approver: "cab2", Decision: "reject"},
+		{ID: "AEP-7-status-103", Approver: "cab3", Decision: "approve"},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("got %v want %v", got, want)

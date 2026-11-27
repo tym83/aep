@@ -12,7 +12,8 @@ const jiraChangelogPages = 10
 
 // ApprovalDecisions reads two kinds of Jira evidence: decided JSM approval
 // steps, and transitions into the statuses configured in DecisionStatuses
-// (for projects whose CAB decides by moving the request). The transition
+// (for projects whose CAB decides by moving the request), matched by status
+// ID or, failing that, by the possibly localized status name. The transition
 // author is the approver. Like ServiceNow, these are notes, never decisions.
 func (j *Jira) ApprovalDecisions(ctx context.Context, issue string) ([]Approval, error) {
 	if !validID(issue) {
@@ -57,6 +58,7 @@ func (j *Jira) ApprovalDecisions(ctx context.Context, issue string) ([]Approval,
 				} `json:"author"`
 				Items []struct {
 					Field    string `json:"field"`
+					To       string `json:"to"`
 					ToString string `json:"toString"`
 				} `json:"items"`
 			} `json:"values"`
@@ -67,7 +69,11 @@ func (j *Jira) ApprovalDecisions(ctx context.Context, issue string) ([]Approval,
 		}
 		for _, h := range log.Values {
 			for _, it := range h.Items {
-				decision := j.DecisionStatuses[it.ToString]
+				// Status names follow the reader's language; IDs do not.
+				decision := j.DecisionStatuses[it.To]
+				if decision == "" {
+					decision = j.DecisionStatuses[it.ToString]
+				}
 				if it.Field != "status" || decision == "" || !validID(h.ID) || h.Author.AccountID == "" {
 					continue
 				}
