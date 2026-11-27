@@ -16,3 +16,8 @@ allowedWorkflows:
   - gcp-buildpacks-builder
   - dockerfile-builder
   - ballerina-buildpack-builder
+# Organization namespaces with in-platform builds (charts/aep-builds). Each gets
+# namespaced copies of the types that also allow namespacedWorkflows.
+buildOrganizations: []
+namespacedWorkflows:
+  - aep-kaniko-builder

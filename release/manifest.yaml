@@ -11,6 +11,10 @@ artifacts:
   kind: image
   ref: cr.openchoreo.dev/openchoreo/cluster-agent
   version: v1.4.0-m.3
+- digest: sha256:875af12e9f679dccc8abd41afbf1b4a9cd19b336e181d8393d901125a97a3055
+  kind: image
+  ref: cr.openchoreo.dev/openchoreo/openchoreo-cli
+  version: v1.4.0-m.3
 - digest: sha256:da7cc77f187ee94157db39e01b66231f83163e4ca8f5d37537b4a95b2c0e1791
   kind: image
   ref: cr.openchoreo.dev/openchoreo/sre-agent
@@ -19,6 +23,11 @@ artifacts:
   kind: image
   ref: ecr-public.aws.com/docker/library/redis
   version: 8.2.3-alpine
+- digest: sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f
+  kind: image
+  ref: gcr.io/kaniko-project/executor
+  signature: sha256:9891a369942d9b65143dc4bccdfd31bbc31defde93152ff462f9d9aaca4edae1
+  version: v1.23.2
 - digest: sha256:02600428e7c956e222f4376413525866ed9fec28e6bcb1222774ce6bf5fc904a
   kind: image
   ref: ghcr.io/kyverno/readiness-checker
@@ -88,6 +97,14 @@ artifacts:
   own: true
   ref: ghcr.io/tym83/aep-token-proxy
   version: '@build'
+- digest: sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+  kind: image
+  ref: index.docker.io/alpine/git
+  version: v2.52.0
+- digest: sha256:4011c68d73de6803987509ad1ab9520124a27e31484e3f0e45f95a74ecac7a45
+  kind: image
+  ref: index.docker.io/alpine/k8s
+  version: 1.34.13
 - digest: sha256:014a95f21c9edf6abe0aea6b07353f96baa4ec291c427bb1176dc7c93a85845c
   kind: image
   ref: index.docker.io/vllm/vllm-openai
@@ -131,13 +148,19 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
   signature: required-at-publish
   version: 0.1.2
+- digest: sha256:d6c189fe9928794d3a7ea354f83e2badd80b4aab39bd5f113a89c57f0df4b5be
+  kind: chart
+  layout: release/artifacts
+  ref: oci://ghcr.io/tym83/aep/charts/aep-builds
+  signature: required-at-publish
+  version: 0.1.0
 - digest: sha256:dc610ee243f2f0031f979aedd8f68abd387bbd8c21214d2da929eca32b007622
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
   signature: required-at-publish
   version: 0.1.4
-- digest: sha256:ce7eaff6289f04013ef34c4e161ab127eff19c588fcf9675faf58c0208b0691e
+- digest: sha256:7096e324626a75cb002e87f8a0118803b463504e2d3758f998f4c9bf79a5fd25
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-component-types
@@ -208,7 +231,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
   signature: required-at-publish
   version: 0.1.3
-- digest: sha256:4a9551c8f150bb9e8104d47f1cd3aa4836c842696077458e1f960f034fd27e45
+- digest: sha256:070220acc3decc9c643c74b9531960740db77463c8942728ebe5ab8bebba457a
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-nonprod
@@ -315,5 +338,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: 03f0db6acecdb0a87974f79512322a5fb7f5767c610e7fdb5ae49c9349000153
+inputs: a563329af01600567db6dae16df127759b68545dd5d5450a965a08f91e83f683
 schema: 1

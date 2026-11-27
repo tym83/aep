@@ -34,6 +34,7 @@ policies-package:
 charts-lint:
 	helm template types charts/aep-component-types > /dev/null
 	helm lint --strict charts/aep-audit-forwarder charts/aep-cp-backup charts/aep-component-types
+	helm lint --strict charts/aep-builds --set plane=workflow
 	helm template audit charts/aep-audit-forwarder --namespace aep-system > /dev/null
 	helm template backup charts/aep-cp-backup --namespace aep-system > /dev/null
 	cmp config/crd/aep.aenix.io_changerequests.yaml charts/aep-change/crds/aep.aenix.io_changerequests.yaml

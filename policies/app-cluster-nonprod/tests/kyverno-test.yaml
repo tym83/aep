@@ -37,6 +37,42 @@
       ],
       "kind": "Pod",
       "result": "skip"
+    },
+    {
+      "policy": "aep-restricted",
+      "rule": "restricted",
+      "resources": [
+        "build"
+      ],
+      "kind": "Pod",
+      "result": "skip"
+    },
+    {
+      "policy": "aep-restricted",
+      "rule": "build-baseline",
+      "resources": [
+        "build"
+      ],
+      "kind": "Pod",
+      "result": "pass"
+    },
+    {
+      "policy": "aep-restricted",
+      "rule": "build-baseline",
+      "resources": [
+        "privileged-build"
+      ],
+      "kind": "Pod",
+      "result": "fail"
+    },
+    {
+      "policy": "aep-restricted",
+      "rule": "build-baseline",
+      "resources": [
+        "safe"
+      ],
+      "kind": "Pod",
+      "result": "skip"
     }
   ]
 }

@@ -166,6 +166,14 @@ func Images(data []byte) ([]string, error) {
 						}
 					}
 				}
+				// Argo templates name their single main container "container".
+				if k == "container" {
+					if container, ok := v.(map[string]any); ok {
+						if s, ok := container["image"].(string); ok && s != "" {
+							seen[s] = true
+						}
+					}
+				}
 				walk(v)
 			}
 		case []any:
@@ -360,6 +368,10 @@ func Generate(ctx context.Context, root string, client *Client) (Manifest, error
 }
 func LocalValues(chart string) map[string]any {
 	values := map[string]any{"gitlab": map[string]any{"global": map[string]any{"ingress": map[string]any{"class": "nginx"}}}, "global": map[string]any{"aepVersion": "@build"}, "dev": false, "organizationUID": "inventory", "cosignPublicKey": "inventory", "organization": "inventory", "clusterID": "inventory", "model": "inventory", "apiKeySecret": "inventory", "secretName": "inventory", "organizations": []string{"inventory"}, "aepcpKubeconfigSecret": "inventory/access", "databaseSecret": "inventory", "credentialsSecret": "inventory", "config": map[string]any{"organization": "inventory", "changeNamespace": "tenant-inventory"}, "oidc": map[string]any{"issuer": "https://id.invalid", "audience": "inventory"}, "openchoreo": map[string]any{"apiUrl": "https://oc.invalid", "tokenUrl": "https://id.invalid/token"}, "llm": map[string]any{"modelName": "inventory", "baseUrl": "http://llm.invalid/v1"}, "oauth": map[string]any{"tokenUrl": "https://id.invalid/token"}, "jwt": map[string]any{"issuer": "https://id.invalid", "audience": "inventory", "jwksUrl": "https://id.invalid/keys"}}
+	if chart == "aep-builds" {
+		// Images live in the workflow plane templates.
+		values["plane"] = "workflow"
+	}
 	if chart == "aep-mcp" {
 		values["organizations"] = []map[string]any{{"name": "inventory", "tiers": []string{"nonprod", "prod"}}}
 		values["tls"] = map[string]any{"existingSecret": "inventory"}

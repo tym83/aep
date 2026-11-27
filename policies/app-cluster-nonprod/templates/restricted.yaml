@@ -14,9 +14,22 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces: [kube-system, "cozy-*", "openchoreo-*", kyverno, aep-system]
+              namespaces: [kube-system, "cozy-*", "openchoreo-*", kyverno, aep-system, "workflows-*"]
       validate:
         message: Nonproduction workloads must satisfy restricted Pod Security.
         podSecurity:
           level: restricted
+          version: latest
+    # OpenChoreo runs builds in workflows-<namespace>. Unprivileged image
+    # builders (Kaniko) need root inside the container, so builds get baseline.
+    - name: build-baseline
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: ["workflows-*"]
+      validate:
+        message: Builds must satisfy baseline Pod Security.
+        podSecurity:
+          level: baseline
           version: latest

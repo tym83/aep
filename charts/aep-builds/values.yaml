@@ -1,0 +1,42 @@
+# control: per-organization OpenChoreo Workflows, installed on aep-cp.
+# workflow: Argo ClusterWorkflowTemplates, installed in each workflow plane.
+plane: control
+
+images:
+  git: alpine/git:v2.52.0@sha256:4a0e72d49596a1f5d3701aeedafdadc5c0da4062be4657c7bdc4017387f591cc
+  kaniko: gcr.io/kaniko-project/executor:v1.23.2@sha256:9e69fd4330ec887829c780f5126dd80edc663df6def362cd22e79bcdf00ac53f
+  # Shell with curl, jq and yq for the publish step.
+  tools: alpine/k8s:1.34.13@sha256:4011c68d73de6803987509ad1ab9520124a27e31484e3f0e45f95a74ecac7a45
+  cli: cr.openchoreo.dev/openchoreo/openchoreo-cli:v1.4.0-m.3@sha256:875af12e9f679dccc8abd41afbf1b4a9cd19b336e181d8393d901125a97a3055
+
+# Control plane: one entry per organization namespace with a WorkflowPlane.
+#   - {namespace: acme, workflowPlane: nonprod}
+organizations: []
+registry:
+  # Harbor host; the image goes to <host>/<organization namespace>/<image>.
+  host: ""
+openchoreo:
+  apiUrl: ""
+  tokenUrl: ""
+  # Default client ID is aep-<organization namespace>-publisher.
+  publisherClientId: ""
+# Secret names in the namespace behind each workflow plane's secret store.
+storeSecrets:
+  # kubernetes.io/dockerconfigjson of the organization's Harbor push robot.
+  registryPush: registry-push
+  # Key client-secret: the organization's workload publisher client secret.
+  publisher: workload-publisher
+workspaceSize: 2Gi
+ttlAfterCompletion: 1d
+
+# Build step limits; other steps use the small profile.
+resources:
+  build:
+    requests: {cpu: 500m, memory: 1Gi}
+    limits: {cpu: "2", memory: 4Gi}
+  step:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+global:
+  imageRegistry: ""
