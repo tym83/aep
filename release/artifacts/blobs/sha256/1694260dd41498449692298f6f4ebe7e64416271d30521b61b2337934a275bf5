@@ -1,0 +1,1 @@
+{"apiVersion":"v2","appVersion":"1.4.0","description":"Unprivileged OpenChoreo builds for AEP (Kaniko, Harbor push robot, Workload publishing)","name":"aep-builds","type":"application","version":"0.1.0"}

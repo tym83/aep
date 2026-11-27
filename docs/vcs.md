@@ -113,6 +113,37 @@ values. Argo receives `argocd/aep-corporate-vcs` with label
 allow-list boundary. Corporate CA roots are delivered to Argo CD's TLS
 ConfigMap. The workflow image must also trust corporate Git CA roots.
 
+## In-platform builds
+
+`charts/aep-builds` runs builds in the organization's own workflow plane
+without privileges. Upstream OpenChoreo builders run privileged podman and
+target the shared `ClusterWorkflowPlane default`, which AEP does not use.
+
+| Install | Values | Result |
+|---|---|---|
+| Each workflow plane | `plane=workflow` | ClusterWorkflowTemplates `aep-checkout`, `aep-kaniko-build`, `aep-publish-workload` |
+| aep-cp | `organizations[]={namespace, workflowPlane}`, `registry.host`, `openchoreo.apiUrl`, `openchoreo.tokenUrl` | Namespaced Workflow `aep-kaniko-builder` per organization, bound to its WorkflowPlane |
+| aep-cp, `charts/aep-component-types` | `buildOrganizations={acme}` | Namespaced copies of the AEP types that allow that Workflow |
+
+A ClusterComponentType can only allow ClusterWorkflows, and a ClusterWorkflow
+can only target one ClusterWorkflowPlane, so per-organization planes need the
+namespaced types. Components that build in the platform use
+`ComponentType/aep-service` (and the other types) from their own namespace.
+
+A run checks out the repository, builds with Kaniko and pushes to
+`<registry.host>/<namespace>/<project>-<component>`, then publishes the
+Workload with the image digest as `aep-<namespace>-publisher` (client
+credentials against `openchoreo.tokenUrl`). Kaniko needs root in its container,
+so the nonprod policy bundle applies Pod Security baseline to `workflows-*`
+namespaces instead of restricted; privileged pods and host access stay denied.
+
+The workflow plane's secret store must also expose, next to the build
+credential, the Secrets named by `storeSecrets`: `registry-push`
+(`.dockerconfigjson` of the organization's Harbor push robot) and
+`workload-publisher` (key `client-secret`). Provision the robot and the
+publisher client outside AEP. Set `argo-workflows.executor.resources` in the
+workflow plane chart so Argo's injected containers carry limits.
+
 ## Build webhooks
 
 The inspected OpenChoreo source supports `POST /api/v1alpha1/autobuild`, GitHub

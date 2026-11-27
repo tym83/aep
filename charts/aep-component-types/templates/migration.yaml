@@ -1,16 +1,19 @@
 {{- if .Values.types.migration }}
+{{- range $scope := include "aep.componentTypeScopes" . | fromYamlArray }}
+---
 apiVersion: openchoreo.dev/v1alpha1
-kind: ClusterComponentType
+kind: {{ $scope.kind }}
 metadata:
+{{- with $scope.namespace }}
+  namespace: {{ . }}
+{{- end }}
   annotations:
     openchoreo.dev/description: AEP restricted-compliant run-to-completion schema
       migration Job
   name: aep-migration
 spec:
   allowedTraits: []
-  allowedWorkflows:{{ range .Values.allowedWorkflows }}
-  - kind: ClusterWorkflow
-    name: {{ . | quote }}{{ else }} []{{ end }}
+  allowedWorkflows:{{ include "aep.allowedWorkflows" (dict "root" $ "scope" $scope) }}
   environmentConfigs:
     openAPIV3Schema:
       properties:
@@ -36,11 +39,11 @@ spec:
               default: {}
               properties:
                 cpu:
-                  default: {{ required "resources.limits.cpu is required" .Values.resources.limits.cpu | quote }}
+                  default: {{ required "resources.limits.cpu is required" $.Values.resources.limits.cpu | quote }}
                   minLength: 1
                   type: string
                 memory:
-                  default: {{ required "resources.limits.memory is required" .Values.resources.limits.memory | quote }}
+                  default: {{ required "resources.limits.memory is required" $.Values.resources.limits.memory | quote }}
                   minLength: 1
                   type: string
               type: object
@@ -48,11 +51,11 @@ spec:
               default: {}
               properties:
                 cpu:
-                  default: {{ required "resources.requests.cpu is required" .Values.resources.requests.cpu | quote }}
+                  default: {{ required "resources.requests.cpu is required" $.Values.resources.requests.cpu | quote }}
                   minLength: 1
                   type: string
                 memory:
-                  default: {{ required "resources.requests.memory is required" .Values.resources.requests.memory | quote }}
+                  default: {{ required "resources.requests.memory is required" $.Values.resources.requests.memory | quote }}
                   minLength: 1
                   type: string
               type: object
@@ -221,4 +224,5 @@ spec:
   - message: Job components must not have endpoints.
     rule: ${size(workload.endpoints) == 0}
   workloadType: job
+{{- end }}
 {{- end }}

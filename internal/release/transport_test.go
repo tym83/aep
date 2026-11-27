@@ -151,6 +151,10 @@ func TestImages(t *testing.T) {
 	if e != nil || len(got) != 2 {
 		t.Fatal(got, e)
 	}
+	got, e = Images([]byte("kind: ClusterWorkflowTemplate\nspec:\n  templates:\n  - container:\n      image: c.io/build@sha256:abc\n"))
+	if e != nil || len(got) != 1 || got[0] != "c.io/build@sha256:abc" {
+		t.Fatal("Argo template images must be inventoried", got, e)
+	}
 }
 func TestManifestValidation(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "manifest.yaml")

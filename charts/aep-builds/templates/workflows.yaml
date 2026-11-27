@@ -1,0 +1,173 @@
+{{- if eq .Values.plane "control" }}
+{{- range .Values.organizations }}
+{{- $ns := required "organizations[].namespace is required" .namespace }}
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workflow
+metadata:
+  name: aep-kaniko-builder
+  namespace: {{ $ns }}
+  labels:
+    openchoreo.dev/workflow-type: component
+  annotations:
+    openchoreo.dev/description: Unprivileged Dockerfile build pushed to the organization's Harbor project
+spec:
+  workflowPlaneRef:
+    kind: WorkflowPlane
+    name: {{ required "organizations[].workflowPlane is required" .workflowPlane }}
+  ttlAfterCompletion: {{ $.Values.ttlAfterCompletion }}
+  externalRefs:
+    - id: git-secret-reference
+      apiVersion: openchoreo.dev/v1alpha1
+      kind: SecretReference
+      name: ${parameters.repository.secretRef}
+  parameters:
+    openAPIV3Schema:
+      type: object
+      required: [repository]
+      properties:
+        repository:
+          type: object
+          required: [url]
+          properties:
+            url:
+              type: string
+              description: Git repository URL
+              x-openchoreo-component-parameter-repository-url: true
+            secretRef:
+              type: string
+              default: ""
+              description: SecretReference with basic-auth Git credentials
+              x-openchoreo-component-parameter-repository-secret-ref: true
+            appPath:
+              type: string
+              default: .
+              x-openchoreo-component-parameter-repository-app-path: true
+            revision:
+              type: object
+              default: {}
+              properties:
+                branch:
+                  type: string
+                  default: main
+                  x-openchoreo-component-parameter-repository-branch: true
+                commit:
+                  type: string
+                  default: ""
+                  x-openchoreo-component-parameter-repository-commit: true
+        docker:
+          type: object
+          default: {}
+          properties:
+            context: {type: string, default: .}
+            filePath: {type: string, default: Dockerfile}
+  resources:
+    - id: git-secret
+      includeWhen: ${has(parameters.repository.secretRef) && parameters.repository.secretRef != ""}
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-git-secret
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef: {kind: ClusterSecretStore, name: "${workflowplane.secretStore}"}
+          target: {name: "${metadata.workflowRunName}-git-secret", creationPolicy: Owner}
+          data: |
+            ${externalRefs['git-secret-reference'].spec.data.map(secret, {
+              "secretKey": secret.secretKey,
+              "remoteRef": {
+                "key": secret.remoteRef.key,
+                "property": has(secret.remoteRef.property) && secret.remoteRef.property != "" ? secret.remoteRef.property : oc_omit()
+              }
+            })}
+    - id: registry-push
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-registry-push
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef: {kind: ClusterSecretStore, name: "${workflowplane.secretStore}"}
+          target:
+            name: ${metadata.workflowRunName}-registry-push
+            creationPolicy: Owner
+            template: {type: kubernetes.io/dockerconfigjson}
+          data:
+            - secretKey: .dockerconfigjson
+              remoteRef: {key: {{ $.Values.storeSecrets.registryPush }}, property: .dockerconfigjson}
+    - id: publisher
+      template:
+        apiVersion: external-secrets.io/v1
+        kind: ExternalSecret
+        metadata:
+          name: ${metadata.workflowRunName}-publisher
+          namespace: ${metadata.namespace}
+        spec:
+          refreshInterval: 15s
+          secretStoreRef: {kind: ClusterSecretStore, name: "${workflowplane.secretStore}"}
+          target: {name: "${metadata.workflowRunName}-publisher", creationPolicy: Owner}
+          data:
+            - secretKey: client-secret
+              remoteRef: {key: {{ $.Values.storeSecrets.publisher }}, property: client-secret}
+  runTemplate:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Workflow
+    metadata:
+      name: ${metadata.workflowRunName}
+      namespace: ${metadata.namespace}
+    spec:
+      serviceAccountName: workflow-sa
+      entrypoint: build
+      securityContext:
+        fsGroup: 65532
+      arguments:
+        parameters:
+          - {name: component-name, value: "${metadata.labels['openchoreo.dev/component']}"}
+          - {name: project-name, value: "${metadata.labels['openchoreo.dev/project']}"}
+          - {name: release-line, value: "${'openchoreo.dev/release-line' in metadata.labels ? metadata.labels['openchoreo.dev/release-line'] : ''}"}
+          - {name: workflowrun-name, value: "${metadata.workflowRunName}"}
+          - {name: namespace-name, value: "${metadata.namespaceName}"}
+          - {name: git-repo, value: "${parameters.repository.url}"}
+          - {name: branch, value: "${parameters.repository.revision.branch}"}
+          - {name: commit, value: "${parameters.repository.revision.commit}"}
+          - {name: app-path, value: "${parameters.repository.appPath}"}
+          - {name: docker-context, value: "${parameters.docker.context}"}
+          - {name: dockerfile-path, value: "${parameters.docker.filePath}"}
+          - {name: image-repository, value: "{{ required "registry.host is required" $.Values.registry.host }}/${metadata.namespaceName}/${metadata.labels['openchoreo.dev/project']}-${metadata.labels['openchoreo.dev/component']}"}
+          - {name: image-tag, value: "${'openchoreo.dev/release-line' in metadata.labels ? 'v1-' + metadata.labels['openchoreo.dev/release-line'] : 'v1'}"}
+          - {name: git-secret, value: "${metadata.workflowRunName}-git-secret"}
+          - {name: registry-push-secret, value: "${metadata.workflowRunName}-registry-push"}
+          - {name: publisher-secret, value: "${metadata.workflowRunName}-publisher"}
+          - {name: api-url, value: {{ required "openchoreo.apiUrl is required" $.Values.openchoreo.apiUrl | quote }}}
+          - {name: token-url, value: {{ required "openchoreo.tokenUrl is required" $.Values.openchoreo.tokenUrl | quote }}}
+          - {name: publisher-client-id, value: {{ $.Values.openchoreo.publisherClientId | default (printf "aep-%s-publisher" $ns) | quote }}}
+      templates:
+        - name: build
+          steps:
+            - - name: checkout
+                templateRef: {name: aep-checkout, template: checkout, clusterScope: true}
+            - - name: build-push
+                templateRef: {name: aep-kaniko-build, template: build-push, clusterScope: true}
+                arguments:
+                  parameters:
+                    - {name: git-revision, value: "{{ "{{steps.checkout.outputs.parameters.git-revision}}" }}"}
+            - - name: publish
+                templateRef: {name: aep-publish-workload, template: publish, clusterScope: true}
+                arguments:
+                  parameters:
+                    - {name: image, value: "{{ "{{steps.build-push.outputs.parameters.image}}" }}"}
+                    - {name: commit-sha, value: "{{ "{{steps.checkout.outputs.parameters.commit-sha}}" }}"}
+                    - {name: commit-authored-at, value: "{{ "{{steps.checkout.outputs.parameters.commit-authored-at}}" }}"}
+      volumeClaimTemplates:
+        - metadata: {name: workspace}
+          spec:
+            accessModes: [ReadWriteOnce]
+            resources:
+              requests:
+                storage: {{ $.Values.workspaceSize }}
+{{- end }}
+{{- end }}

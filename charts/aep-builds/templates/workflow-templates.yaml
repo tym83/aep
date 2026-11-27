@@ -1,0 +1,195 @@
+{{- if eq .Values.plane "workflow" }}
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: aep-checkout
+spec:
+  templates:
+    - name: checkout
+      outputs:
+        parameters:
+          - name: git-revision
+            valueFrom: {path: /tmp/git-revision.txt}
+          - name: commit-sha
+            valueFrom: {path: /tmp/commit-sha.txt}
+          - name: commit-authored-at
+            valueFrom: {path: /tmp/commit-authored-at.txt}
+      volumes:
+        - name: git-secret
+          secret:
+            secretName: '{{ "{{workflow.parameters.git-secret}}" }}'
+            optional: true
+      container:
+        image: {{ include "aep.mirror" (dict "root" . "ref" .Values.images.git) }}
+        env:
+          - {name: REPO, value: '{{ "{{workflow.parameters.git-repo}}" }}'}
+          - {name: BRANCH, value: '{{ "{{workflow.parameters.branch}}" }}'}
+          - {name: COMMIT, value: '{{ "{{workflow.parameters.commit}}" }}'}
+          - {name: HOME, value: /tmp}
+        command: [sh, -ec]
+        args:
+          - |
+            # Basic-auth credentials come from the run's ExternalSecret via askpass,
+            # never from the clone URL.
+            if [ -f /etc/git/password ]; then
+              printf '#!/bin/sh\ncase "$1" in Username*) cat /etc/git/username 2>/dev/null || echo git;; *) cat /etc/git/password;; esac\n' > /tmp/askpass
+              chmod 700 /tmp/askpass
+              export GIT_ASKPASS=/tmp/askpass GIT_TERMINAL_PROMPT=0
+            fi
+            if [ -n "$COMMIT" ]; then
+              git clone --no-checkout -- "$REPO" /mnt/vol/source
+              cd /mnt/vol/source
+              git -c advice.detachedHead=false checkout "$COMMIT"
+            else
+              git clone --single-branch --branch "${BRANCH:-main}" --depth 1 -- "$REPO" /mnt/vol/source
+              cd /mnt/vol/source
+            fi
+            git rev-parse HEAD > /tmp/commit-sha.txt
+            cut -c1-8 /tmp/commit-sha.txt | tr -d '\n' > /tmp/git-revision.txt
+            git show -s --format=%aI HEAD | tr -d '\n' > /tmp/commit-authored-at.txt
+        securityContext:
+          runAsUser: 65532
+          runAsGroup: 65532
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:{{ toYaml $.Values.resources.step | nindent 10 }}
+        volumeMounts:
+          - {name: workspace, mountPath: /mnt/vol}
+          - {name: git-secret, mountPath: /etc/git, readOnly: true}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: aep-kaniko-build
+spec:
+  templates:
+    # Kaniko builds in user space: no privileged mode, host access or user
+    # namespaces, so the pod passes Pod Security baseline.
+    - name: build-push
+      inputs:
+        parameters:
+          - name: git-revision
+      outputs:
+        parameters:
+          - name: image
+            valueFrom: {path: /tmp/image.txt}
+      volumes:
+        - name: registry-push
+          secret:
+            secretName: '{{ "{{workflow.parameters.registry-push-secret}}" }}'
+            items: [{key: .dockerconfigjson, path: config.json}]
+      container:
+        image: {{ include "aep.mirror" (dict "root" . "ref" .Values.images.kaniko) }}
+        env:
+          - {name: DOCKER_CONFIG, value: /kaniko/.docker}
+        args:
+          - --context=dir:///mnt/vol/source/{{ "{{workflow.parameters.docker-context}}" }}
+          - --dockerfile=/mnt/vol/source/{{ "{{workflow.parameters.dockerfile-path}}" }}
+          - --destination={{ "{{workflow.parameters.image-repository}}:{{workflow.parameters.image-tag}}-{{inputs.parameters.git-revision}}" }}
+          - --image-name-with-digest-file=/tmp/image.txt
+          - --reproducible
+          - --ignore-path=/mnt/vol
+        securityContext:
+          allowPrivilegeEscalation: false
+        resources:{{ toYaml .Values.resources.build | nindent 10 }}
+        volumeMounts:
+          - {name: workspace, mountPath: /mnt/vol}
+          - {name: registry-push, mountPath: /kaniko/.docker, readOnly: true}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterWorkflowTemplate
+metadata:
+  name: aep-publish-workload
+spec:
+  templates:
+    # Publishes the Workload with the image digest through the OpenChoreo API
+    # as the organization's publisher client, then records it on the run.
+    - name: publish
+      inputs:
+        parameters:
+          - name: image
+          - name: commit-sha
+          - name: commit-authored-at
+      volumes:
+        - name: tools
+          emptyDir: {}
+        - name: publisher
+          secret:
+            secretName: '{{ "{{workflow.parameters.publisher-secret}}" }}'
+      initContainers:
+        - name: copy-occ
+          image: {{ include "aep.mirror" (dict "root" . "ref" .Values.images.cli) }}
+          command: [sh, -c, "mkdir -p /tools/bin && cp /usr/local/bin/occ /tools/bin/occ"]
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:{{ toYaml $.Values.resources.step | nindent 12 }}
+          volumeMounts:
+            - {name: tools, mountPath: /tools}
+      container:
+        image: {{ include "aep.mirror" (dict "root" . "ref" .Values.images.tools) }}
+        env:
+          - {name: IMAGE, value: '{{ "{{inputs.parameters.image}}" }}'}
+          - {name: COMMIT, value: '{{ "{{inputs.parameters.commit-sha}}" }}'}
+          - {name: AUTHORED_AT, value: '{{ "{{inputs.parameters.commit-authored-at}}" }}'}
+          - {name: BRANCH, value: '{{ "{{workflow.parameters.branch}}" }}'}
+          - {name: REPO, value: '{{ "{{workflow.parameters.git-repo}}" }}'}
+          - {name: RUN, value: '{{ "{{workflow.parameters.workflowrun-name}}" }}'}
+          - {name: NS, value: '{{ "{{workflow.parameters.namespace-name}}" }}'}
+          - {name: PROJECT, value: '{{ "{{workflow.parameters.project-name}}" }}'}
+          - {name: COMPONENT, value: '{{ "{{workflow.parameters.component-name}}" }}'}
+          - {name: RELEASE_LINE, value: '{{ "{{workflow.parameters.release-line}}" }}'}
+          - {name: APP_PATH, value: '{{ "{{workflow.parameters.app-path}}" }}'}
+          - {name: API, value: '{{ "{{workflow.parameters.api-url}}" }}'}
+          - {name: TOKEN_URL, value: '{{ "{{workflow.parameters.token-url}}" }}'}
+          - {name: CLIENT_ID, value: '{{ "{{workflow.parameters.publisher-client-id}}" }}'}
+          - {name: HOME, value: /tmp}
+        command: [sh, -ec]
+        args:
+          - |
+            export PATH=/tools/bin:$PATH
+            W=/tmp/work; mkdir -p $W
+            # Kaniko records <repository>:<tag>@<digest>; prod admits digests only.
+            REF=$(echo "$IMAGE" | sed -E 's|:[^:/@]+@|@|')
+            DIR="/mnt/vol/source/${APP_PATH#/}"
+            set -- --namespace "$NS" --project "$PROJECT" --component "$COMPONENT" --image "$REF" \
+              --source-commit "$COMMIT" --source-branch "$BRANCH" --source-repository "$REPO" \
+              --source-authored-at "$AUTHORED_AT" -o $W/workload.yaml
+            [ -n "$RELEASE_LINE" ] && set -- "$@" --release-line "$RELEASE_LINE"
+            cd "$DIR"
+            if [ -f workload.yaml ]; then occ workload create "$@" --descriptor workload.yaml; else occ workload create "$@"; fi
+            yq -o=json 'del(.apiVersion) | del(.kind)' $W/workload.yaml | jq -c . > $W/workload.json
+            TOKEN=$(curl -sS --fail-with-body -X POST "$TOKEN_URL" \
+              --data-urlencode grant_type=client_credentials --data-urlencode "client_id=$CLIENT_ID" \
+              --data-urlencode "client_secret@/etc/publisher/client-secret" | jq -er .access_token)
+            api() { curl -sS --fail-with-body -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"; }
+            NAME=$(jq -r .metadata.name $W/workload.json)
+            BASE="$API/api/v1/namespaces/$NS"
+            if api -o $W/existing.json "$BASE/workloads/$NAME" 2>/dev/null; then
+              # Keep the platform-edited spec; move image and provenance together.
+              jq --slurpfile new $W/workload.json '.spec.container.image = $new[0].spec.container.image | .spec.source = $new[0].spec.source' \
+                $W/existing.json > $W/put.json
+              api -X PUT -d @$W/put.json "$BASE/workloads/$NAME" > /dev/null
+            else
+              api -X POST -d @$W/workload.json "$BASE/workloads" > /dev/null
+            fi
+            api "$BASE/workflowruns/$RUN" | jq --rawfile wl $W/workload.json \
+              '.metadata.annotations["openchoreo.dev/workload"] = ($wl | rtrimstr("\n")) | .metadata.annotations["openchoreo.dev/workload-from-source"] = "false"' > $W/run.json
+            api -X PUT -d @$W/run.json "$BASE/workflowruns/$RUN" > /dev/null
+            echo ">> published $REF"
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities: {drop: [ALL]}
+        resources:{{ toYaml $.Values.resources.step | nindent 10 }}
+        volumeMounts:
+          - {name: workspace, mountPath: /mnt/vol}
+          - {name: tools, mountPath: /tools, readOnly: true}
+          - {name: publisher, mountPath: /etc/publisher, readOnly: true}
+{{- end }}

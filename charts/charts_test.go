@@ -201,6 +201,7 @@ func TestMirrorAllCharts(t *testing.T) {
 		"aep-audit-forwarder":   {},
 		"aep-cp-backup":         {},
 		"aep-component-types":   {},
+		"aep-builds":            {"plane=workflow"},
 		"aep-itsm-bridge":       {"credentialsSecret=itsm", "config.organization=acme", "config.changeNamespace=tenant-acme"},
 	}
 	paths, err := filepath.Glob("*/Chart.yaml")
