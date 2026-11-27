@@ -37,13 +37,23 @@ Recovery into a **new** control plane:
    tenant namespace with **its** datastore certificate and `/<its DB_SCHEMA>` as
    `--etcd-prefix`. `--replace` clears only that fresh prefix first; a non-empty
    target is refused otherwise.
-4. Restart the replacement's control plane Deployment so the API server
-   rebuilds its caches from the restored keys.
+4. Restart the replacement's API server pods so they rebuild their caches;
+   until then, CRDs replaced underneath a running API server may stop being
+   served. Kamaji owns the Deployment template and reverts
+   `kubectl rollout restart`, so delete the control plane pods instead. The
+   rolling update surges to twice the replicas: the tenant quota must allow it.
 5. Compare kinds, names and UIDs of OpenChoreo objects with the logical archive
    or the surviving control plane; reconcile post-snapshot changes from the
    audit trail and ChangeRequests.
 6. Re-point DNS and the agent gateway name, add worker nodes, then let the AEP
    operator re-register planes with the long-lived per-cluster agent CAs.
+
+Stand drill (2026-11-27): scheduled `etcd-backup` stored 1151 keys at one
+revision in the Object Lock bucket; `etcd-restore --replace` from that object
+into a new control plane without workers, followed by an API server restart,
+returned all 87 OpenChoreo objects (organization namespaces, projects,
+components, environments, release bindings, workloads, planes, role bindings,
+secret references, workflows, component types) with their original UIDs.
 
 The replacement has new serving certificates and service account signing keys:
 tokens issued by the old control plane are invalid, and in-cluster clients
