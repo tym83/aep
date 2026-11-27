@@ -16,8 +16,9 @@ spec:
               operations: [CREATE, UPDATE]
       exclude:
         any:
+          # OpenChoreo plane namespaces: data plane and build (workflow) runs.
           - resources:
-              namespaces: ["dp-*"]
+              namespaces: ["dp-*", "workflows-*"]
           # Platform controllers (ReplicaSet and Job controllers on behalf of
           # OpenChoreo's own charts) create labelled objects there.
           - resources:
@@ -27,7 +28,7 @@ spec:
                 namespace: {{ index (splitList ":" .Values.agentUsername) 2 }}
                 name: {{ index (splitList ":" .Values.agentUsername) 3 }}
       validate:
-        message: Only the OpenChoreo agent may set openchoreo.dev labels outside dp namespaces.
+        message: Only the OpenChoreo agent may set openchoreo.dev labels outside OpenChoreo plane namespaces.
         deny:
           conditions:
             any:
