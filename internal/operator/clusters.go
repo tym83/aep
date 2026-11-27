@@ -42,7 +42,7 @@ func (s *session) clusters(ctx context.Context) error {
 		addons := tierAddons(s.o, s.r.Options, tier)
 		for _, u := range []*unstructured.Unstructured{
 			obj(appsAPI, "Kubernetes", ns, "apps", M{"version": spec.Version, "storageClass": "replicated", "addons": addons}),
-			obj(appsAPI, "KubernetesNodes", ns, "apps-md0", M{"cluster": "apps", "version": spec.Version, "storageClass": "replicated", "diskSize": "20Gi", "instanceType": n.InstanceType, "minReplicas": int64(n.MinReplicas), "maxReplicas": int64(n.MaxReplicas)})} {
+			obj(appsAPI, "KubernetesNodes", ns, "apps-md0", M{"cluster": "apps", "version": spec.Version, "storageClass": "replicated", "diskSize": "20Gi", "instanceType": n.InstanceType, "minReplicas": int64(n.MinReplicas), "maxReplicas": int64(n.MaxReplicas), "roles": tierNodeRoles(addons)})} {
 			r := "kuberneteses"
 			if u.GetKind() == "KubernetesNodes" {
 				r = "kubernetesnodeses"
@@ -155,7 +155,9 @@ func (s *session) remediate(ctx context.Context, ns, name, reason string) error 
 
 // tierAddons are the Cozystack addons of a tier cluster. Tenant Argo CD is
 // published through the tier ingress, proxied from the platform ingress with
-// TLS passthrough for exactly its hostname.
+// TLS passthrough for exactly its hostname. The platform ingress reaches the
+// tier controller only on nodes with the ingress-nginx role, which clusters()
+// sets on the node group whenever this addon is enabled.
 func tierAddons(o *api.Organization, opt Options, tier string) M {
 	addons := M{"certManager": M{"enabled": true}, "gatewayAPI": M{"enabled": true}}
 	if tier == "nonprod" && argoEnabled(o) {
@@ -164,4 +166,12 @@ func tierAddons(o *api.Organization, opt Options, tier string) M {
 		}
 	}
 	return addons
+}
+
+// tierNodeRoles labels the tier workers that host the tier ingress controller.
+func tierNodeRoles(addons M) []any {
+	if _, ok := addons["ingressNginx"]; ok {
+		return []any{"ingress-nginx"}
+	}
+	return []any{}
 }

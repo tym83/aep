@@ -40,7 +40,10 @@ Set operator chart `argocdHostTemplate`, for example
 Use a hostname allowed by the tier's Cozystack domain policy and point its DNS
 at the platform ingress. With Argo CD enabled, the operator turns on the
 nonprod tier cluster's `ingressNginx` addon in `Proxied` mode for exactly that
-hostname, so the platform ingress passes TLS through to the tier ingress.
+hostname, so the platform ingress passes TLS through to the tier ingress. It
+also gives the nonprod node group the `ingress-nginx` role, because the platform
+ingress only forwards to workers that carry it; enabling Argo CD on an existing
+organization therefore rolls the nonprod workers once.
 Set operator chart `argocdAcmeServer` (binary flag `--argocd-acme-server`) to an
 ACME directory to have cert-manager in the tier cluster issue the certificate
 over HTTP-01 (ClusterIssuer `aep-argocd-acme`); otherwise the tier ingress

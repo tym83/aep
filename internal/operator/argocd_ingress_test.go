@@ -12,8 +12,15 @@ func TestArgoTierIngressAndCertificate(t *testing.T) {
 	if ingress["enabled"] != true || ingress["exposeMethod"] != "Proxied" || ingress["hosts"].([]any)[0] != "argocd.nonprod.acme.example.org" {
 		t.Fatalf("nonprod ingress %v", addons)
 	}
-	if _, ok := tierAddons(o, opt, "prod")["ingressNginx"]; ok {
+	if r := tierNodeRoles(addons); len(r) != 1 || r[0] != "ingress-nginx" {
+		t.Fatalf("nonprod node roles %v", r)
+	}
+	prod := tierAddons(o, opt, "prod")
+	if _, ok := prod["ingressNginx"]; ok {
 		t.Fatal("prod tier got an Argo CD ingress")
+	}
+	if r := tierNodeRoles(prod); len(r) != 0 {
+		t.Fatalf("prod node roles %v", r)
 	}
 	o.Spec.Tiers["nonprod"].ArgoCD.Enabled = false
 	if _, ok := tierAddons(o, opt, "nonprod")["ingressNginx"]; ok {
