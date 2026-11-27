@@ -225,7 +225,7 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/klusterlet
   version: 1.4.0
-- digest: sha256:5e44fb984d188a3709fa8dfd3b3fd726027509b0f6b97d13256d5577340f56fc
+- digest: sha256:293724f7704fa2a8f0bcb95dc89125548dcc1601f8fdf2023ee49a179add4f77
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
@@ -338,5 +338,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: adb1afc335478cbedb471cdd147ef1b85bd6b84f24744040b1cbccf5c5a5eddc
+inputs: 06a1083867011268a1bd9fdfd4de2f29d4b7302393ec85b5e691befad6722960
 schema: 1
