@@ -2,26 +2,55 @@
 
 DESIGN §0.1 scenario 8 and §0.2 target **RPO ≤15 minutes, RTO ≤4 hours**, with
 running services uninterrupted and no rollback of prod to stale desired state.
-This package supplies a logical OpenChoreo export/restore tool. It does **not**
-yet satisfy the complete no-disruption DR acceptance criterion.
+Two backups run side by side. The **etcd prefix backup** is the disaster
+recovery path: it keeps every object UID. The **logical export** is a portable,
+reviewable copy for audits, partial restores and migrations; restoring it
+allocates new UIDs.
 
-## Critical distinction: logical export versus disaster recovery
+## UID-preserving recovery (etcd prefix)
 
 `aep-cp` is a Cozystack tenant Kubernetes cluster with a Kamaji control plane.
-Its etcd datastore is shared with other tenant control planes. DESIGN §5.2
-requires UID-preserving recovery because OpenChoreo uses object UIDs in rendered
-labels/selectors. Kubernetes manifest creation allocates new UIDs; the portable
-restore implemented here cannot preserve them. Connecting live production agents
-immediately after this restore could change immutable selectors or reconcile
-stale state. Long-lived agent CAs solve authentication, not UID continuity.
+Kamaji stores every tenant control plane under its own key prefix
+(`/<DB_SCHEMA>`) in a shared datastore and gives it an etcd user limited to that
+prefix (`<cluster>-datastore-certificate`, `<cluster>-datastore-config` in the
+tenant namespace). OpenChoreo uses object UIDs in rendered labels and selectors
+(DESIGN §5.2), so recovery copies the stored values verbatim instead of
+re-creating objects.
 
-Never restore an entire shared etcd snapshot over a running shared datastore to
-recover one tenant. A tenant-prefix-aware, UID-preserving procedure needs a
-separately validated Cozystack/Kamaji datastore backup workflow and disaster
-exercise. It is outside this tool. Until that workflow or an OpenChoreo UID
-migration/reconciliation procedure passes testing, scenario 8 remains open.
+`aep-cp-backup etcd-backup` reads all keys of the prefix at one revision (a
+consistent cut while the control plane keeps writing), seals them for the age
+recipient and uploads them next to the logical archives (`etcd/<date>/...`).
+It uses only the tenant's own etcd user: other tenants of the datastore are
+neither readable nor writable, and the shared datastore is never restored as a
+whole. Enable it with `etcd.enabled`, `etcd.namespace` (the aep-cp tenant
+namespace) and `etcd.cluster` (the TenantControlPlane name); the S3 credentials
+Secret must also exist in that namespace, and the pods carry
+`policy.cozystack.io/allow-to-etcd`.
 
-## Archive contract
+Recovery into a **new** control plane:
+
+1. Freeze writes as in the runbook below, keep agents connected to nothing.
+2. Create a replacement Cozystack Kubernetes application **without worker
+   nodes**. Nothing can run there, so OpenChoreo controllers and the cluster
+   gateway stay down until reconciliation is approved.
+3. Run `aep-cp-backup etcd-restore --replace` as a Job in the replacement's
+   tenant namespace with **its** datastore certificate and `/<its DB_SCHEMA>` as
+   `--etcd-prefix`. `--replace` clears only that fresh prefix first; a non-empty
+   target is refused otherwise.
+4. Restart the replacement's control plane Deployment so the API server
+   rebuilds its caches from the restored keys.
+5. Compare kinds, names and UIDs of OpenChoreo objects with the logical archive
+   or the surviving control plane; reconcile post-snapshot changes from the
+   audit trail and ChangeRequests.
+6. Re-point DNS and the agent gateway name, add worker nodes, then let the AEP
+   operator re-register planes with the long-lived per-cluster agent CAs.
+
+The replacement has new serving certificates and service account signing keys:
+tokens issued by the old control plane are invalid, and in-cluster clients
+receive new projected tokens once workers run. Kubeconfigs held in management
+(operator, change service, read API) must be refreshed for the new endpoint.
+
+## Logical export: archive contract
 
 `cmd/aep-cp-backup` uses management Organizations (cluster-scoped names) as the
 namespace allowlist, or an explicit `--organizations=acme,example` list. On aep-cp
@@ -195,8 +224,8 @@ is a target allocation, not measured evidence of meeting it.
 
 ## Not covered and acceptance blockers
 
-- UID-preserving shared-etcd tenant recovery and automatic reconciliation of
-  old/new UIDs or post-backup changes. Full scenario 8 remains unverified.
+- Automatic reconciliation of changes made after the last etcd snapshot, and
+  automatic DNS/agent cut-over to the replacement control plane.
 - Management cluster state: Organizations, ChangeRequests, CA keys, operator
   credentials, Cozystack objects and audit spool. Loss of management CA keys
   requires a separate controlled agent trust recovery, not this runbook.

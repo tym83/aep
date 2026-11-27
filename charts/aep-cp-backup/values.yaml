@@ -25,3 +25,15 @@ global:
   aepVersion: ""
   aepDigests: {}
   imageRegistry: ""
+
+# UID-preserving etcd prefix backup of the Kamaji control plane (docs/dr.md).
+etcd:
+  enabled: false
+  # aep-cp tenant namespace holding <cluster>-datastore-certificate/-config.
+  namespace: ""
+  # Kamaji TenantControlPlane name of aep-cp.
+  cluster: ""
+  endpoints: [https://etcd.tenant-root.svc:2379]
+  # Defaults to schedule and s3CredentialsSecret (which must exist in namespace).
+  schedule: ""
+  s3CredentialsSecret: ""
