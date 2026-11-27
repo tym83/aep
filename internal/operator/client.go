@@ -76,7 +76,8 @@ func (c *Cluster) apply(ctx context.Context, o *api.Organization, r string, u *u
 	u.SetLabels(labels)
 	// Create with normal API semantics to avoid adopting a racing unowned object through SSA.
 	if errors.IsNotFound(e) {
-		_, e = ri.Create(ctx, u, metav1.CreateOptions{})
+		// Name the manager so later server-side applies own every field.
+		_, e = ri.Create(ctx, u, metav1.CreateOptions{FieldManager: "aep-operator"})
 		return e
 	}
 	// Cozystack serves an aggregated API; preserve defaults and use resourceVersion updates.
@@ -113,6 +114,34 @@ func (c *Cluster) ensureNamespace(ctx context.Context, name string) error {
 	if errors.IsAlreadyExists(e) {
 		return nil
 	}
+	return e
+}
+
+// switchChartSource moves an existing HelmRelease between spec.chart and
+// spec.chartRef in one JSON patch. Flux accepts exactly one of them, and a
+// server-side apply cannot drop a field another manager still owns (objects
+// created before the operator named its manager).
+func (c *Cluster) switchChartSource(ctx context.Context, hr *unstructured.Unstructured) error {
+	want, stale := "chartRef", "chart"
+	if _, ok := hr.Object["spec"].(M)["chart"]; ok {
+		want, stale = "chart", "chartRef"
+	}
+	ri := c.resource(hr.GetAPIVersion(), "helmreleases", hr.GetNamespace())
+	old, e := ri.Get(ctx, hr.GetName(), metav1.GetOptions{})
+	if errors.IsNotFound(e) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	if _, has, _ := unstructured.NestedFieldNoCopy(old.Object, "spec", stale); !has {
+		return nil
+	}
+	patch, e := json.Marshal([]M{{"op": "remove", "path": "/spec/" + stale}, {"op": "add", "path": "/spec/" + want, "value": hr.Object["spec"].(M)[want]}})
+	if e != nil {
+		return e
+	}
+	_, e = ri.Patch(ctx, hr.GetName(), types.JSONPatchType, patch, metav1.PatchOptions{FieldManager: "aep-operator"})
 	return e
 }
 func (c *Cluster) get(ctx context.Context, av, r, ns, name string) (*unstructured.Unstructured, error) {

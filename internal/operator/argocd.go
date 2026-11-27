@@ -270,6 +270,9 @@ func (s *session) argocd(ctx context.Context) error {
 	spec["storageNamespace"] = "argocd"
 	spec["releaseName"] = "argocd"
 	spec["dependsOn"] = []any{M{"name": "aep-app-cluster-baseline"}}
+	if e = s.r.Management.switchChartSource(ctx, hr); e != nil {
+		return e
+	}
 	if e = s.r.Management.apply(ctx, s.o, "helmreleases", hr); e != nil {
 		return e
 	}
