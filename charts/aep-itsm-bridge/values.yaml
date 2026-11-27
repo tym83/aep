@@ -22,6 +22,9 @@ config:
   # moment the integration is enabled, or the bridge mirrors the whole history.
   mirrorSince: ""
   standardTemplate: ""
+  # ServiceNow sys_id of the group owning mirrored changes; normal changes
+  # cannot leave New without an assignment group.
+  assignmentGroup: ""
   companySysId: ""
   jiraEmail: ""
   services: []

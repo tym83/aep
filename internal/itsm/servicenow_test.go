@@ -270,3 +270,21 @@ func TestIREHostingReference(t *testing.T) {
 		t.Fatal("hosting dependency missing")
 	}
 }
+
+// ServiceNow keeps a normal change in New until it has an assignment group.
+func TestServiceNowSetsAssignmentGroup(t *testing.T) {
+	f := &fakeSN{}
+	s := &ServiceNow{HTTP: HTTP{BaseURL: newSNServer(t, f)}, AssignmentGroup: "group123"}
+	ref, err := s.Deliver(context.Background(), changeEvent(api.PhasePending), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.records[ref]["assignment_group"] != "group123" {
+		t.Fatalf("record %v", f.records[ref])
+	}
+	s.AssignmentGroup = "not a sys_id"
+	ref, err = s.Deliver(context.Background(), changeEvent(api.PhasePending), "")
+	if err != nil || f.records[ref]["assignment_group"] != "group123" {
+		t.Fatal("invalid assignment group overwrote the field", err)
+	}
+}
