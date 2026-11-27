@@ -197,6 +197,8 @@ Use the same registry prefix for every AEP chart:
 ```yaml
 global:
   imageRegistry: registry.example.com/aep
+  # Every AEP chart: pods pull from an authenticated mirror with this Secret.
+  imagePullSecrets: [{name: mirror-auth}]
 registrySecret: mirror-auth
 registryCASecret: mirror-ca
 ```
@@ -220,7 +222,7 @@ registry configured for Cozystack, not from this mirror.
 ```sh
 helm upgrade --install aep-operator \
   oci://registry.example.com/aep/ghcr.io/tym83/aep/charts/aep-operator \
-  --version 0.1.2 --namespace aep-system --create-namespace \
+  --version <release> --namespace aep-system --create-namespace \
   -f operator-values.yaml -f mirror-values.yaml
 ```
 

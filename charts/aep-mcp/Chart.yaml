@@ -2,5 +2,5 @@ apiVersion: v2
 name: aep-mcp
 description: Organization-scoped infrastructure evidence and authenticated alert routing
 type: application
-version: 0.1.4
+version: 0.1.5
 appVersion: "0.1.0"

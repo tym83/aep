@@ -58,6 +58,9 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       nodeSelector: {{ .Values.nodeSelector | toJson }}
       tolerations: {{ .Values.tolerations | toJson }}
+      {{- with ($.Values.global | default dict).imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
       containers:
         - name: forwarder
           image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}

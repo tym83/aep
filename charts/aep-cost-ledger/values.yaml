@@ -17,3 +17,5 @@ global:
   aepVersion: ""
   aepDigests: {}
   imageRegistry: ""
+  # Secrets to pull AEP images from a private registry mirror.
+  imagePullSecrets: []

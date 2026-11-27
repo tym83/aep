@@ -25,6 +25,8 @@ global:
   aepVersion: ""
   aepDigests: {}
   imageRegistry: ""
+  # Secrets to pull AEP images from a private registry mirror.
+  imagePullSecrets: []
 
 # UID-preserving etcd prefix backup of the Kamaji control plane (docs/dr.md).
 etcd:
