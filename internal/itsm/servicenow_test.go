@@ -7,6 +7,7 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -97,13 +98,18 @@ func (f *fakeSN) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			states = append(states, to)
-			transitions = append(transitions, []map[string]any{{"from_state": state, "to_state": to, "transition_available": !f.blocked}})
+			// Like a live instance's state field policy: Closed is offered only
+			// once the closure fields are already on the record.
+			available := !f.blocked && !(to == "3" && (rec["close_code"] == nil || rec["close_notes"] == nil))
+			transitions = append(transitions, []map[string]any{{"from_state": state, "to_state": to, "transition_available": available}})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"available_states": states, "state_label": stateLabels, "state_transitions": transitions}})
 		return
 	}
 	if r.Method == "GET" {
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": map[string]any{"sys_id": map[string]string{"value": id}, "state": map[string]string{"value": state}}})
+		// The Change Management API returns the state as a number such as -5.0.
+		number, _ := strconv.ParseFloat(state, 64)
+		_, _ = fmt.Fprintf(w, `{"result":{"sys_id":{"value":%q},"state":{"value":%.1f,"display_value":%q}}}`, id, number, stateLabels[state])
 		return
 	}
 	if r.Method != "PATCH" {
@@ -128,7 +134,11 @@ func (f *fakeSN) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if to == "3" {
-			if state != "0" || body["close_notes"] == nil || (body["close_code"] != "successful" && body["close_code"] != "unsuccessful") {
+			code, notes := rec["close_code"], rec["close_notes"]
+			if body["close_code"] != nil {
+				code, notes = body["close_code"], body["close_notes"]
+			}
+			if state != "0" || notes == nil || (code != "successful" && code != "unsuccessful") {
 				http.Error(w, "closure", 400)
 				return
 			}
