@@ -39,15 +39,19 @@ func run() error {
 	diff := flag.Bool("diff", false, "print restore differences without API writes")
 	ack := flag.Bool("acknowledge-new-uids", false, "confirm controllers and gateway are stopped and UID reconciliation is planned")
 	timeout := flag.Duration("timeout", 10*time.Minute, "operation deadline")
+	var etcd etcdFlags
+	etcd.register()
 	flag.Parse()
-	if flag.NArg() != 1 || (flag.Arg(0) != "backup" && flag.Arg(0) != "restore") {
-		return fmt.Errorf("usage: aep-cp-backup [flags] backup|restore")
+	command := flag.Arg(0)
+	known := map[string]bool{"backup": true, "restore": true, "etcd-backup": true, "etcd-restore": true}
+	if flag.NArg() != 1 || !known[command] {
+		return fmt.Errorf("usage: aep-cp-backup [flags] backup|restore|etcd-backup|etcd-restore")
 	}
-	if flag.Arg(0) == "backup" && *recipient == "" {
-		return fmt.Errorf("backup requires --age-recipient")
+	if strings.HasSuffix(command, "backup") && *recipient == "" {
+		return fmt.Errorf("%s requires --age-recipient", command)
 	}
-	if flag.Arg(0) == "restore" && *identity == "" {
-		return fmt.Errorf("restore requires --identity-file")
+	if strings.HasSuffix(command, "restore") && *identity == "" {
+		return fmt.Errorf("%s requires --identity-file", command)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -56,6 +60,12 @@ func run() error {
 	store, e := objectstore.New(*endpoint, *bucket, *prefix)
 	if e != nil {
 		return e
+	}
+	switch command {
+	case "etcd-backup":
+		return etcd.backup(ctx, store, *key, *recipient)
+	case "etcd-restore":
+		return etcd.restore(ctx, store, *key, *identity)
 	}
 	cfg, e := clientcmd.BuildConfigFromFlags("", *cp)
 	if e != nil {

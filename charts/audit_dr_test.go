@@ -1,6 +1,7 @@
 package charts
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -49,5 +50,20 @@ func TestAuditDRRestrictedPods(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEtcdBackupCronJob(t *testing.T) {
+	out, err := render(t, "aep-cp-backup", "ageRecipient=age1test", "s3Endpoint=https://s3.example", "s3Bucket=dr", "etcd.enabled=true", "etcd.namespace=tenant-aep-cp", "etcd.cluster=kubernetes-aepcp")
+	if err != nil {
+		t.Fatal(out, err)
+	}
+	for _, want := range []string{"name: test-etcd", "namespace: tenant-aep-cp", `policy.cozystack.io/allow-to-etcd: "true"`, "secretName: kubernetes-aepcp-datastore-certificate", "name: kubernetes-aepcp-datastore-config, key: DB_SCHEMA", "--etcd-prefix=/$(DB_SCHEMA)", "- etcd-backup", "automountServiceAccountToken: false"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q", want)
+		}
+	}
+	if out, err = render(t, "aep-cp-backup", "ageRecipient=age1test", "etcd.enabled=true", "etcd.namespace=ns"); err == nil {
+		t.Fatal("etcd.cluster must be required", out)
 	}
 }
