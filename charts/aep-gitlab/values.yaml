@@ -38,13 +38,12 @@ gitlab:
       password:
         secret: gitlab-postgres
         key: password
+    # Cozystack Redis certificates name the master Service, not the pod IPs
+    # Sentinel hands out, so TLS verification only succeeds through the master
+    # Service (rfrm-redis-<name>).
     redis:
-      host: mymaster # Sentinel master set, not a DNS hostname
+      host: rfrm-redis-gitlab.tenant-aep.svc
       scheme: rediss
-      sentinels:
-        - host: rfs-redis-gitlab.tenant-aep.svc
-          port: 26379
-          ssl: true
       port: 6379
       auth:
         enabled: true
@@ -53,15 +52,14 @@ gitlab:
     minio:
       enabled: false
     appConfig:
+      # A Cozystack Bucket has its own credential, so each object type gets its
+      # own connection Secret instead of the consolidated object store.
       object_store:
-        enabled: true
-        connection:
-          secret: gitlab-s3
-          key: connection
-      lfs: {bucket: gitlab-lfs}
-      artifacts: {bucket: gitlab-artifacts}
-      uploads: {bucket: gitlab-uploads}
-      packages: {bucket: gitlab-packages}
+        enabled: false
+      lfs: {enabled: true, bucket: gitlab-lfs, connection: {secret: gitlab-s3-lfs, key: connection}}
+      artifacts: {enabled: true, bucket: gitlab-artifacts, connection: {secret: gitlab-s3-artifacts, key: connection}}
+      uploads: {enabled: true, bucket: gitlab-uploads, connection: {secret: gitlab-s3-uploads, key: connection}}
+      packages: {enabled: true, bucket: gitlab-packages, connection: {secret: gitlab-s3-packages, key: connection}}
       backups:
         bucket: gitlab-backups
         tmpBucket: gitlab-backups-tmp

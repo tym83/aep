@@ -171,6 +171,9 @@ must have its own capacity, backup and recovery plan; S3 does not replace Gitaly
    endpoints/CA bundles when GitLab is on a dedicated cluster; `.svc` addresses in
    default values illustrate management-local service names only. Configure
    Postgres `sslmode` and Redis TLS according to the chart's supported settings.
+   Point Redis at the master Service `rfrm-redis-<name>` rather than Sentinel:
+   the Cozystack Redis certificate covers Service names, not the pod IPs Sentinel
+   returns.
 4. Prepare DNS, ingress class and TLS Secret; set `gitlab.global.hosts.domain` and
    `gitlab.global.ingress.class`. Supply exact endpoints and Secret names in a
    protected site values file. Install the release only after review.
@@ -184,7 +187,7 @@ The referenced Secrets are:
 |---|---|---|
 | gitlab-postgres | password | Dedicated database user's password |
 | gitlab-redis | password | Managed Redis password |
-| gitlab-s3 | connection | Rails object-store connection YAML |
+| gitlab-s3-lfs, gitlab-s3-artifacts, gitlab-s3-uploads, gitlab-s3-packages | connection | Rails object-store connection YAML for that bucket's credential |
 | gitlab-backup-s3 | config | Toolbox s3cmd configuration |
 | gitlab-keycloak | provider | OpenID Connect provider YAML |
 | gitlab-ingress-tls | tls.crt, tls.key | Public GitLab hostname TLS certificate |
