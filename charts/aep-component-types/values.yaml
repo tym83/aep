@@ -21,3 +21,8 @@ allowedWorkflows:
 buildOrganizations: []
 namespacedWorkflows:
   - aep-kaniko-builder
+# Environment pull secrets by default: the operator-delivered organization
+# registry pull credential (spec.policy.registryPullSecretRef). A missing
+# Secret only produces kubelet warnings for public images.
+imagePullSecrets:
+  - aep-registry-pull

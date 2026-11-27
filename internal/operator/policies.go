@@ -11,7 +11,7 @@ import (
 )
 
 const KyvernoChartVersion = "3.9.2" // Kyverno 1.19.2; legacy ClusterPolicy rules remain supported.
-const PolicyBundleVersion = "0.1.4"
+const PolicyBundleVersion = "0.1.5"
 
 func policyRelease(o *api.Organization, tier, name string, values M) *unstructured.Unstructured {
 	spec := M{"interval": "5m", "timeout": "10m", "releaseName": name, "targetNamespace": "kyverno", "storageNamespace": "kyverno",
@@ -51,8 +51,9 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 			"features":    M{"policyExceptions": M{"enabled": true, "namespace": "aep-system"}},
 			"rbac":        M{"roles": M{"aggregate": M{"admin": false}}},
 			"openreports": M{"enabled": false, "installCrds": false}},
-		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries), "platformNamespaces": stringsAny(append([]string{"kube-system", "kyverno", "argocd", "aep-system", "openchoreo-data-plane"}, o.Spec.Policy.PlatformNamespaces...))},
-		"app-cluster-" + tier:  {},
+		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries), "platformNamespaces": stringsAny(append([]string{"kube-system", "kyverno", "argocd", "aep-system", "openchoreo-data-plane"}, o.Spec.Policy.PlatformNamespaces...)),
+			"registryPull": M{"enabled": o.Spec.Policy.RegistryPullSecretRef != nil, "secretName": RegistryPullSecret, "organizationNamespace": o.Name}},
+		"app-cluster-" + tier: {},
 	}
 	if tier == "prod" {
 		values["app-cluster-prod"]["cosignPublicKey"] = key
@@ -74,6 +75,10 @@ func (s *session) policies(ctx context.Context) error {
 	}
 	for _, tier := range Tiers(s.o) {
 		if err := s.mirrorSecrets(ctx, TenantNamespace(s.o.Name, tier)); err != nil {
+			return err
+		}
+		// The clone source must exist before the baseline bundle generates copies.
+		if err := s.registryPull(ctx, tier); err != nil {
 			return err
 		}
 		values := policyValues(s.o, tier, key)

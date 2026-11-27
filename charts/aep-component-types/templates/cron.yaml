@@ -24,7 +24,7 @@ spec:
           - Never
           type: string
         imagePullSecrets:
-          default: []
+          default: {{ $.Values.imagePullSecrets | toJson }}
           items:
             type: string
           type: array

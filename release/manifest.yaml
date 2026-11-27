@@ -160,12 +160,12 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
   signature: required-at-publish
   version: 0.1.4
-- digest: sha256:69c3f27ab4082b0f0f24e6425803f60213d4e9a76eff2f4a4c73c59d2754b888
+- digest: sha256:da08dd70154a51487351145470bf87a449212ba86ec55fffa81503b85bcf9d77
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-component-types
   signature: required-at-publish
-  version: 0.1.1
+  version: 0.1.2
 - digest: sha256:1578f2a817f586447a56e554b25f3cfcdcfe8c80005e0d593ea84c300153a70e
   kind: chart
   layout: release/artifacts
@@ -202,7 +202,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-mcp
   signature: required-at-publish
   version: 0.1.4
-- digest: sha256:6baa8d32f8252b8d995f61b2bb32310c93b588eabd953c46bbcfa19f30061f65
+- digest: sha256:8a52e3d2683ccbe534354a5f9719eabe4d15b9ffeff1b35b1e6fb2771cc0b67f
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-operator
@@ -225,24 +225,24 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/klusterlet
   version: 1.4.0
-- digest: sha256:f0b38775cb242649873d4ec27598fa83e28f90e3a82210c7364d8f95feb1d4bc
+- digest: sha256:14c1028e1e88a51e5f7127e20dc856e7b29f0595d2dc622c3599e98acd98430f
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
   signature: required-at-publish
-  version: 0.1.4
-- digest: sha256:23c2962a88a64023c80727b40afb7758a15a8a5bfd3d44c0cf901a6eadabd973
+  version: 0.1.5
+- digest: sha256:d3ed63304ab94bdb744213b57637f1debfae931f1a1775de48dad7de015d174d
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-nonprod
   signature: required-at-publish
-  version: 0.1.4
-- digest: sha256:0c5ccbd940226817ff0a25096238fac3e491aa48e9d34bf6c71ac2ace8e769da
+  version: 0.1.5
+- digest: sha256:3083622b64acb0b751b00365cc42f810b7cf3bf12735d0589c1b1a4b6169704b
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-prod
   signature: required-at-publish
-  version: 0.1.4
+  version: 0.1.5
 - digest: sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09
   kind: image
   ref: quay.io/argoproj/argocd
@@ -338,5 +338,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: 89e431a9f6bd1e6cdddae9958922775f73197c2522e27adf35831dce229ebcb8
+inputs: f22bea3103068ded486b7fb9e62b50162c4935947ee23a79dc1bf7418c5d1dd2
 schema: 1

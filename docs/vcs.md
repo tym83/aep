@@ -141,7 +141,15 @@ The workflow plane's secret store must also expose, next to the build
 credential, the Secrets named by `storeSecrets`: `registry-push`
 (`.dockerconfigjson` of the organization's Harbor push robot) and
 `workload-publisher` (key `client-secret`). Provision the robot and the
-publisher client outside AEP. Set `argo-workflows.executor.resources` in the
+publisher client outside AEP.
+
+Environments pull from the organization's registry project with a separate
+pull robot. Store it as a `kubernetes.io/dockerconfigjson` Secret in the
+operator namespace and set `spec.policy.registryPullSecretRef`. The operator
+copies it to `aep-system/aep-registry-pull` of each tier cluster, the baseline
+bundle clones it into every OpenChoreo environment namespace of the
+organization, and the AEP component types reference it by default
+(`imagePullSecrets`). Set `argo-workflows.executor.resources` in the
 workflow plane chart so Argo's injected containers carry limits.
 
 ## Build webhooks
