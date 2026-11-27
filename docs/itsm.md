@@ -240,7 +240,7 @@ request type before enabling the bridge. No follow-up label write is used.
 | Stable change ID | `aep-<sha256(id)>` label; issue key in durable state. |
 | Current change view | Bounded summary; description is set only at creation and never overwritten. |
 | Applied / Failed / other phases | Optional `jiraTransitions` map from phase to workflow transition ID. |
-| Approval evidence | `GET /rest/servicedeskapi/request/{key}/approval`; never answered by the bot. |
+| Approval evidence | Decided steps of `GET /rest/servicedeskapi/request/{key}/approval`, plus transitions into `jiraDecisionStatuses` read from the issue changelog (author = approver); never answered by the bot. |
 | Raised alert | REST v3 issue of type `Incident`, correlated by alert-key hash. |
 | Resolved alert | Update incident and optional `jiraTransitions["alert.resolved"]`. |
 

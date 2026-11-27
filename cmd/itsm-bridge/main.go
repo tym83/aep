@@ -48,6 +48,7 @@ type config struct {
 	JiraServiceDesk  string                    `json:"jiraServiceDesk"`
 	JiraRequestType  string                    `json:"jiraRequestType"`
 	JiraTransitions  map[string]string         `json:"jiraTransitions"`
+	JiraDecisions    map[string][]string       `json:"jiraDecisionStatuses"`
 }
 
 func main() {
@@ -131,7 +132,19 @@ func run() error {
 			vendorHTTP.BasicToken = os.Getenv("ITSM_TOKEN")
 			vendorHTTP.Client = &http.Client{Timeout: 30 * time.Second, CheckRedirect: hc.CheckRedirect}
 		}
-		vendor = &itsm.Jira{HTTP: vendorHTTP, Project: cfg.JiraProject, ServiceDesk: cfg.JiraServiceDesk, RequestType: cfg.JiraRequestType, Transitions: cfg.JiraTransitions}
+		decisions := map[string]string{}
+		for decision, statuses := range cfg.JiraDecisions {
+			if decision != "approve" && decision != "reject" {
+				return errors.New("jiraDecisionStatuses keys must be approve or reject")
+			}
+			for _, status := range statuses {
+				if other, dup := decisions[status]; dup && other != decision {
+					return fmt.Errorf("Jira status %q is both approve and reject", status)
+				}
+				decisions[status] = decision
+			}
+		}
+		vendor = &itsm.Jira{HTTP: vendorHTTP, Project: cfg.JiraProject, ServiceDesk: cfg.JiraServiceDesk, RequestType: cfg.JiraRequestType, Transitions: cfg.JiraTransitions, DecisionStatuses: decisions}
 	case "webhook":
 		outSecret := []byte(os.Getenv("ITSM_OUTBOUND_HMAC_SECRET"))
 		outID := os.Getenv("ITSM_OUTBOUND_HMAC_KEY_ID")
