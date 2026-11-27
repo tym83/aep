@@ -76,10 +76,14 @@ func TestGitLabExternalServiceContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v %s", err, b)
 	}
-	for _, want := range []string{"postgres-gitlab-rw.tenant-aep.svc", "rfs-redis-gitlab.tenant-aep.svc", "rediss://", "sslmode: verify-full", "port: 26379"} {
+	for _, want := range []string{"postgres-gitlab-rw.tenant-aep.svc", "rediss://rfrm-redis-gitlab.tenant-aep.svc", "sslmode: verify-full", "gitlab-s3-lfs"} {
 		if !strings.Contains(string(b), want) {
 			t.Fatalf("missing service contract %s", want)
 		}
+	}
+	// Sentinel returns pod IPs that the Cozystack Redis certificate does not cover.
+	if strings.Contains(string(b), "26379") {
+		t.Fatal("Redis Sentinel endpoint rendered")
 	}
 	for _, extra := range [][]string{{"--set", "gitlab.global.ingress.class="}, {"--set", "postgresMajorVersion=15"}, {"--set", "gitlab.global.psql.sslMode=disable"}} {
 		if out, err := exec.Command("helm", append(append([]string{}, args...), extra...)...).CombinedOutput(); err == nil {
