@@ -56,7 +56,7 @@ var bundlePaths = []string{"crd/aep.aenix.io_serviceclaims.yaml", "app-cluster/r
 // an older operator.
 func contractRevision(org string) (string, error) {
 	h := sha256.New()
-	rules, e := json.Marshal([]any{operatorRules(), roleScopes(org)})
+	rules, e := json.Marshal([]any{operatorRules(), roleScopes(org), mirrorPullNamespaces, mirrorPullRules()})
 	if e != nil {
 		return "", e
 	}
@@ -69,6 +69,10 @@ func contractRevision(org string) (string, error) {
 		h.Write(data)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
+}
+func mirrorPullRules() []any {
+	return []any{rule("", []string{"secrets"}, []string{"create"}),
+		M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{MirrorPullSecret}, "verbs": []any{"get", "patch", "delete"}}}
 }
 func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
 	for ns, rules := range roleScopes(s.o.Name) {
@@ -87,10 +91,29 @@ func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
 	return nil
 }
 
+// mirrorPullNamespaces receive the registry mirror pull credential before the
+// charts delivered there start pulling images (openchoreo-data-plane is
+// already writable through the data plane Role).
+var mirrorPullNamespaces = []string{"kyverno", "argocd"}
+
 // installContract installs the bootstrap contract with the tier's super-admin.
 func (s *session) installContract(ctx context.Context, admin *Cluster) error {
-	for _, n := range []string{"aep-system", "openchoreo-data-plane"} {
+	for _, n := range append([]string{"aep-system", "openchoreo-data-plane"}, mirrorPullNamespaces...) {
 		if e := admin.apply(ctx, s.o, "namespaces", obj("v1", "Namespace", "", n, nil)); e != nil {
+			return e
+		}
+	}
+	// A separate Role: the Argo CD chart owns Role argocd/aep-operator.
+	for _, n := range mirrorPullNamespaces {
+		role := obj("rbac.authorization.k8s.io/v1", "Role", n, "aep-mirror-pull-writer", nil)
+		role.Object["rules"] = mirrorPullRules()
+		if e := admin.apply(ctx, s.o, "roles", role); e != nil {
+			return e
+		}
+		binding := obj("rbac.authorization.k8s.io/v1", "RoleBinding", n, "aep-mirror-pull-writer", nil)
+		binding.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "aep-mirror-pull-writer"}
+		binding.Object["subjects"] = []any{M{"kind": "ServiceAccount", "name": "aep-operator", "namespace": "aep-system"}}
+		if e := admin.apply(ctx, s.o, "rolebindings", binding); e != nil {
 			return e
 		}
 	}

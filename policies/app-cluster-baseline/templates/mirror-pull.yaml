@@ -1,0 +1,21 @@
+{{- if .Values.mirrorPullSecret }}
+# Pods created at runtime by delivered components (kgateway's Envoy proxies)
+# also pull from the authenticated registry mirror.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-mirror-pull
+spec:
+  rules:
+    - name: add-mirror-pull-secret
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [openchoreo-data-plane, argocd]
+      mutate:
+        patchStrategicMerge:
+          spec:
+            imagePullSecrets:
+              - name: {{ .Values.mirrorPullSecret }}
+{{- end }}

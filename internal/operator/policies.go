@@ -11,7 +11,7 @@ import (
 )
 
 const KyvernoChartVersion = "3.9.2" // Kyverno 1.19.2; legacy ClusterPolicy rules remain supported.
-const PolicyBundleVersion = "0.1.6"
+const PolicyBundleVersion = "0.1.7"
 
 func policyRelease(o *api.Organization, tier, name string, values M) *unstructured.Unstructured {
 	spec := M{"interval": "5m", "timeout": "10m", "releaseName": name, "targetNamespace": "kyverno", "storageNamespace": "kyverno",
@@ -81,8 +81,20 @@ func (s *session) policies(ctx context.Context) error {
 		if err := s.registryPull(ctx, tier); err != nil {
 			return err
 		}
+		if s.r.Options.mirrorPull() {
+			c, err := s.bootstrap(ctx, tier)
+			if err != nil {
+				return err
+			}
+			if err = s.deliverMirrorPull(ctx, c); err != nil {
+				return err
+			}
+		}
 		values := policyValues(s.o, tier, key)
 
+		if s.r.Options.mirrorPull() {
+			values["app-cluster-baseline"]["mirrorPullSecret"] = MirrorPullSecret
+		}
 		if argoEnabled(s.o) {
 			host, err := argoHost(s.r.Options.ArgoCDHostTemplate, s.o.Name)
 			if err != nil {
@@ -108,7 +120,7 @@ func (s *session) policies(ctx context.Context) error {
 			if err := s.r.Management.apply(ctx, s.o, "ocirepositories", source); err != nil {
 				return err
 			}
-			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, MirrorValues(name, s.r.Options.ImageRegistryMirror, values[name]))); err != nil {
+			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, s.chartValues(name, values[name]))); err != nil {
 				return err
 			}
 		}

@@ -208,6 +208,15 @@ are `--image-registry-mirror`, `--chart-registry-mirror`, `--registry-secret` an
 `--registry-ca-secret`; both mirror flags normally use the same prefix. For an HTTP chart mirror, set
 registryInsecure: true (operator --registry-insecure).
 
+When `registrySecret` is a `kubernetes.io/dockerconfigjson` Secret and an image
+mirror is set, it also authenticates image pulls in tier clusters. The operator
+copies it as `aep-mirror-pull` into `openchoreo-data-plane`, `kyverno` and
+`argocd` before the charts start (the bootstrap contract creates those
+namespaces and a Role limited to that Secret), sets each delivered chart's
+`imagePullSecrets`, and the baseline bundle adds it to pods created at runtime
+there, such as kgateway's Envoy proxies. Cozystack's own addons pull from the
+registry configured for Cozystack, not from this mirror.
+
 ```sh
 helm upgrade --install aep-operator \
   oci://registry.example.com/aep/ghcr.io/tym83/aep/charts/aep-operator \

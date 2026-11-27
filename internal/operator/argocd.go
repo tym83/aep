@@ -225,7 +225,7 @@ func (s *session) argocd(ctx context.Context) error {
 		names = append(names, p.GetName())
 	}
 	sort.Strings(names)
-	values := MirrorValues("argo-cd", opt.ImageRegistryMirror, argoValues(s.o, host, issuer, names))
+	values := s.chartValues("argo-cd", argoValues(s.o, host, issuer, names))
 	resolve := s.r.ResolveHost
 	if resolve == nil {
 		resolve = net.DefaultResolver.LookupIPAddr

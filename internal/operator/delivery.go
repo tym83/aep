@@ -22,6 +22,9 @@ func (s *session) delivery(ctx context.Context) error {
 		if e != nil {
 			return e
 		}
+		if e = s.deliverMirrorPull(ctx, c); e != nil {
+			return e
+		}
 		secret := secretObject("openchoreo-data-plane", "aep-agent-ca", data)
 		secret.Object["type"] = "kubernetes.io/tls"
 		if e = c.apply(ctx, s.o, "secrets", secret); e != nil {
@@ -55,7 +58,7 @@ func (s *session) delivery(ctx context.Context) error {
 			if ch.name == "openchoreo-data-plane" {
 				values = DataPlaneValues(s.o.Name+"-"+tier, s.gateway)
 			}
-			values = MirrorValues(ch.name, s.r.Options.ImageRegistryMirror, values)
+			values = s.chartValues(ch.name, values)
 			spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.name, "targetNamespace": "openchoreo-data-plane", "storageNamespace": "openchoreo-data-plane", "chartRef": M{"kind": "OCIRepository", "name": "aep-" + ch.name}, "kubeConfig": M{"secretRef": M{"name": "kubernetes-apps-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
 			if i > 0 {
 				spec["dependsOn"] = []any{M{"name": "aep-" + charts[i-1].name}}
