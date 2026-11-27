@@ -212,15 +212,27 @@ func (s *session) vcsReadCredentials(ctx context.Context) (map[string][]byte, er
 
 func (s *session) vcsBuildCredentials(ctx context.Context, read map[string][]byte) error {
 	v := s.o.Spec.VCS
-	// Only a reference is published on the control plane. ESO reads a dedicated
-	// management Secret through the organization's preconfigured workflow store.
-	buildName := "vcs-" + s.o.Name + "-build"
-	if e := s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, buildName, map[string][]byte{"username": []byte(vcsUsername(v.Provider, read)), "password": read["token"]})); e != nil {
+	// Only a reference is published on the control plane. ESO in the workflow
+	// cluster reads a dedicated Secret through the organization's preconfigured
+	// workflow store. Tenant clusters cannot reach the management API, so the
+	// Secret is written to aep-system of the nonprod cluster, which already
+	// holds the same read credential for Argo CD; the management copy remains
+	// for workflow planes outside the organization's clusters.
+	buildName := buildSecretName(s.o.Name)
+	data := map[string][]byte{"username": []byte(vcsUsername(v.Provider, read)), "password": read["token"]}
+	if e := s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, buildName, data)); e != nil {
+		return e
+	}
+	c, e := s.bootstrap(ctx, "nonprod")
+	if e != nil {
+		return e
+	}
+	if e = c.apply(ctx, s.o, "secrets", secretObject("aep-system", buildName, data)); e != nil {
 		return e
 	}
 	wp, e := s.cp.get(ctx, ocAPI, "workflowplanes", s.o.Name, "nonprod")
 	if e != nil {
-		return pending("VCS verified; provision organization WorkflowPlane nonprod with an ESO Kubernetes store scoped to management Secret %s", buildName)
+		return pending("VCS verified; provision organization WorkflowPlane nonprod with an ESO Kubernetes store scoped to Secret aep-system/%s of the nonprod cluster", buildName)
 	}
 	store, _, _ := unstructured.NestedString(wp.Object, "spec", "secretStoreRef", "name")
 	if store == "" {
@@ -253,3 +265,5 @@ func (r *Reconciler) claimHookReconcile(key string) bool {
 	r.hookAttempts[key] = now
 	return true
 }
+
+func buildSecretName(org string) string { return "vcs-" + org + "-build" }

@@ -38,7 +38,10 @@ func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
 	scopes := map[string][]any{
 		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"})},
 		"kube-system":           {rule("", []string{"secrets"}, []string{"list"})},
-		"aep-system":            {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}}},
+		"aep-system": {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}},
+			// Build credentials for the workflow plane's local secret store.
+			rule("", []string{"secrets"}, []string{"create"}),
+			M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{buildSecretName(s.o.Name)}, "verbs": []any{"get", "patch", "delete"}}},
 	}
 	for ns, rules := range scopes {
 		role := obj("rbac.authorization.k8s.io/v1", "Role", ns, "aep-operator", nil)

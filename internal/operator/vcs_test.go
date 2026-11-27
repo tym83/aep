@@ -138,6 +138,7 @@ func TestIntegrationCleanup(t *testing.T) {
 				{s.r.Management, helmAPI, "HelmRelease", "helmreleases", "tenant-acme-nonprod", "aep-argocd"},
 				{s.r.Management, "source.toolkit.fluxcd.io/v1", "HelmRepository", "helmrepositories", "tenant-acme-nonprod", "aep-argocd"},
 				{s.r.Management, "v1", "Secret", "secrets", "aep-system", "vcs-acme-build"}, {s.cp, ocAPI, "SecretReference", "secretreferences", "acme", "aep-corporate-vcs"},
+				{s.tiers["nonprod"], "v1", "Secret", "secrets", "aep-system", "vcs-acme-build"},
 			}
 			for _, a := range artifacts {
 				if e := a.c.apply(ctx, s.o, a.r, obj(a.av, a.kind, a.ns, a.name, nil)); e != nil {
@@ -217,9 +218,11 @@ func TestVCSReconcileSkipsBadComponents(t *testing.T) {
 	if !s.vcsVerified || hooks != 1 {
 		t.Fatal(s.vcsVerified, hooks)
 	}
-	build, e := s.r.Management.get(ctx, "v1", "secrets", "aep-system", "vcs-acme-build")
-	if e != nil || dataValue(t, build, "password") != "clone-token" {
-		t.Fatal(e)
+	for _, c := range []*Cluster{s.r.Management, s.tiers["nonprod"]} {
+		build, e := c.get(ctx, "v1", "secrets", "aep-system", "vcs-acme-build")
+		if e != nil || dataValue(t, build, "password") != "clone-token" {
+			t.Fatal(e)
+		}
 	}
 	if e = s.cp.apply(ctx, s.o, "workflowplanes", obj(ocAPI, "WorkflowPlane", "acme", "nonprod", M{"secretStoreRef": M{"name": "build-store"}})); e != nil {
 		t.Fatal(e)
