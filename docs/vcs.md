@@ -60,20 +60,46 @@ therefore rejected for GitHub/Gitea. Reconciliation never deletes remote groups.
 ## OpenChoreo credentials
 
 The operator writes a dedicated `vcs-<org>-build` Secret with `username` and
-`password` in its management namespace, and a **SecretReference only** named
-`aep-corporate-vcs` in the OpenChoreo organization namespace. GitHub installation
-tokens are refreshed on reconciliation. Do not grant developers access to
-management Secrets, Argo CD Secrets, or workflow execution namespace Secrets.
-The OpenChoreo SecretReference is protected by the operator admission policy.
-Non-operator SecretReferences cannot read any `remoteRef.key` starting with
-`vcs-`, including references with an otherwise ordinary name.
+`password` to `aep-system` of the organization's nonprod cluster and to its
+management namespace, and a **SecretReference only** named `aep-corporate-vcs`
+in the OpenChoreo organization namespace. GitHub installation tokens are
+refreshed on reconciliation. Do not grant developers access to management
+Secrets, `aep-system` or `argocd` Secrets of the nonprod cluster, or workflow
+execution namespace Secrets. The nonprod copy holds the same read credential
+that Argo CD already receives there. The OpenChoreo SecretReference is protected
+by the operator admission policy. Non-operator SecretReferences cannot read any
+`remoteRef.key` starting with `vcs-`, including references with an otherwise
+ordinary name.
 
 Provision a namespaced **WorkflowPlane `nonprod`** for the organization, with
 `spec.secretStoreRef` pointing to an ESO Kubernetes ClusterSecretStore in that
-workflow cluster. Configure that store to read only `vcs-<org>-build` in the
-operator management namespace through a dedicated read-only service account.
-This is a required infrastructure prerequisite: the operator does not create a
-workflow plane or grant cross-cluster secret-store credentials. Without the
+workflow cluster. A workflow plane in the organization's nonprod cluster reads
+the local copy; tenant clusters cannot reach the management API on Cozystack.
+Scope the store's service account to `get` on that one Secret:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: aep-vcs-reader, namespace: aep-system}
+rules:
+  - {apiGroups: [""], resources: [secrets], resourceNames: [vcs-acme-build], verbs: [get]}
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata: {name: aep-vcs}
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: aep-system
+      server:
+        caProvider: {type: ConfigMap, name: kube-root-ca.crt, key: ca.crt, namespace: aep-system}
+      auth:
+        serviceAccount: {name: aep-vcs-reader, namespace: aep-system}
+```
+
+A workflow plane outside the organization's clusters reads the management copy
+through an equivalent store. This is a required infrastructure prerequisite:
+the operator does not create a workflow plane or a secret store. Without the
 plane/store reference, `VCSReady=False/Pending` states exactly what is missing.
 Argo CD can still reconcile independently. A configured reference is not proof
 of ESO connectivity; verify ExternalSecret readiness before running builds.
