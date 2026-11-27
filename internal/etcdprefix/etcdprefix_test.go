@@ -146,3 +146,25 @@ func TestSnapshotEncryptionAndChecksum(t *testing.T) {
 		t.Fatal("relative prefix accepted")
 	}
 }
+
+func TestBatchesBoundSize(t *testing.T) {
+	big := bytes.Repeat([]byte("v"), 700<<10)
+	kvs := []KV{{Key: "a", Value: big}, {Key: "b", Value: big}, {Key: "c", Value: []byte("1")}, {Key: "huge", Value: bytes.Repeat([]byte("v"), 3<<20)}}
+	for i := 0; i < 130; i++ {
+		kvs = append(kvs, KV{Key: "k", Value: []byte("1")})
+	}
+	total := 0
+	for _, b := range batches(kvs) {
+		size := 0
+		for _, kv := range b {
+			size += len(kv.Key) + len(kv.Value)
+		}
+		if len(b) > txnOps || (len(b) > 1 && size > txnBytes) {
+			t.Fatalf("batch of %d keys, %d bytes", len(b), size)
+		}
+		total += len(b)
+	}
+	if total != len(kvs) {
+		t.Fatal(total)
+	}
+}

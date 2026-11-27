@@ -23,6 +23,8 @@ import (
 const (
 	pageSize = 500
 	txnOps   = 64
+	// Stay well below etcd's default 1.5 MiB request and 2 MiB gRPC limits.
+	txnBytes = 1 << 20
 	maxBytes = 256 << 20
 )
 
@@ -124,10 +126,9 @@ func Load(ctx context.Context, c Client, s Snapshot, target string, replace bool
 		}
 	}
 	written := 0
-	for start := 0; start < len(s.KVs); start += txnOps {
-		stop := min(start+txnOps, len(s.KVs))
-		ops := make([]clientv3.Op, 0, stop-start)
-		for _, kv := range s.KVs[start:stop] {
+	for _, batch := range batches(s.KVs) {
+		ops := make([]clientv3.Op, 0, len(batch))
+		for _, kv := range batch {
 			ops = append(ops, clientv3.OpPut(p+kv.Key, string(kv.Value)))
 		}
 		if _, err = c.Txn(ctx).Then(ops...).Commit(); err != nil {
@@ -136,6 +137,27 @@ func Load(ctx context.Context, c Client, s Snapshot, target string, replace bool
 		written += len(ops)
 	}
 	return written, nil
+}
+
+// batches groups keys into transactions bounded by count and size; a single
+// large value gets a transaction of its own.
+func batches(kvs []KV) [][]KV {
+	var out [][]KV
+	var cur []KV
+	size := 0
+	for _, kv := range kvs {
+		n := len(kv.Key) + len(kv.Value)
+		if len(cur) > 0 && (len(cur) == txnOps || size+n > txnBytes) {
+			out = append(out, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, kv)
+		size += n
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
 }
 
 // Encrypt seals a snapshot for an age X25519 recipient.
