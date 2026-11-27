@@ -1,0 +1,1 @@
+{"apiVersion":"v2","appVersion":"v0.11.0","description":"Tenant GPU inference endpoint","name":"aep-llm","type":"application","version":"0.1.3"}
