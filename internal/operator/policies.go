@@ -87,7 +87,7 @@ func (s *session) policies(ctx context.Context) error {
 				return err
 			}
 			if err = s.deliverMirrorPull(ctx, c); err != nil {
-				return err
+				return s.contractDrift(ctx, tier, err)
 			}
 		}
 		values := policyValues(s.o, tier, key)

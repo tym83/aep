@@ -292,3 +292,28 @@ func (s *session) saveOperatorCredential(ctx context.Context, name string, c *re
 	}
 	return s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, name, map[string][]byte{"kubeconfig": data, "expires": []byte(expiry.Format(time.RFC3339)), "contract": []byte(revision)}))
 }
+
+// contractDrift turns a tier's refusal into a contract reinstall. The stored
+// revision only records what the operator last installed; when the tier denies
+// an action that contract grants, the RBAC was changed or never landed, so the
+// next reconcile must reinstall it with the super-admin credential.
+func (s *session) contractDrift(ctx context.Context, tier string, err error) error {
+	if !errors.IsForbidden(err) {
+		return err
+	}
+	name := "operator-access-" + s.o.Name + "-" + tier
+	secrets := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace)
+	stored, e := secrets.Get(ctx, name, metav1.GetOptions{})
+	if e != nil {
+		return fmt.Errorf("%w; %v", err, e)
+	}
+	if stored.Labels[OwnerLabel] != string(s.o.UID) {
+		return fmt.Errorf("%w; operator credential ownership mismatch", err)
+	}
+	stored.Data["contract"] = nil
+	if _, e = secrets.Update(ctx, stored, metav1.UpdateOptions{}); e != nil {
+		return fmt.Errorf("%w; %v", err, e)
+	}
+	delete(s.tiers, tier)
+	return fmt.Errorf("%s tier denied the operator, reinstalling its bootstrap contract: %w", tier, err)
+}
