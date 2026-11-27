@@ -291,3 +291,16 @@
 
 ---
 {"apiVersion": "v1", "kind": "Service", "metadata": {"name": "spoofed-service", "namespace": "gitops-payments", "labels": {"openchoreo.dev/project": "other"}}, "spec": {"ports": [{"port": 80}]}}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Secret",
+  "metadata": {
+    "name": "build-secret",
+    "namespace": "workflows-acme",
+    "labels": {
+      "openchoreo.dev/component": "hello"
+    }
+  },
+  "type": "Opaque"
+}
