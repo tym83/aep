@@ -67,6 +67,7 @@ func run(args []string) error {
 	if cmd == "mirror" || cmd == "load" {
 		f.StringVar(&to, "to", "", "Destination registry[/prefix]")
 		f.BoolVar(&c.AllowRetag, "allow-retag", false, "Permit replacing an existing tag with different content")
+		f.IntVar(&c.Jobs, "jobs", 0, "Concurrent blob uploads per artifact; 1 eases small registry storage backends (default: library default)")
 	}
 	if cmd == "bundle" {
 		f.StringVar(&out, "out", "", "Bundle output directory")
@@ -104,6 +105,9 @@ func run(args []string) error {
 	}
 	if f.NArg() != 0 {
 		return fmt.Errorf("unexpected arguments")
+	}
+	if c.Jobs < 0 {
+		return fmt.Errorf("--jobs must not be negative")
 	}
 	if c.MaxSize < 0 {
 		return fmt.Errorf("--max-size must be positive")
