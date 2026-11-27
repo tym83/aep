@@ -47,6 +47,7 @@ func run(args []string) error {
 	var path, root, to, out, from string
 	var check, refresh, signatures bool
 	var buildVersion string
+	var skip []string
 	c := &release.Client{Keys: map[string]string{}}
 	if cmd != "load" && cmd != "publish-charts" {
 		f.StringVar(&path, "manifest", "release/manifest.yaml", "Manifest path relative to --root")
@@ -69,6 +70,12 @@ func run(args []string) error {
 	}
 	if cmd == "bundle" {
 		f.StringVar(&out, "out", "", "Bundle output directory")
+	}
+	if cmd == "mirror" || cmd == "bundle" {
+		f.Func("skip", "Artifact ref to leave out, e.g. index.docker.io/vllm/vllm-openai (repeatable)", func(s string) error {
+			skip = append(skip, s)
+			return nil
+		})
 	}
 	if cmd == "load" {
 		f.StringVar(&from, "from", "", "Bundle directory")
@@ -155,6 +162,13 @@ func run(args []string) error {
 	m, e = c.ResolveOwn(ctx, m, buildVersion)
 	if e != nil {
 		return e
+	}
+	m, skipped, e := m.Without(skip)
+	if e != nil {
+		return e
+	}
+	for _, a := range skipped {
+		fmt.Fprintf(os.Stderr, "skipped %s %s@%s: the destination will not hold it\n", a.Kind, a.Ref, a.Digest)
 	}
 	for i := range m.Artifacts {
 		if m.Artifacts[i].Layout != "" && !filepath.IsAbs(m.Artifacts[i].Layout) {

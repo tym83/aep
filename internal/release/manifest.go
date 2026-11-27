@@ -41,6 +41,36 @@ type Manifest struct {
 	Artifacts []Artifact `json:"artifacts"`
 }
 
+// Without returns the manifest minus the artifacts whose ref, with or without
+// the oci:// scheme, equals one of refs, and the artifacts left out. A ref that
+// matches nothing is an error, so a typo cannot silently mirror everything.
+func (m Manifest) Without(refs []string) (Manifest, []Artifact, error) {
+	if len(refs) == 0 {
+		return m, nil, nil
+	}
+	want := map[string]bool{}
+	for _, r := range refs {
+		want[strings.TrimPrefix(r, "oci://")] = false
+	}
+	var kept, left []Artifact
+	for _, a := range m.Artifacts {
+		r := strings.TrimPrefix(a.Ref, "oci://")
+		if _, ok := want[r]; ok {
+			want[r] = true
+			left = append(left, a)
+			continue
+		}
+		kept = append(kept, a)
+	}
+	for r, hit := range want {
+		if !hit {
+			return m, nil, fmt.Errorf("--skip %s matches no artifact in the manifest", r)
+		}
+	}
+	m.Artifacts = kept
+	return m, left, nil
+}
+
 func Read(path string) (Manifest, error) {
 	var m Manifest
 	b, e := os.ReadFile(path)

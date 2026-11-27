@@ -144,6 +144,13 @@ bin/aep-release mirror --to registry.example.com/aep --ca registry-ca.pem --key 
 Copying retains all index children, original manifest bytes, digests and version
 tags. Repeating a copy skips matching destination manifests and reuses blobs;
 an existing tag with different content fails unless --allow-retag is explicitly set.
+A rerun checks the destination before reading the source, so artifacts already
+copied cost no pulls against public registry rate limits.
+
+`--skip <ref>` (repeatable, also for `bundle`) leaves out an artifact the
+installation does not use, such as `index.docker.io/vllm/vllm-openai` when no
+organization runs `aep-llm`. Skipped artifacts are printed; a ref that matches
+nothing fails. Components that need a skipped image cannot start offline.
 
 The vendor public key for releases of this repository is
 [`release/vendor-cosign.pub`](../release/vendor-cosign.pub). Release workflows
