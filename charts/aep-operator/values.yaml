@@ -26,6 +26,10 @@ kyvernoChartURL: oci://ghcr.io/kyverno/charts/kyverno
 restoreVerification: false
 
 argocdHostTemplate: ""
+# ACME directory (for example https://acme-v02.api.letsencrypt.org/directory)
+# for the Argo CD host certificate, issued by cert-manager in the nonprod tier
+# cluster over HTTP-01. Empty keeps the ingress default certificate.
+argocdAcmeServer: ""
 vcsWebhookURL: ""
 
 # Mirror the pinned Argo CD chart for disconnected installations.

@@ -17,7 +17,10 @@ import (
 )
 
 type Options struct {
-	ArgoCDHostTemplate, ArgoCDChartURL, VCSWebhookURL                                     string
+	ArgoCDHostTemplate, ArgoCDChartURL, VCSWebhookURL string
+	// ArgoCDACMEServer, when set, makes the operator issue the Argo CD host
+	// certificate through cert-manager in the tier cluster with this ACME server.
+	ArgoCDACMEServer                                                                      string
 	RegistryInsecure                                                                      bool
 	ImageRegistryMirror, ChartRegistryMirror, RegistrySecret, RegistryCASecret            string
 	PolicyBundleRepository, KyvernoChartURL                                               string

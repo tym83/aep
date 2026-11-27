@@ -39,8 +39,9 @@ func (s *session) clusters(ctx context.Context) error {
 		ns := TenantNamespace(s.o.Name, tier)
 		spec := s.o.Spec.Tiers[tier].Cluster
 		n := spec.NodeGroups["md0"]
+		addons := tierAddons(s.o, s.r.Options, tier)
 		for _, u := range []*unstructured.Unstructured{
-			obj(appsAPI, "Kubernetes", ns, "apps", M{"version": spec.Version, "storageClass": "replicated", "addons": M{"certManager": M{"enabled": true}, "gatewayAPI": M{"enabled": true}}}),
+			obj(appsAPI, "Kubernetes", ns, "apps", M{"version": spec.Version, "storageClass": "replicated", "addons": addons}),
 			obj(appsAPI, "KubernetesNodes", ns, "apps-md0", M{"cluster": "apps", "version": spec.Version, "storageClass": "replicated", "diskSize": "20Gi", "instanceType": n.InstanceType, "minReplicas": int64(n.MinReplicas), "maxReplicas": int64(n.MaxReplicas)})} {
 			r := "kuberneteses"
 			if u.GetKind() == "KubernetesNodes" {
@@ -150,4 +151,17 @@ func (s *session) remediate(ctx context.Context, ns, name, reason string) error 
 		s.r.Recorder.Eventf(s.o, "Warning", reason, "Force-reconciling HelmRelease %s/%s", ns, name)
 	}
 	return nil
+}
+
+// tierAddons are the Cozystack addons of a tier cluster. Tenant Argo CD is
+// published through the tier ingress, proxied from the platform ingress with
+// TLS passthrough for exactly its hostname.
+func tierAddons(o *api.Organization, opt Options, tier string) M {
+	addons := M{"certManager": M{"enabled": true}, "gatewayAPI": M{"enabled": true}}
+	if tier == "nonprod" && argoEnabled(o) {
+		if host, err := argoHost(opt.ArgoCDHostTemplate, o.Name); err == nil {
+			addons["ingressNginx"] = M{"enabled": true, "exposeMethod": "Proxied", "hosts": []any{host}}
+		}
+	}
+	return addons
 }
