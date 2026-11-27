@@ -23,7 +23,7 @@ func (s *session) delivery(ctx context.Context) error {
 			return e
 		}
 		if e = s.deliverMirrorPull(ctx, c); e != nil {
-			return e
+			return s.contractDrift(ctx, tier, e)
 		}
 		secret := secretObject("openchoreo-data-plane", "aep-agent-ca", data)
 		secret.Object["type"] = "kubernetes.io/tls"
