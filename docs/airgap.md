@@ -145,6 +145,11 @@ Copying retains all index children, original manifest bytes, digests and version
 tags. Repeating a copy skips matching destination manifests and reuses blobs;
 an existing tag with different content fails unless --allow-retag is explicitly set.
 
+The vendor public key for releases of this repository is
+[`release/vendor-cosign.pub`](../release/vendor-cosign.pub). Release workflows
+sign own images and chart digests with the matching private key; obtain the
+key through a channel you trust before passing it as `--key` or `--trust-key`.
+
 ## Fully disconnected transfer
 
 On the connected machine:
