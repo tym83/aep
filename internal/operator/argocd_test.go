@@ -30,16 +30,24 @@ func TestArgoIsolation(t *testing.T) {
 	if v["createClusterRoles"] != false {
 		t.Fatal("cluster privileges enabled")
 	}
+	for _, u := range argoProjects(o, []string{"default", "payments"}) {
+		spec := u.Object["spec"].(M)
+		for _, dest := range spec["destinations"].([]any) {
+			ns := dest.(M)["namespace"].(string)
+			if !strings.HasPrefix(ns, "gitops-") {
+				t.Fatal(ns)
+			}
+		}
+		if u.GetLabels()[argoProjectLabel] != "operator" {
+			t.Fatal("AppProject is not marked as operator-owned")
+		}
+	}
 	for _, item := range v["extraObjects"].([]any) {
 		u := item.(M)
-		if u["kind"] == "AppProject" {
-			spec := u["spec"].(M)
-			for _, dest := range spec["destinations"].([]any) {
-				ns := dest.(M)["namespace"].(string)
-				if !strings.HasPrefix(ns, "gitops-") {
-					t.Fatal(ns)
-				}
-			}
+		// The chart installs Argo CD's CRDs, so a first install cannot map
+		// argoproj.io objects carried by the same release.
+		if strings.HasPrefix(u["apiVersion"].(string), "argoproj.io/") {
+			t.Fatalf("%s in chart extraObjects", u["kind"])
 		}
 		if u["kind"] == "ClusterRole" || u["kind"] == "ClusterRoleBinding" {
 			t.Fatal("cluster RBAC")

@@ -52,6 +52,66 @@ func argoProject(o *api.Organization, project string) *unstructured.Unstructured
 		"namespaceResourceBlacklist": []any{M{"group": "rbac.authorization.k8s.io", "kind": "*"}, M{"group": "argoproj.io", "kind": "*"}, M{"group": "openchoreo.dev", "kind": "*"}},
 	})
 }
+
+// argoProjectLabel marks AppProjects the operator owns and prunes.
+const argoProjectLabel = "aep.aenix.io/argocd-project"
+
+// argoProjects are applied after the Argo CD release is Ready: the chart
+// installs the AppProject CRD, so the same release cannot carry AppProjects
+// on a first install. The empty default project prevents implicit access
+// through applications without an assigned project.
+func argoProjects(o *api.Organization, projects []string) []*unstructured.Unstructured {
+	out := []*unstructured.Unstructured{}
+	for _, p := range projects {
+		out = append(out, argoProject(o, p))
+	}
+	out = append(out, obj("argoproj.io/v1alpha1", "AppProject", "argocd", "default", M{"sourceRepos": []any{}, "destinations": []any{}, "clusterResourceWhitelist": []any{}}))
+	for _, u := range out {
+		u.SetLabels(map[string]string{argoProjectLabel: "operator"})
+	}
+	return out
+}
+
+func (s *session) applyArgoProjects(ctx context.Context, c *Cluster, projects []string) error {
+	desired := map[string]bool{}
+	for _, u := range argoProjects(s.o, projects) {
+		desired[u.GetName()] = true
+		// Argo CD creates the default project itself at startup; take it over
+		// so it stays empty instead of refusing it as foreign.
+		if u.GetName() == "default" {
+			ri := c.resource(u.GetAPIVersion(), "appprojects", "argocd")
+			if live, e := ri.Get(ctx, "default", metav1.GetOptions{}); e == nil && live.GetLabels()[OwnerLabel] == "" {
+				labels := live.GetLabels()
+				if labels == nil {
+					labels = map[string]string{}
+				}
+				labels[OwnerLabel] = string(s.o.UID)
+				labels[argoProjectLabel] = "operator"
+				live.SetLabels(labels)
+				live.Object["spec"] = u.Object["spec"]
+				if _, e = ri.Update(ctx, live, metav1.UpdateOptions{}); e != nil {
+					return e
+				}
+			}
+		}
+		if e := c.apply(ctx, s.o, "appprojects", u); e != nil {
+			return e
+		}
+	}
+	live, e := c.list(ctx, "argoproj.io/v1alpha1", "appprojects", "argocd")
+	if e != nil {
+		return e
+	}
+	for i := range live {
+		if live[i].GetLabels()[argoProjectLabel] == "operator" && !desired[live[i].GetName()] {
+			if e = s.deleteObject(ctx, c, "appprojects", &live[i]); e != nil {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
 func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	objects := []any{}
 	namespaces := []string{}
@@ -66,7 +126,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 		n := obj("v1", "Namespace", "", ns, nil)
 		n.SetAnnotations(map[string]string{"helm.sh/resource-policy": "keep"})
 		n.SetLabels(map[string]string{"aep.aenix.io/organization": string(o.UID), "aep.aenix.io/argocd": "allowed", "pod-security.kubernetes.io/enforce": "restricted"})
-		objects = append(objects, n.Object, argoProject(o, p).Object)
+		objects = append(objects, n.Object)
 		role := obj("rbac.authorization.k8s.io/v1", "Role", ns, "aep-argocd", nil)
 		role.Object["rules"] = []any{
 			rule("", []string{"pods", "services", "configmaps", "secrets", "serviceaccounts", "persistentvolumeclaims", "events"}, []string{"*"}),
@@ -103,8 +163,6 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 			policy += strings.Replace(line, "g, aep-", "g, /aep-", 1) + "\n"
 		}
 	}
-	// Empty default project prevents implicit access through applications without an assigned project.
-	objects = append(objects, obj("argoproj.io/v1alpha1", "AppProject", "argocd", "default", M{"sourceRepos": []any{}, "destinations": []any{}, "clusterResourceWhitelist": []any{}}).Object)
 	// Only the existing tier operator can write the runtime credentials.
 	role := obj("rbac.authorization.k8s.io/v1", "Role", "argocd", "aep-operator", nil)
 	role.Object["rules"] = []any{rule("", []string{"secrets"}, []string{"get", "create", "patch", "delete"})}
@@ -229,6 +287,9 @@ func (s *session) argocd(ctx context.Context) error {
 	}
 	if !ready(hr) {
 		return pending("waiting for nonprod Argo CD chart Ready")
+	}
+	if e = s.applyArgoProjects(ctx, c, names); e != nil {
+		return e
 	}
 	s.o.Status.ArgoCDURL = "https://" + host
 	return nil
