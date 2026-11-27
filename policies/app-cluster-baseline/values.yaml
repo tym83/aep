@@ -11,3 +11,5 @@ registryPull:
   enabled: false
   secretName: aep-registry-pull
   organizationNamespace: ""
+# Set by the operator for an authenticated registry mirror (aep-mirror-pull).
+mirrorPullSecret: ""

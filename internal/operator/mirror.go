@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/registrymirror"
 	inventory "github.com/tym83/aep/release"
@@ -198,3 +199,53 @@ func (o Options) pinnedImage(ref string) (string, error) {
 
 const KlusterletVersion = "1.4.0"
 const KlusterletChartOCI = "oci://ghcr.io/tym83/aep/charts/klusterlet"
+
+// MirrorPullSecret is the tier copy of the registry mirror credential that
+// pods of operator-delivered charts use to pull mirrored images.
+const MirrorPullSecret = "aep-mirror-pull"
+
+// mirrorPull reports whether delivered images come from an authenticated mirror.
+func (o Options) mirrorPull() bool { return o.ImageRegistryMirror != "" && o.RegistrySecret != "" }
+
+// PullSecretValues adds the mirror pull secret to a delivered chart's pods.
+func PullSecretValues(chart string, values M) M {
+	refs := []any{M{"name": MirrorPullSecret}}
+	switch chart {
+	case "kyverno", "argo-cd", "openchoreo-data-plane":
+		setMap(values, []string{"global", "imagePullSecrets"}, refs)
+	case "kgateway":
+		values["imagePullSecrets"] = refs
+	}
+	return values
+}
+
+func (s *session) chartValues(chart string, values M) M {
+	values = MirrorValues(chart, s.r.Options.ImageRegistryMirror, values)
+	if s.r.Options.mirrorPull() {
+		values = PullSecretValues(chart, values)
+	}
+	return values
+}
+
+// deliverMirrorPull copies the mirror credential into the tier namespaces of
+// delivered charts before their pods start pulling.
+func (s *session) deliverMirrorPull(ctx context.Context, c *Cluster) error {
+	if !s.r.Options.mirrorPull() {
+		return nil
+	}
+	src, err := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, s.r.Options.RegistrySecret, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if src.Type != "kubernetes.io/dockerconfigjson" || len(src.Data[".dockerconfigjson"]) == 0 {
+		return fmt.Errorf("registry Secret %s must be kubernetes.io/dockerconfigjson to authenticate image pulls", src.Name)
+	}
+	for _, ns := range append([]string{"openchoreo-data-plane"}, mirrorPullNamespaces...) {
+		u := secretObject(ns, MirrorPullSecret, map[string][]byte{".dockerconfigjson": src.Data[".dockerconfigjson"]})
+		u.Object["type"] = "kubernetes.io/dockerconfigjson"
+		if err = c.apply(ctx, s.o, "secrets", u); err != nil {
+			return err
+		}
+	}
+	return nil
+}
