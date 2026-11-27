@@ -53,6 +53,12 @@ func argoProject(o *api.Organization, project string) *unstructured.Unstructured
 	})
 }
 
+// argoProjectAdmission denies AppProject writes by Argo CD's own service
+// accounts. argocd-server creates the default project at startup and exits if
+// it cannot, so that single creation is allowed; the operator then takes the
+// project over and keeps it empty. Updates and deletions stay denied.
+const argoProjectAdmission = "!request.userInfo.username.startsWith('system:serviceaccount:argocd:') || (request.operation == 'CREATE' && object.metadata.name == 'default')"
+
 // argoProjectLabel marks AppProjects the operator owns and prunes.
 const argoProjectLabel = "aep.aenix.io/argocd-project"
 
@@ -172,7 +178,7 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	rb.Object["subjects"] = []any{M{"kind": "ServiceAccount", "name": "aep-operator", "namespace": "aep-system"}}
 	objects = append(objects, rb.Object)
 	// Admission is independent of Argo RBAC, including the instance administrator.
-	vap := obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "aep-argocd-projects", M{"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"argoproj.io"}, "apiVersions": []any{"*"}, "resources": []any{"appprojects"}, "operations": []any{"CREATE", "UPDATE", "DELETE"}}}}, "validations": []any{M{"expression": "!request.userInfo.username.startsWith('system:serviceaccount:argocd:')", "message": "AppProjects are managed by the organization operator"}}})
+	vap := obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", "aep-argocd-projects", M{"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"argoproj.io"}, "apiVersions": []any{"*"}, "resources": []any{"appprojects"}, "operations": []any{"CREATE", "UPDATE", "DELETE"}}}}, "validations": []any{M{"expression": argoProjectAdmission, "message": "AppProjects are managed by the organization operator"}}})
 	objects = append(objects, vap.Object)
 	objects = append(objects, obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding", "", "aep-argocd-projects", M{"policyName": "aep-argocd-projects", "validationActions": []any{"Deny"}}).Object)
 	objects = append(objects, argoApplicationPolicy().Object,
