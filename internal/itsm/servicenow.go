@@ -171,6 +171,14 @@ func (s *ServiceNow) change(ctx context.Context, e Event, c Change, ref string) 
 	if target == "" {
 		return ref, nil
 	}
+	// The state field policy offers Review→Closed (and cancellation) only once
+	// the closure fields are present, so they are written before the
+	// transition is chosen rather than together with it.
+	if closure := closureFields(target, cr.Status.Phase, c); closure != nil {
+		if err := s.HTTP.Do(ctx, "PATCH", path, e.ID+"-closure", closure, nil); err != nil {
+			return ref, err
+		}
+	}
 	for range 10 {
 		var current struct {
 			Result snRecord `json:"result"`
@@ -235,21 +243,29 @@ func (s *ServiceNow) change(ctx context.Context, e Event, c Change, ref string) 
 		}
 		// The Change Management API accepts state names, unlike the Table API.
 		update := map[string]any{"state": strings.ToLower(next.Result.Labels[selected])}
-		if update["state"] == "closed" {
-			update["close_code"] = "successful"
-			if cr.Status.Phase == api.PhaseFailed {
-				update["close_code"] = "unsuccessful"
-			}
-			update["close_notes"] = ShortText(c)
-		}
-		if update["state"] == "canceled" {
-			update["close_notes"] = ShortText(c)
+		for k, v := range closureFields(update["state"].(string), cr.Status.Phase, c) {
+			update[k] = v
 		}
 		if err := s.HTTP.Do(ctx, "PATCH", path, e.ID+"-"+selected, update, nil); err != nil {
 			return ref, err
 		}
 	}
 	return ref, errors.New("ServiceNow transition limit exceeded")
+}
+
+// closureFields are the fields a change needs before it may close or cancel.
+func closureFields(target string, phase api.ChangePhase, c Change) map[string]any {
+	switch target {
+	case "closed":
+		code := "successful"
+		if phase == api.PhaseFailed {
+			code = "unsuccessful"
+		}
+		return map[string]any{"close_code": code, "close_notes": ShortText(c)}
+	case "canceled":
+		return map[string]any{"close_notes": ShortText(c)}
+	}
+	return nil
 }
 
 // Change Management fields are objects; Table API lookup fields are strings.
