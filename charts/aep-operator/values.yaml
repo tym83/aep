@@ -13,6 +13,8 @@ gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
 tenantEgressWorkaround: true
 pruneBootstrapBindings: true
 bootstrapBindingSystemClients: openchoreo-backstage-client,openchoreo-observer-resource-reader-client,openchoreo-rca-agent,openchoreo-finops-agent
+# url and realm form the OIDC issuer for tenant Argo CD even when enabled is
+# false; enabled additionally lets the operator manage realm groups.
 keycloak:
   enabled: false
   url: ""

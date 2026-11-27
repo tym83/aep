@@ -51,9 +51,14 @@ spec:
             - {{ printf "--prune-bootstrap-bindings=%t" .Values.pruneBootstrapBindings | quote }}
             - {{ printf "--bootstrap-binding-system-clients=%s" .Values.bootstrapBindingSystemClients | quote }}
             - {{ printf "--keycloak-enabled=%t" .Values.keycloak.enabled | quote }}
+            {{- /* The issuer also configures tenant Argo CD sign-in, without group management. */}}
+            {{- with .Values.keycloak.url }}
+            - {{ printf "--keycloak-url=%s" . | quote }}
+            {{- end }}
+            {{- with .Values.keycloak.realm }}
+            - {{ printf "--keycloak-realm=%s" . | quote }}
+            {{- end }}
             {{- if .Values.keycloak.enabled }}
-            - {{ printf "--keycloak-url=%s" .Values.keycloak.url | quote }}
-            - {{ printf "--keycloak-realm=%s" .Values.keycloak.realm | quote }}
             - {{ printf "--keycloak-credentials-secret=%s" .Values.keycloak.credentialsSecret | quote }}
             {{- end }}
           {{- if .Values.fleet.enabled }}
