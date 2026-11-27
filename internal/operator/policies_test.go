@@ -30,7 +30,7 @@ func TestPolicyDeliveryContract(t *testing.T) {
 			t.Fatal(values)
 		}
 		config := values["kyverno"]["config"].(M)
-		if config["excludeKyvernoNamespace"] != false || len(config["resourceFilters"].([]any)) != 1 || len(config["webhooks"].(M)["namespaceSelector"].(M)["matchExpressions"].([]any)) != 0 {
+		if config["excludeKyvernoNamespace"] != false || len(config["resourceFilters"].([]any)) != 1 || !onlyKyvernoExcluded(config["webhooks"].(M)["namespaceSelector"].(M)["matchExpressions"].([]any)) {
 			t.Fatal("engine defaults bypass namespace policies", config)
 		}
 		expected := int64(1)
@@ -260,4 +260,15 @@ func TestReservedLabelsExcludePlatformNamespaces(t *testing.T) {
 	if !strings.Contains(rule, "openchoreo-data-plane") {
 		t.Fatalf("reserved-labels must exclude platform namespaces:\n%s", rule)
 	}
+}
+
+// onlyKyvernoExcluded accepts exactly one webhook exclusion: Kyverno's own
+// namespace, without which evicted Kyverno pods cannot be readmitted.
+func onlyKyvernoExcluded(exprs []any) bool {
+	if len(exprs) != 1 {
+		return false
+	}
+	e := exprs[0].(M)
+	v, _ := e["values"].([]any)
+	return e["key"] == "kubernetes.io/metadata.name" && e["operator"] == "NotIn" && len(v) == 1 && v[0] == "kyverno"
 }
