@@ -1,0 +1,41 @@
+{{- if .Values.registryPull.enabled }}
+# The operator delivers the organization's registry pull credential to
+# aep-system; every OpenChoreo environment namespace of the organization gets a
+# synchronized copy that the AEP component types reference.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aep-registry-pull
+spec:
+  rules:
+    - name: clone-pull-secret
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              selector:
+                matchLabels:
+                  openchoreo.dev/namespace: {{ required "registryPull.organizationNamespace is required" .Values.registryPull.organizationNamespace | quote }}
+                  openchoreo.dev/managed-by: renderedrelease-controller
+      generate:
+        generateExisting: true
+        synchronize: true
+        apiVersion: v1
+        kind: Secret
+        name: {{ .Values.registryPull.secretName }}
+        namespace: "{{ "{{request.object.metadata.name}}" }}"
+        clone:
+          namespace: aep-system
+          name: {{ .Values.registryPull.secretName }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aep-registry-pull-generator
+  labels:
+    rbac.kyverno.io/aggregate-to-background-controller: "true"
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list, watch, create, update, patch, delete]
+{{- end }}

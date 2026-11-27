@@ -6,3 +6,8 @@ exceptionUsername: system:serviceaccount:aep-system:policy-exception-manager
 
 argocdHost: ""
 platformNamespaces: [kube-system, kyverno, argocd, aep-system, openchoreo-data-plane]
+# Set by the operator when spec.policy.registryPullSecretRef is configured.
+registryPull:
+  enabled: false
+  secretName: aep-registry-pull
+  organizationNamespace: ""

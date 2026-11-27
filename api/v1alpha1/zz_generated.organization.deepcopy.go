@@ -16,6 +16,10 @@ func (in *Organization) DeepCopyInto(out *Organization) {
 			out.Spec.VCS.CABundleSecretRef = &ref
 		}
 	}
+	if in.Spec.Policy.RegistryPullSecretRef != nil {
+		ref := *in.Spec.Policy.RegistryPullSecretRef
+		out.Spec.Policy.RegistryPullSecretRef = &ref
+	}
 	out.Spec.Policy.Registries = append([]string(nil), in.Spec.Policy.Registries...)
 	out.Spec.Policy.PlatformNamespaces = append([]string(nil), in.Spec.Policy.PlatformNamespaces...)
 	out.Spec.Policy.PlatformImageTrust.VendorPublicKeys = append([]string(nil), in.Spec.Policy.PlatformImageTrust.VendorPublicKeys...)

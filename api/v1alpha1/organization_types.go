@@ -65,6 +65,11 @@ type PolicySpec struct {
 	PlatformNamespaces []string           `json:"platformNamespaces,omitempty"`
 	PlatformImageTrust PlatformImageTrust `json:"platformImageTrust,omitempty"`
 	Registries         []string           `json:"registries,omitempty"`
+	// RegistryPullSecretRef names a kubernetes.io/dockerconfigjson Secret in the
+	// operator namespace (the organization's registry pull robot). The operator
+	// delivers it to every OpenChoreo environment namespace of the organization
+	// as aep-registry-pull, which the AEP component types reference.
+	RegistryPullSecretRef *SecretNameReference `json:"registryPullSecretRef,omitempty"`
 	// CosignPublicKey is an inline PEM public key, never a private signing key.
 	CosignPublicKey string `json:"cosignPublicKey,omitempty"`
 	Mode            string `json:"mode,omitempty"`

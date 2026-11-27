@@ -42,9 +42,10 @@ func roleScopes(org string) map[string][]any {
 		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"})},
 		"kube-system":           {rule("", []string{"secrets"}, []string{"list"})},
 		"aep-system": {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}},
-			// Build credentials for the workflow plane's local secret store.
+			// Build credentials for the workflow plane's local secret store and
+			// the registry pull credential that Kyverno clones into environments.
 			rule("", []string{"secrets"}, []string{"create"}),
-			M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{buildSecretName(org)}, "verbs": []any{"get", "patch", "delete"}}},
+			M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{buildSecretName(org), RegistryPullSecret}, "verbs": []any{"get", "patch", "delete"}}},
 	}
 }
 

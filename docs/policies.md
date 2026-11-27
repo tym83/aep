@@ -46,6 +46,7 @@ spec:
   policy:
     mode: audit
     registries: [harbor.example.org, 'registry.example.org:5000']
+    registryPullSecretRef: {name: acme-registry-pull}
     cosignPublicKey: |
       -----BEGIN PUBLIC KEY-----
       <organization cosign public key>
@@ -65,6 +66,14 @@ Public key rotation changes the production HelmRelease values. Sign
 existing required images with the new key before switching. `mode` only changes
 the configurable baseline rules; it cannot disable nonprod restricted security,
 OpenChoreo isolation, or production signature/digest enforcement.
+
+`registryPullSecretRef` names a `kubernetes.io/dockerconfigjson` Secret in the
+operator namespace. The operator copies it to `aep-system/aep-registry-pull` in
+each tier, and the baseline bundle's `aep-registry-pull` generate rule keeps a
+synchronized copy in every namespace labelled `openchoreo.dev/namespace=<org>`
+by OpenChoreo's release controller. Kyverno's background controller gets Secret
+write access through an aggregated ClusterRole for this. Removing the reference
+removes the tier copy and disables the rule.
 
 Cost labels are practical ownership checks, not telemetry identity: namespaces
 named `aep-system`/`openchoreo-data-plane`, marked

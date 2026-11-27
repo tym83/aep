@@ -22,8 +22,11 @@ func TestRoleScopesGrantTierBuildSecret(t *testing.T) {
 	var named bool
 	for _, r := range roleScopes("acme")["aep-system"] {
 		m := r.(M)
-		if names, ok := m["resourceNames"].([]any); ok && len(names) == 1 && names[0] == "vcs-acme-build" {
-			named = true
+		names, _ := m["resourceNames"].([]any)
+		for _, n := range names {
+			if n == "vcs-acme-build" {
+				named = true
+			}
 		}
 	}
 	if !named {
