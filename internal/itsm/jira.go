@@ -18,6 +18,8 @@ type Jira struct {
 	HTTP                              HTTP
 	Project, ServiceDesk, RequestType string
 	Transitions                       map[string]string
+	// DecisionStatuses maps a workflow status name to "approve" or "reject".
+	DecisionStatuses map[string]string
 }
 
 func (j *Jira) Deliver(ctx context.Context, e Event, ref string) (string, error) {
