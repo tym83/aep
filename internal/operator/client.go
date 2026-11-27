@@ -100,6 +100,21 @@ func (c *Cluster) apply(ctx context.Context, o *api.Organization, r string, u *u
 	_, e = ri.Patch(ctx, u.GetName(), types.ApplyPatchType, data, metav1.PatchOptions{FieldManager: "aep-operator", Force: &force})
 	return e
 }
+
+// ensureNamespace creates a namespace that may already exist without the
+// organization's ownership, e.g. created by a chart with createNamespace. The
+// operator only places objects inside it and never adopts or labels it.
+func (c *Cluster) ensureNamespace(ctx context.Context, name string) error {
+	ri := c.resource("v1", "namespaces", "")
+	if _, e := ri.Get(ctx, name, metav1.GetOptions{}); e == nil || !errors.IsNotFound(e) {
+		return e
+	}
+	_, e := ri.Create(ctx, obj("v1", "Namespace", "", name, nil), metav1.CreateOptions{})
+	if errors.IsAlreadyExists(e) {
+		return nil
+	}
+	return e
+}
 func (c *Cluster) get(ctx context.Context, av, r, ns, name string) (*unstructured.Unstructured, error) {
 	return c.resource(av, r, ns).Get(ctx, name, metav1.GetOptions{})
 }

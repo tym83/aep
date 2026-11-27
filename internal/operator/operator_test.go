@@ -348,3 +348,23 @@ func TestRenderNetworkUsesClusterLabelOfSelectorlessMirror(t *testing.T) {
 		t.Fatalf("expected two policies, got %v, %v", objs, err)
 	}
 }
+func TestEnsureNamespaceLeavesUnownedNamespace(t *testing.T) {
+	existing := obj("v1", "Namespace", "", "kyverno", nil)
+	existing.SetLabels(map[string]string{"helm.toolkit.fluxcd.io/name": "aep-kyverno"})
+	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme(), existing)
+	c := &Cluster{Dynamic: d}
+	if e := c.ensureNamespace(context.Background(), "kyverno"); e != nil {
+		t.Fatal("existing chart namespace refused:", e)
+	}
+	for _, a := range d.Actions() {
+		if a.GetVerb() != "get" {
+			t.Fatal("mutated an unowned namespace", a)
+		}
+	}
+	if e := c.ensureNamespace(context.Background(), "argocd"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := c.get(context.Background(), "v1", "namespaces", "", "argocd"); e != nil {
+		t.Fatal("missing namespace not created:", e)
+	}
+}

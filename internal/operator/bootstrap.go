@@ -98,8 +98,14 @@ var mirrorPullNamespaces = []string{"kyverno", "argocd"}
 
 // installContract installs the bootstrap contract with the tier's super-admin.
 func (s *session) installContract(ctx context.Context, admin *Cluster) error {
-	for _, n := range append([]string{"aep-system", "openchoreo-data-plane"}, mirrorPullNamespaces...) {
+	for _, n := range []string{"aep-system", "openchoreo-data-plane"} {
 		if e := admin.apply(ctx, s.o, "namespaces", obj("v1", "Namespace", "", n, nil)); e != nil {
+			return e
+		}
+	}
+	// Kyverno and Argo CD charts create their namespaces themselves.
+	for _, n := range mirrorPullNamespaces {
+		if e := admin.ensureNamespace(ctx, n); e != nil {
 			return e
 		}
 	}
