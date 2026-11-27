@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
 
 	api "github.com/tym83/aep/api/v1alpha1"
@@ -265,6 +267,11 @@ func (v *snValue) UnmarshalJSON(raw []byte) error {
 		d := json.NewDecoder(bytes.NewReader(b))
 		d.UseNumber()
 		if d.Decode(&n) == nil {
+			// Integral numbers keep their integer spelling: the API returns the
+			// state as -5.0 while state labels and transitions use "-5".
+			if f, err := strconv.ParseFloat(n.String(), 64); err == nil && f == math.Trunc(f) && math.Abs(f) < 1e15 {
+				return strconv.FormatInt(int64(f), 10), true
+			}
 			return n.String(), true
 		}
 		return "", false
