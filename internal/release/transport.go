@@ -29,7 +29,9 @@ type Client struct {
 	WorkDir          string
 	MaxSize          int64
 	CA, Key          string
-	transport        http.RoundTripper
+	// Jobs bounds concurrent blob uploads per artifact; zero keeps the library default.
+	Jobs      int
+	transport http.RoundTripper
 }
 
 func (c *Client) Init() error {
@@ -56,12 +58,16 @@ func (c *Client) options(ctx context.Context) []remote.Option {
 	if base == nil {
 		base = remote.DefaultTransport
 	}
-	return []remote.Option{
+	opts := []remote.Option{
 		remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain),
 		remote.WithTransport(registryTransport{base, c.InsecureRegistry}),
 		remote.WithRetryBackoff(registryBackoff),
 		remote.WithRetryStatusCodes(http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout),
 	}
+	if c.Jobs > 0 {
+		opts = append(opts, remote.WithJobs(c.Jobs))
+	}
+	return opts
 }
 
 // registryBackoff rides out public registry rate limits such as ECR Public's

@@ -152,6 +152,9 @@ installation does not use, such as `index.docker.io/vllm/vllm-openai` when no
 organization runs `aep-llm`. Skipped artifacts are printed; a ref that matches
 nothing fails. Components that need a skipped image cannot start offline.
 
+`--jobs 1` uploads one blob at a time, for registries whose storage backend
+cannot absorb parallel multi-gigabyte writes.
+
 The vendor public key for releases of this repository is
 [`release/vendor-cosign.pub`](../release/vendor-cosign.pub). Release workflows
 sign own images and chart digests with the matching private key; obtain the
