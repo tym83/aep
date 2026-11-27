@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -55,9 +56,18 @@ func (c *Client) options(ctx context.Context) []remote.Option {
 	if base == nil {
 		base = remote.DefaultTransport
 	}
-	opts := []remote.Option{remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithTransport(registryTransport{base, c.InsecureRegistry})}
-	return opts
+	return []remote.Option{
+		remote.WithContext(ctx), remote.WithAuthFromKeychain(authn.DefaultKeychain),
+		remote.WithTransport(registryTransport{base, c.InsecureRegistry}),
+		remote.WithRetryBackoff(registryBackoff),
+		remote.WithRetryStatusCodes(http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout),
+	}
 }
+
+// registryBackoff rides out public registry rate limits such as ECR Public's
+// anonymous quota, which the library's default of three quick retries does not.
+var registryBackoff = remote.Backoff{Duration: 2 * time.Second, Factor: 2, Jitter: 0.2, Steps: 8, Cap: time.Minute}
+
 func (c *Client) ref(s string) (name.Reference, error) {
 	opts := []name.Option{}
 	r, err := name.ParseReference(strings.TrimPrefix(s, "oci://"))
@@ -192,6 +202,13 @@ func (c *Client) Mirror(ctx context.Context, m Manifest, to string) error {
 		}
 	}
 	for _, a := range m.Artifacts {
+		done, e := c.mirrored(ctx, a, to)
+		if e != nil {
+			return e
+		}
+		if done {
+			continue
+		}
 		var sig v1.Image
 		if a.Signature != "" {
 			d, e := c.fetch(ctx, a, true)
@@ -243,6 +260,31 @@ func (c *Client) Mirror(ctx context.Context, m Manifest, to string) error {
 		}
 	}
 	return nil
+}
+
+// mirrored reports whether the destination already holds the artifact and its
+// signature at the expected digests, so a rerun does not pull them from the
+// source again. Digests address content, so a match is the verified artifact.
+func (c *Client) mirrored(ctx context.Context, a Artifact, to string) (bool, error) {
+	check := func(signature bool, digest string) (bool, error) {
+		dst, e := c.destination(a, to, signature)
+		if e != nil {
+			return false, e
+		}
+		d, e := remote.Head(dst, c.options(ctx)...)
+		if notFound(e) {
+			return false, nil
+		}
+		if e != nil {
+			return false, e
+		}
+		return d.Digest.String() == digest, nil
+	}
+	ok, e := check(false, a.Digest)
+	if !ok || e != nil || a.Signature == "" {
+		return ok, e
+	}
+	return check(true, a.Signature)
 }
 
 type registryTransport struct {

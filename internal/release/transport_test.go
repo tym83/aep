@@ -427,3 +427,29 @@ func TestResolveOwnBuild(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMirrorRerunSkipsCopiedArtifacts(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "charts", "example")
+	os.MkdirAll(filepath.Join(dir, "templates"), 0755)
+	os.WriteFile(filepath.Join(dir, "Chart.yaml"), []byte("apiVersion: v2\nname: example\nversion: 1.0.0\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "templates", "cm.yaml"), []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: example\n"), 0644)
+	a, e := PackageChart(root, dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	a.Layout = filepath.Join(root, a.Layout)
+	server := httptest.NewServer(registry.New())
+	defer server.Close()
+	to := strings.TrimPrefix(server.URL, "http://")
+	c := &Client{InsecureRegistry: to}
+	m := Manifest{Schema: 1, Artifacts: []Artifact{a}}
+	if e = c.Mirror(context.Background(), m, to); e != nil {
+		t.Fatal(e)
+	}
+	// The source is gone, as when a public registry rate-limits a rerun.
+	m.Artifacts[0].Layout = filepath.Join(root, "missing")
+	if e = c.Mirror(context.Background(), m, to); e != nil {
+		t.Fatal("rerun pulled an artifact the mirror already holds:", e)
+	}
+}
