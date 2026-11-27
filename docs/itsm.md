@@ -133,6 +133,10 @@ Use a separate OAuth application/integration identity for each organization.
 Enable the instance's client-credentials grant and configure the application
 user; the token endpoint is `/oauth_token.do` ([client credentials workflow](https://www.servicenow.com/docs/r/fr-FR/platform-security/authentication/client-credentials-grant-workflow.html)).
 
+Set `config.assignmentGroup` to the sys_id of the group that owns mirrored
+changes: ServiceNow's state field policy keeps a normal change in New until it
+has an assignment group, so without it the bridge cannot move the change.
+
 Grant the minimum ACLs needed for `change_request` read/create/update and
 `sysapproval_approver` read. IRE documents the `itil` or `asset` role, and Event
 Management requires `evt_mgmt_integration`; validate all additional scoped-app

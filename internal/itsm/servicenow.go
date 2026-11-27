@@ -15,6 +15,9 @@ import (
 type ServiceNow struct {
 	HTTP             HTTP
 	StandardTemplate string
+	// AssignmentGroup is the sys_id of the group that owns mirrored changes.
+	// Normal changes cannot leave New without one.
+	AssignmentGroup string
 }
 
 func (s *ServiceNow) Deliver(ctx context.Context, e Event, ref string) (string, error) {
@@ -122,6 +125,9 @@ func (s *ServiceNow) change(ctx context.Context, e Event, c Change, ref string) 
 
 	base := "/api/sn_chg_rest/change/" + string(cr.Spec.Model)
 	fields := map[string]any{"correlation_id": correlation, "short_description": bounded("AEP "+c.ID+" "+string(cr.Spec.Operation), 160), "description": ShortText(c)}
+	if validID(s.AssignmentGroup) {
+		fields["assignment_group"] = s.AssignmentGroup
+	}
 	if cr.Spec.Window != nil {
 		fields["start_date"] = cr.Spec.Window.Start.UTC().Format("2006-01-02 15:04:05")
 		fields["end_date"] = cr.Spec.Window.End.UTC().Format("2006-01-02 15:04:05")

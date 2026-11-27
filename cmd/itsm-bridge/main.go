@@ -28,6 +28,7 @@ import (
 type config struct {
 	CompanyID        string                    `json:"companySysId"`
 	StandardTemplate string                    `json:"standardTemplate"`
+	AssignmentGroup  string                    `json:"assignmentGroup"`
 	JiraEmail        string                    `json:"jiraEmail"`
 	Organization     string                    `json:"organization"`
 	ChangeNamespace  string                    `json:"changeNamespace"`
@@ -115,7 +116,7 @@ func run() error {
 		if cfg.ClientID == "" || os.Getenv("ITSM_CLIENT_SECRET") == "" {
 			return errors.New("ServiceNow client credentials required")
 		}
-		vendor = &itsm.ServiceNow{StandardTemplate: cfg.StandardTemplate, HTTP: itsm.HTTP{BaseURL: cfg.VendorURL, Client: itsm.OAuthClient(ctx, cfg.TokenURL, cfg.ClientID, os.Getenv("ITSM_CLIENT_SECRET"))}}
+		vendor = &itsm.ServiceNow{StandardTemplate: cfg.StandardTemplate, AssignmentGroup: cfg.AssignmentGroup, HTTP: itsm.HTTP{BaseURL: cfg.VendorURL, Client: itsm.OAuthClient(ctx, cfg.TokenURL, cfg.ClientID, os.Getenv("ITSM_CLIENT_SECRET"))}}
 	case "jira":
 		if cfg.SyncCMDB {
 			return errors.New("Jira Assets sync is not implemented; disable syncCmdb")
