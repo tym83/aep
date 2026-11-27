@@ -171,7 +171,9 @@ func argoValues(o *api.Organization, host, issuer string, projects []string) M {
 	}
 	// Only the existing tier operator can write the runtime credentials.
 	role := obj("rbac.authorization.k8s.io/v1", "Role", "argocd", "aep-operator", nil)
-	role.Object["rules"] = []any{rule("", []string{"secrets"}, []string{"get", "create", "patch", "delete"})}
+	role.Object["rules"] = []any{rule("", []string{"secrets"}, []string{"get", "create", "patch", "delete"}),
+		// The operator applies and prunes its AppProjects after the chart is Ready.
+		rule("argoproj.io", []string{"appprojects"}, []string{"get", "list", "create", "update", "patch", "delete"})}
 	objects = append(objects, role.Object)
 	rb := obj("rbac.authorization.k8s.io/v1", "RoleBinding", "argocd", "aep-operator", nil)
 	rb.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": "aep-operator"}
