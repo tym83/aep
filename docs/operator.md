@@ -139,6 +139,9 @@ for future accounting integrations, not billing implementation.
 4. Bootstrap a tier-local `aep-system/aep-operator` SA, scoped RBAC, the embedded
    ServiceClaim CRD, bridge RBAC/admission and agent ClusterRole. Only bootstrap
    uses `super-admin.svc`. Subsequent operations and token renewals use the SA.
+   The credential Secret records the contract revision; when an upgraded
+   operator ships a different contract, it reinstalls it once with
+   `super-admin.svc`.
    Its ClusterRole only lists Nodes and ServiceClaims; namespace Roles handle
    data-plane Secrets/ConfigMaps, listing kube-system bootstrap tokens and issuing
    tokens for the two named SAs. Credentials remain on management in owned Secrets.

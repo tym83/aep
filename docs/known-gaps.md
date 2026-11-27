@@ -13,7 +13,7 @@
 
 - **Admin kubeconfig withholding is an upstream dependency.** Cozystack must expose
   `withholdAdminKubeconfig` to trusted organization provisioning. The operator
-  uses super-admin only for the initial app-cluster bootstrap, then scoped SA
+  uses super-admin only for the app-cluster bootstrap and contract upgrades, then scoped SA
   tokens. Flux remote HelmReleases still use `super-admin.svc` as required by the
   current Cozystack delivery contract; hiding it from tenant users remains pending.
 - **Agent CA private key resides in the application cluster.** The verified
