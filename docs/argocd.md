@@ -37,10 +37,14 @@ emits `uniqueItems`.
 Set operator chart `argocdHostTemplate`, for example
 `argocd.{{.Organization}}.nonprod.example.org` (binary flag
 `--argocd-host-template`). Only `Organization` and `Tier` are template inputs.
-Use a hostname allowed by the tier's Cozystack domain policy. DNS and TLS must
-be provisioned for that hostname on the tier ingress; the chart uses nginx,
-HTTPS upstream and its default TLS certificate. No new Gateway API or
-cert-manager installation is attempted.
+Use a hostname allowed by the tier's Cozystack domain policy and point its DNS
+at the platform ingress. With Argo CD enabled, the operator turns on the
+nonprod tier cluster's `ingressNginx` addon in `Proxied` mode for exactly that
+hostname, so the platform ingress passes TLS through to the tier ingress.
+Set operator chart `argocdAcmeServer` (binary flag `--argocd-acme-server`) to an
+ACME directory to have cert-manager in the tier cluster issue the certificate
+over HTTP-01 (ClusterIssuer `aep-argocd-acme`); otherwise the tier ingress
+serves its default certificate.
 
 Configure the existing Keycloak URL and realm. In that realm, provision a
 confidential client `aep-<organization>-argocd`, authorization-code flow,

@@ -235,6 +235,7 @@ func (s *session) argocd(ctx context.Context) error {
 		return e
 	}
 	values["extraObjects"] = append(values["extraObjects"].([]any), network.Object)
+	argoTLS(values, opt.ArgoCDACMEServer)
 	oidc, err := s.r.Management.Kube.CoreV1().Secrets(opt.Namespace).Get(ctx, "argocd-"+s.o.Name+"-oidc", metav1.GetOptions{})
 	if err == nil && len(oidc.Data["rootCA"]) > 0 {
 		cm := values["configs"].(M)["cm"].(M)
@@ -367,4 +368,15 @@ func argoDelivery(o *api.Organization, ns string, opt Options, values M) (*unstr
 		spec["chart"] = M{"spec": M{"chart": "argo-cd", "version": ArgoCDChartVersion, "sourceRef": M{"kind": "HelmRepository", "name": "aep-argocd"}}}
 	}
 	return source, hr, nil
+}
+
+// argoTLS issues the Argo CD host certificate with cert-manager in the tier
+// cluster (HTTP-01 through the tier ingress) when an ACME server is configured.
+func argoTLS(values M, acmeServer string) {
+	if acmeServer == "" {
+		return
+	}
+	issuer := obj("cert-manager.io/v1", "ClusterIssuer", "", "aep-argocd-acme", M{"acme": M{"server": acmeServer, "privateKeySecretRef": M{"name": "aep-argocd-acme"}, "solvers": []any{M{"http01": M{"ingress": M{"ingressClassName": "nginx"}}}}}})
+	values["extraObjects"] = append(values["extraObjects"].([]any), issuer.Object)
+	values["server"].(M)["ingress"].(M)["annotations"].(M)["cert-manager.io/cluster-issuer"] = "aep-argocd-acme"
 }
