@@ -19,6 +19,9 @@ spec:
         runAsGroup: 65532
         fsGroup: 65532
         seccompProfile: {type: RuntimeDefault}
+      {{- with ($.Values.global | default dict).imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
       containers:
         - name: bridge
           image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}

@@ -106,6 +106,11 @@ func (s *session) bridges(ctx context.Context) error {
 			return err
 		}
 		dep := obj("apps/v1", "Deployment", ns, name, M{"replicas": int64(1), "selector": M{"matchLabels": labels}, "template": M{"metadata": M{"labels": labels, "annotations": M{"aep.aenix.io/policy-hash": policy.Hash(M{"policy": string(data)})}}, "spec": M{"serviceAccountName": name, "securityContext": M{"runAsNonRoot": true, "seccompProfile": M{"type": "RuntimeDefault"}}, "containers": []any{M{"name": "bridge", "image": registrymirror.Rewrite(bridgeImage, s.r.Options.ImageRegistryMirror), "securityContext": M{"allowPrivilegeEscalation": false, "readOnlyRootFilesystem": true, "capabilities": M{"drop": []any{"ALL"}}}, "args": stringsAny(args), "volumeMounts": []any{M{"name": "credentials", "mountPath": "/credentials", "readOnly": true}, M{"name": "policy", "mountPath": "/policy", "readOnly": true}}, "readinessProbe": M{"httpGet": M{"path": "/readyz", "port": int64(8081)}}, "resources": M{"requests": M{"cpu": "50m", "memory": "64Mi"}, "limits": M{"memory": "256Mi"}}}}, "volumes": []any{M{"name": "credentials", "secret": M{"secretName": name}}, M{"name": "policy", "configMap": M{"name": name}}}}}})
+		// The bridge pulls from the authenticated mirror in the operator namespace.
+		if s.r.Options.mirrorPull() {
+			spec := dep.Object["spec"].(M)["template"].(M)["spec"].(M)
+			spec["imagePullSecrets"] = []any{M{"name": s.r.Options.RegistrySecret}}
+		}
 		if e = s.r.Management.apply(ctx, s.o, "deployments", dep); e != nil {
 			return e
 		}

@@ -22,6 +22,9 @@ spec:
         runAsGroup: 10001
         fsGroup: 10001
         seccompProfile: {type: RuntimeDefault}
+      {{- with ($.Values.global | default dict).imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
       containers:
         - name: inference
           image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")))) | quote }}

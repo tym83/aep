@@ -1,6 +1,6 @@
 apiVersion: v2
 name: aep-llm
 description: Tenant GPU inference endpoint
-version: 0.1.2
+version: 0.1.3
 appVersion: v0.11.0
 type: application

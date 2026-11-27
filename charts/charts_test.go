@@ -233,6 +233,17 @@ func TestMirrorAllCharts(t *testing.T) {
 					t.Fatalf("public reference in %s: %s", chart, out)
 				}
 			}
+			// Own workloads must be able to pull from an authenticated mirror.
+			if strings.HasPrefix(chart, "aep-") && chart != "aep-gitlab" && chart != "aep-builds" && len(images) > 0 {
+				withSecret, err := render(t, chart, append(values, "global.imageRegistry=mirror.local/cache", "global.imagePullSecrets[0].name=mirror-auth")...)
+				if err != nil {
+					t.Fatal(withSecret, err)
+				}
+				pods := strings.Count(withSecret, "containers:")
+				if pods == 0 || strings.Count(withSecret, `imagePullSecrets: [{"name":"mirror-auth"}]`) != pods {
+					t.Fatalf("%s: every pod spec needs the mirror pull secret", chart)
+				}
+			}
 		})
 	}
 }

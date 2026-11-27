@@ -52,6 +52,9 @@ spec:
             seccompProfile: {type: RuntimeDefault}
           nodeSelector: {{ .Values.nodeSelector | toJson }}
           tolerations: {{ .Values.tolerations | toJson }}
+          {{- with ($.Values.global | default dict).imagePullSecrets }}
+          imagePullSecrets: {{ toJson . }}
+          {{- end }}
           containers:
             - name: backup
               image: {{ include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.image))) | quote }}

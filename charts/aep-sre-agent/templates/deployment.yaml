@@ -26,6 +26,9 @@ spec:
         runAsGroup: 12000
         fsGroup: 12000
         seccompProfile: {type: RuntimeDefault}
+      {{- with ($.Values.global | default dict).imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
       containers:
         - name: sre-agent
           image: {{ include "aep.mirror" (dict "root" . "ref" (printf "%s%s" .Values.image.repository (ternary (printf "@%s" .Values.image.digest) (printf ":%s" .Values.image.tag) (ne .Values.image.digest "")))) | quote }}

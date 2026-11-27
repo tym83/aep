@@ -27,3 +27,5 @@ networkPolicy:
 # Mirror prefix; upstream registry hosts are retained as path components.
 global:
   imageRegistry: ""
+  # Secrets to pull AEP images from a private registry mirror.
+  imagePullSecrets: []

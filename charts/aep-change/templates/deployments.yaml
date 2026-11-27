@@ -22,6 +22,9 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         seccompProfile: {type: RuntimeDefault}
+      {{- with ($.Values.global | default dict).imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
       containers:
         - name: change-{{ $component }}
           image: {{ include "aep.mirror" (dict "root" $ "ref" (include "aep.ownImage" (dict "root" $ "image" (dict "repository" $settings.repository "tag" $.Values.image.tag "digest" $settings.digest)))) | quote }}
