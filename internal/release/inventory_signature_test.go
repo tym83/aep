@@ -180,3 +180,24 @@ func TestPublishRequirementPreservesStrictTransfers(t *testing.T) {
 		})
 	}
 }
+
+func TestDiscoverSignaturesToleratesDeniedOptionalLookups(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"errors":[{"code":"DENIED","message":"requested access to the resource is denied"}]}`, http.StatusForbidden)
+	}))
+	defer s.Close()
+	host := strings.TrimPrefix(s.URL, "http://")
+	c := &Client{InsecureRegistry: host}
+	if err := c.Init(); err != nil {
+		t.Fatal(err)
+	}
+	digest := "sha256:" + strings.Repeat("b", 64)
+	optional := Manifest{Schema: 1, Artifacts: []Artifact{{Kind: "chart", Ref: "oci://" + host + "/charts/layout-only", Version: "1.4.0", Digest: digest}}}
+	if err := c.DiscoverSignatures(context.Background(), &optional); err != nil || optional.Artifacts[0].Signature != "" {
+		t.Fatal("an unpublished optional artifact must not fail discovery", err)
+	}
+	required := Manifest{Schema: 1, Artifacts: []Artifact{{Kind: "chart", Ref: "oci://" + host + "/charts/own", Version: "1.0.0", Digest: digest, Signature: SignatureRequiredAtPublish}}}
+	if err := c.DiscoverSignatures(context.Background(), &required); err == nil {
+		t.Fatal("a denied lookup of a required signature must fail")
+	}
+}

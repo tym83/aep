@@ -56,6 +56,12 @@ func (c *Client) DiscoverSignatures(ctx context.Context, m *Manifest) error {
 			return fmt.Errorf("resolve build placeholders before discovering signatures")
 		}
 		if err := c.discoverSignature(ctx, &m.Artifacts[i]); err != nil {
+			// Optional signatures of layout-only artifacts (never published,
+			// such as repackaged upstream charts) are simply absent; anonymous
+			// registries answer such lookups with an access denial.
+			if m.Artifacts[i].Signature != SignatureRequiredAtPublish && denied(err) {
+				continue
+			}
 			return err
 		}
 	}

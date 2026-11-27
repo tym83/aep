@@ -69,6 +69,10 @@ func (c *Client) ref(s string) (name.Reference, error) {
 	}
 	return name.ParseReference(strings.TrimPrefix(s, "oci://"), opts...)
 }
+func denied(e error) bool {
+	var te *transport.Error
+	return errors.As(e, &te) && (te.StatusCode == http.StatusUnauthorized || te.StatusCode == http.StatusForbidden)
+}
 func notFound(e error) bool {
 	var te *transport.Error
 	return errors.As(e, &te) && te.StatusCode == http.StatusNotFound
