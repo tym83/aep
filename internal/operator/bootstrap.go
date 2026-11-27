@@ -3,7 +3,10 @@ package operator
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/tym83/aep/config"
 	"io"
@@ -34,16 +37,40 @@ func operatorRules() []any {
 		rule("aep.aenix.io", []string{"serviceclaims"}, []string{"list"}),
 	}
 }
-func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
-	scopes := map[string][]any{
+func roleScopes(org string) map[string][]any {
+	return map[string][]any{
 		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"})},
 		"kube-system":           {rule("", []string{"secrets"}, []string{"list"})},
 		"aep-system": {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}},
 			// Build credentials for the workflow plane's local secret store.
 			rule("", []string{"secrets"}, []string{"create"}),
-			M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{buildSecretName(s.o.Name)}, "verbs": []any{"get", "patch", "delete"}}},
+			M{"apiGroups": []any{""}, "resources": []any{"secrets"}, "resourceNames": []any{buildSecretName(org)}, "verbs": []any{"get", "patch", "delete"}}},
 	}
-	for ns, rules := range scopes {
+}
+
+var bundlePaths = []string{"crd/aep.aenix.io_serviceclaims.yaml", "app-cluster/rbac.yaml", "app-cluster/admission.yaml"}
+
+// contractRevision identifies the bootstrap contract installed in a tier
+// cluster, so a changed contract is reinstalled on clusters bootstrapped by
+// an older operator.
+func contractRevision(org string) (string, error) {
+	h := sha256.New()
+	rules, e := json.Marshal([]any{operatorRules(), roleScopes(org)})
+	if e != nil {
+		return "", e
+	}
+	h.Write(rules)
+	for _, path := range bundlePaths {
+		data, e := config.Bundle.ReadFile(path)
+		if e != nil {
+			return "", e
+		}
+		h.Write(data)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], nil
+}
+func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
+	for ns, rules := range roleScopes(s.o.Name) {
 		role := obj("rbac.authorization.k8s.io/v1", "Role", ns, "aep-operator", nil)
 		role.Object["rules"] = rules
 		if e := c.apply(ctx, s.o, "roles", role); e != nil {
@@ -58,12 +85,43 @@ func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
 	}
 	return nil
 }
+
+// installContract installs the bootstrap contract with the tier's super-admin.
+func (s *session) installContract(ctx context.Context, admin *Cluster) error {
+	for _, n := range []string{"aep-system", "openchoreo-data-plane"} {
+		if e := admin.apply(ctx, s.o, "namespaces", obj("v1", "Namespace", "", n, nil)); e != nil {
+			return e
+		}
+	}
+	if e := s.bundle(ctx, admin); e != nil {
+		return e
+	}
+	if e := admin.apply(ctx, s.o, "serviceaccounts", obj("v1", "ServiceAccount", "aep-system", "aep-operator", nil)); e != nil {
+		return e
+	}
+	role := obj("rbac.authorization.k8s.io/v1", "ClusterRole", "", "aep-operator", nil)
+	role.Object["rules"] = operatorRules()
+	if e := admin.apply(ctx, s.o, "clusterroles", role); e != nil {
+		return e
+	}
+	binding := obj("rbac.authorization.k8s.io/v1", "ClusterRoleBinding", "", "aep-operator", nil)
+	binding.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "aep-operator"}
+	binding.Object["subjects"] = []any{M{"kind": "ServiceAccount", "name": "aep-operator", "namespace": "aep-system"}}
+	if e := admin.apply(ctx, s.o, "clusterrolebindings", binding); e != nil {
+		return e
+	}
+	return s.bootstrapRoles(ctx, admin)
+}
 func (s *session) bootstrap(ctx context.Context, tier string) (*Cluster, error) {
 	if c := s.tiers[tier]; c != nil {
 		return c, nil
 	}
 	ns := TenantNamespace(s.o.Name, tier)
 	credentialName := "operator-access-" + s.o.Name + "-" + tier
+	revision, err := contractRevision(s.o.Name)
+	if err != nil {
+		return nil, err
+	}
 	stored, err := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, credentialName, metav1.GetOptions{})
 	if err == nil {
 		if stored.Labels[OwnerLabel] != string(s.o.UID) {
@@ -80,6 +138,18 @@ func (s *session) bootstrap(ctx context.Context, tier string) (*Cluster, error) 
 		expires, e := time.Parse(time.RFC3339, string(stored.Data["expires"]))
 		if e != nil {
 			return nil, e
+		}
+		if string(stored.Data["contract"]) != revision {
+			admin, e := FromSecret(ctx, s.r.Management, ns+"/kubernetes-apps-admin-kubeconfig")
+			if e != nil {
+				return nil, e
+			}
+			if e = s.installContract(ctx, admin); e != nil {
+				return nil, e
+			}
+			if e = s.saveOperatorCredential(ctx, credentialName, cfg, expires); e != nil {
+				return nil, e
+			}
 		}
 		if time.Until(expires) < 12*time.Hour {
 			token, expiry, e := requestToken(ctx, c, "aep-operator")
@@ -101,35 +171,12 @@ func (s *session) bootstrap(ctx context.Context, tier string) (*Cluster, error) 
 	if !errors.IsNotFound(err) {
 		return nil, err
 	}
-	// Super-admin is used only to install the bootstrap contract and mint the initial operator token.
+	// Super-admin is used only to install the bootstrap contract (also when it changes) and mint the initial operator token.
 	admin, e := FromSecret(ctx, s.r.Management, ns+"/kubernetes-apps-admin-kubeconfig")
 	if e != nil {
 		return nil, e
 	}
-	for _, n := range []string{"aep-system", "openchoreo-data-plane"} {
-		if e = admin.apply(ctx, s.o, "namespaces", obj("v1", "Namespace", "", n, nil)); e != nil {
-			return nil, e
-		}
-	}
-	if e = s.bundle(ctx, admin); e != nil {
-		return nil, e
-	}
-	sa := obj("v1", "ServiceAccount", "aep-system", "aep-operator", nil)
-	if e = admin.apply(ctx, s.o, "serviceaccounts", sa); e != nil {
-		return nil, e
-	}
-	role := obj("rbac.authorization.k8s.io/v1", "ClusterRole", "", "aep-operator", nil)
-	role.Object["rules"] = operatorRules()
-	if e = admin.apply(ctx, s.o, "clusterroles", role); e != nil {
-		return nil, e
-	}
-	binding := obj("rbac.authorization.k8s.io/v1", "ClusterRoleBinding", "", "aep-operator", nil)
-	binding.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "aep-operator"}
-	binding.Object["subjects"] = []any{M{"kind": "ServiceAccount", "name": "aep-operator", "namespace": "aep-system"}}
-	if e = admin.apply(ctx, s.o, "clusterrolebindings", binding); e != nil {
-		return nil, e
-	}
-	if e = s.bootstrapRoles(ctx, admin); e != nil {
+	if e = s.installContract(ctx, admin); e != nil {
 		return nil, e
 	}
 	token, expiry, e := requestToken(ctx, admin, "aep-operator")
@@ -156,7 +203,7 @@ func requestToken(ctx context.Context, c *Cluster, name string) (string, time.Ti
 	return t.Status.Token, t.Status.ExpirationTimestamp.Time, nil
 }
 func (s *session) bundle(ctx context.Context, c *Cluster) error {
-	for _, path := range []string{"crd/aep.aenix.io_serviceclaims.yaml", "app-cluster/rbac.yaml", "app-cluster/admission.yaml"} {
+	for _, path := range bundlePaths {
 		data, e := config.Bundle.ReadFile(path)
 		if e != nil {
 			return e
@@ -200,6 +247,10 @@ func secretObject(ns, name string, data map[string][]byte) *unstructured.Unstruc
 }
 
 func (s *session) saveOperatorCredential(ctx context.Context, name string, c *rest.Config, expiry time.Time) error {
+	revision, e := contractRevision(s.o.Name)
+	if e != nil {
+		return e
+	}
 	cfg := clientcmdapi.NewConfig()
 	cfg.Clusters["app"] = &clientcmdapi.Cluster{Server: c.Host, CertificateAuthorityData: c.CAData, TLSServerName: c.ServerName}
 	cfg.AuthInfos["operator"] = &clientcmdapi.AuthInfo{Token: c.BearerToken}
@@ -209,5 +260,5 @@ func (s *session) saveOperatorCredential(ctx context.Context, name string, c *re
 	if e != nil {
 		return e
 	}
-	return s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, name, map[string][]byte{"kubeconfig": data, "expires": []byte(expiry.Format(time.RFC3339))}))
+	return s.r.Management.apply(ctx, s.o, "secrets", secretObject(s.r.Options.Namespace, name, map[string][]byte{"kubeconfig": data, "expires": []byte(expiry.Format(time.RFC3339)), "contract": []byte(revision)}))
 }
