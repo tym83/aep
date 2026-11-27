@@ -13,6 +13,8 @@ func TestServiceNowValueShapes(t *testing.T) {
 		`-5`:                                   "-5",
 		`{"value":"-5","display_value":"New"}`: "-5",
 		`{"value":-5,"display_value":"New"}`:   "-5",
+		`{"value":-5.0,"display_value":"New"}`: "-5",
+		`0.5`:                                  "0.5",
 		`{"value":null,"display_value":""}`:    "",
 		`{"display_value":"New"}`:              "",
 	} {
