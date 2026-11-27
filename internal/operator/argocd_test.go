@@ -352,3 +352,21 @@ func TestArgoEgress(t *testing.T) {
 		t.Fatal("DNS failed open")
 	}
 }
+
+func TestArgoOperatorRoleCoversProjects(t *testing.T) {
+	v := argoValues(argoOrg(), "argo.example", "https://id.example", []string{"payments"})
+	for _, raw := range v["extraObjects"].([]any) {
+		u := raw.(M)
+		if u["kind"] != "Role" || u["metadata"].(M)["name"] != "aep-operator" {
+			continue
+		}
+		b, _ := json.Marshal(u["rules"])
+		for _, verb := range []string{"list", "create", "update", "delete"} {
+			if !strings.Contains(string(b), `"appprojects"`) || !strings.Contains(string(b), `"`+verb+`"`) {
+				t.Fatalf("operator role cannot %s appprojects: %s", verb, b)
+			}
+		}
+		return
+	}
+	t.Fatal("operator role missing")
+}
