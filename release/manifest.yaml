@@ -338,5 +338,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: aa9753c8a6775d839e7c991d85b8261ad33e972a91679a09601855ca5ee7ba85
+inputs: 191928a4b84e35aa684764b83f83808367742ed494e9968b3e1844d2dbfc20df
 schema: 1
