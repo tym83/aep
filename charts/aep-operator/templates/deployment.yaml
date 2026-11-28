@@ -49,12 +49,14 @@ spec:
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
             - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.bridgeImage)))) | quote }}
+            {{- /* Values reused from releases older than controlPlane have no such map. */}}
+            {{- $defaultControlPlane := (.Values.controlPlane | default dict).default }}
             {{- if .Values.aepcpKubeconfigSecret }}
             - {{ printf "--aepcp-kubeconfig-secret=%s" .Values.aepcpKubeconfigSecret | quote }}
-            {{- else if not .Values.controlPlane.default }}
+            {{- else if not $defaultControlPlane }}
             {{- fail "aepcpKubeconfigSecret required unless controlPlane.default is set" }}
             {{- end }}
-            {{- with .Values.controlPlane.default }}
+            {{- with $defaultControlPlane }}
             - {{ printf "--default-control-plane=%s" . | quote }}
             {{- end }}
             - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
