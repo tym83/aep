@@ -142,12 +142,12 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge
   signature: required-at-publish
   version: 0.1.5
-- digest: sha256:a3c32c0e7f20e3740193194474a792ac3faca2ae02f2a4d95075321a506bfdba
+- digest: sha256:13aeae3f18dfbe6fb78ba11af18c413db234659336b74195e834e1122d6ecfa4
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
   signature: required-at-publish
-  version: 0.1.2
+  version: 0.1.3
 - digest: sha256:d6c189fe9928794d3a7ea354f83e2badd80b4aab39bd5f113a89c57f0df4b5be
   kind: chart
   layout: release/artifacts
@@ -225,24 +225,28 @@ artifacts:
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/klusterlet
   version: 1.4.0
-- digest: sha256:8055b9acbbb424fff3896204695b532cd24db0faf1b52c993f8d420604b484b2
+- digest: sha256:da9044a1a93f77f33293f82ec3fff63db7b678bef8d1ee387f75940f4422d216
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-baseline
   signature: required-at-publish
-  version: 0.1.7
-- digest: sha256:f5fc5a18116fe51c24af404cc9eeef2ff56b5b101f6da0db00a4c361ddd2fc3b
+  version: 0.1.8
+- digest: sha256:8caf896da10f8102e5fe9bd4543962d19dab6619f228618ab455d301b060466d
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-nonprod
   signature: required-at-publish
-  version: 0.1.7
-- digest: sha256:ee5cc1e928758029eb2fa1030e56514b599c911ee918ed772ec3ce2603ddb92c
+  version: 0.1.8
+- digest: sha256:707f823fd8142b92e37bc4e5467fc31a7945addd373a89da3d54e156d97d3a29
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/policies/app-cluster-prod
   signature: required-at-publish
-  version: 0.1.7
+  version: 0.1.8
+- digest: sha256:ad666d23547fb56df3e499e37ad3a61aa24b4984edb13d30c9ebedde762e40b3
+  kind: chart
+  ref: oci://quay.io/strimzi-helm/strimzi-kafka-operator
+  version: 0.50.0
 - digest: sha256:2fb3efa9eaa42382acb39c9a1485eaac7a1ad7a09e8aa7da7143ca256fa6da09
   kind: image
   ref: quay.io/argoproj/argocd
@@ -259,6 +263,14 @@ artifacts:
   kind: image
   ref: quay.io/open-cluster-management/work
   version: v1.4.0
+- digest: sha256:015ca88119b94649725df6d9f233d5815db26f3bee37d17db0f2cbc80f4bd95b
+  kind: image
+  ref: quay.io/strimzi/kafka
+  version: 0.50.0-kafka-4.1.1
+- digest: sha256:97289bc755096a98f59d5858c06082d374b9605b846b0a10c0682f404a06f5bc
+  kind: image
+  ref: quay.io/strimzi/operator
+  version: 0.50.0
 - digest: sha256:c46e124f21ef8a6bb4b48de57106808b1007edcd5ddd4ff7df5d23b9efa60ce2
   kind: image
   ref: reg.kyverno.io/kyverno/background-controller
@@ -338,5 +350,5 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: 956abc1dddb3f05797c9f4c75a5346768f11c6792f702322acac769ad83e4051
+inputs: f44886a86f4fe334e7032e6106194283282d984867994e28232135cdc8672ffe
 schema: 1

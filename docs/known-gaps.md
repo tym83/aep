@@ -24,6 +24,10 @@
   accepts `services.backupPolicy`, but no Backups Plan is created. Federation
   mapping, default SecretStore provisioning, and tenant user OIDC RBAC also remain
   manual. See `docs/operator.md` before deploying.
+- **Kafka state is visible only through ServiceClaim status.** Strimzi runs in
+  the tier application cluster, which the read API, portal and MCP evidence
+  (management-cluster clients) cannot read; Kafka has no backup integration and
+  external fleet clusters do not receive Strimzi.
 - **Deletion requires a maintenance window.** Cross-cluster preflight cannot
   atomically freeze new Components/ServiceClaims. Stop writers before confirmation;
   an operator-reviewed decommission workflow is still needed. User cascading

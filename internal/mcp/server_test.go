@@ -342,3 +342,14 @@ func TestManagedResourceResolution(t *testing.T) {
 		})
 	}
 }
+func TestBridgeKafkaIsNotManagementEvidence(t *testing.T) {
+	s := fixture(t)
+	_, err := s.query(scoped(), "managed_service_state", Args{Org: "acme", Service: "prod/Kafka/events"})
+	if err == nil || !strings.Contains(err.Error(), "application cluster") {
+		t.Fatal("bridge Kafka must be reported as application cluster state", err)
+	}
+	_, err = s.query(scoped(), "managed_service_state", Args{Org: "acme", Service: "prod/Redis/events"})
+	if err == nil || err.Error() != "service unavailable" {
+		t.Fatal("other kinds keep their behaviour", err)
+	}
+}

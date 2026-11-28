@@ -27,7 +27,8 @@ stale detection, per-binding leases and idempotent retries. See
 The bridge runs on the **management cluster**, one instance per organization and
 tier, and watches ServiceClaims in one application cluster. The application
 cluster never receives management credentials. Supported backends are Postgres
-and Redis, accessed through the dynamic client without Cozystack Go types.
+and Redis, accessed through the dynamic client without Cozystack Go types. Kafka
+claims are Strimzi resources in the application cluster.
 
 ### Install
 
@@ -50,8 +51,9 @@ and Redis, accessed through the dynamic client without Cozystack Go types.
      --set tierDeletionPolicy=Delete
    ```
 
-4. Apply `resource-types/cozystack-postgres.yaml` and
-   `resource-types/cozystack-redis.yaml` to the OpenChoreo control plane.
+4. Apply `resource-types/cozystack-postgres.yaml`,
+   `resource-types/cozystack-redis.yaml` and `resource-types/cozystack-kafka.yaml`
+   to the OpenChoreo control plane.
 
 Kubernetes 1.30+ is required for stable ValidatingAdmissionPolicy. The supplied
 OpenChoreo templates target its 1.4 ResourceType CEL contract. Install only one
@@ -129,6 +131,29 @@ For multiple PostgreSQL databases the connection selects the first database in
 lexical order, then its first admin (or readonly) user, otherwise the first
 declared user. Declare database role membership for a usable connection.
 Redis exports database `0` and user `default`.
+
+Kafka claims are not Cozystack applications: the bridge renders Strimzi
+resources in the application cluster's `aep-kafka` namespace (see
+[operator Kafka](docs/operator.md#kafka)). Version `4.1.1` is the only and default
+version and is immutable; `replicas` is 1 to 5.
+
+```yaml
+spec:
+  kind: Kafka
+  resource: {project: payments, name: events, environment: dev}
+  parameters:
+    version: "4.1.1"
+    topics:
+      - {name: orders, partitions: 6, config: {retention.ms: "604800000"}}
+      - {name: audit}            # partitions default to 3
+  environmentParameters:
+    resourcesPreset: t1.small
+    size: 10Gi
+    replicas: 1
+```
+
+The connection exports the `<name>-app` SCRAM user, empty database, and the
+Strimzi bootstrap host on port 9093; consumer group IDs must start with `<name>-`.
 
 ### Reconciliation and lifecycle
 
@@ -214,4 +239,4 @@ version. The image build and live-cluster integration are separate release gates
 - `internal/policy`: safe parameters, limits, naming and retention.
 - `config`: generated CRD and standalone RBAC/admission examples.
 - `charts`: management and application cluster Helm charts.
-- `resource-types`: OpenChoreo PostgreSQL and Redis templates.
+- `resource-types`: OpenChoreo PostgreSQL, Redis and Kafka templates.

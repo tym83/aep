@@ -114,21 +114,35 @@ func (r *Reconciler) connect(ctx context.Context, c *api.ServiceClaim, m kinds.M
 	if c.Spec.Kind == "Postgres" {
 		uri.RawQuery = "sslmode=require"
 	}
-	owner := metav1.NewControllerRef(c, api.GroupVersion.WithKind("ServiceClaim"))
-	// Garbage collection does not need permission to block deletion of the claim.
-	blockDeletion := false
-	owner.BlockOwnerDeletion = &blockDeletion
-	metadata := func(name string) metav1.ObjectMeta {
-		return metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: map[string]string{Domain + "managed-by": "bridge"}, Annotations: map[string]string{Domain + "claim-uid": string(c.UID)}, OwnerReferences: []metav1.OwnerReference{*owner}}
-	}
+	metadata := func(name string) metav1.ObjectMeta { return outputMeta(c, name) }
 	secret := &corev1.Secret{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"}, ObjectMeta: metadata(c.Name + "-conn"), Type: corev1.SecretTypeOpaque, Data: map[string][]byte{"host": []byte(host), "port": []byte(strconv.Itoa(int(m.Port))), "database": []byte(database), "username": []byte(username), "password": password, "uri": []byte(uri.String()), "ca.crt": ca}}
 	local := &corev1.Service{TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Service"}, ObjectMeta: metadata(c.Name), Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP, Ports: []corev1.ServicePort{{Name: "database", Port: m.Port, Protocol: corev1.ProtocolTCP}}}}
 	portName, protocol, ready := "database", corev1.ProtocolTCP, true
 	endpoint := &discoveryv1.EndpointSlice{TypeMeta: metav1.TypeMeta{APIVersion: "discovery.k8s.io/v1", Kind: "EndpointSlice"}, ObjectMeta: metadata(c.Name), AddressType: addressType, Ports: []discoveryv1.EndpointPort{{Name: &portName, Protocol: &protocol, Port: &m.Port}}, Endpoints: []discoveryv1.Endpoint{{Addresses: []string{svc.Spec.ClusterIP}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}}}}
 	endpoint.Labels[discoveryv1.LabelServiceName] = c.Name
 	endpoint.Labels[discoveryv1.LabelManagedBy] = Manager
+	drift, e := r.applyOutputs(ctx, c, secret, local, endpoint)
+	if e != nil {
+		return drift, e
+	}
+	c.Status.Connection = &api.Connection{Host: host, Port: m.Port, Database: database, Username: username, SecretName: secret.Name}
+	return drift, nil
+}
+
+// outputMeta marks a claim-namespace output as owned by the bridge for this claim.
+func outputMeta(c *api.ServiceClaim, name string) metav1.ObjectMeta {
+	owner := metav1.NewControllerRef(c, api.GroupVersion.WithKind("ServiceClaim"))
+	// Garbage collection does not need permission to block deletion of the claim.
+	blockDeletion := false
+	owner.BlockOwnerDeletion = &blockDeletion
+	return metav1.ObjectMeta{Name: name, Namespace: c.Namespace, Labels: map[string]string{Domain + "managed-by": "bridge"}, Annotations: map[string]string{Domain + "claim-uid": string(c.UID)}, OwnerReferences: []metav1.OwnerReference{*owner}}
+}
+
+// applyOutputs server-side applies claim outputs, refusing to adopt objects
+// of another claim, and reports whether an EndpointSlice had drifted.
+func (r *Reconciler) applyOutputs(ctx context.Context, c *api.ServiceClaim, objects ...client.Object) (bool, error) {
 	drift := false
-	for _, obj := range []client.Object{secret, local, endpoint} {
+	for _, obj := range objects {
 		old := obj.DeepCopyObject().(client.Object)
 		e := r.App.Get(ctx, client.ObjectKeyFromObject(obj), old)
 		if e != nil && !errors.IsNotFound(e) {
@@ -142,6 +156,7 @@ func (r *Reconciler) connect(ctx context.Context, c *api.ServiceClaim, m kinds.M
 				return drift, fmt.Errorf("local Service must be ClusterIP without a selector")
 			}
 			if oldEndpoint, ok := old.(*discoveryv1.EndpointSlice); ok {
+				endpoint := obj.(*discoveryv1.EndpointSlice)
 				drift = !reflect.DeepEqual(oldEndpoint.Endpoints, endpoint.Endpoints) || oldEndpoint.AddressType != endpoint.AddressType
 			}
 		}
@@ -149,6 +164,5 @@ func (r *Reconciler) connect(ctx context.Context, c *api.ServiceClaim, m kinds.M
 			return drift, e
 		}
 	}
-	c.Status.Connection = &api.Connection{Host: host, Port: m.Port, Database: database, Username: username, SecretName: secret.Name}
 	return drift, nil
 }

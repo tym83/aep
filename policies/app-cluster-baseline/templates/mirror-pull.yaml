@@ -1,5 +1,6 @@
 {{- if .Values.mirrorPullSecret }}
-# Pods created at runtime by delivered components (kgateway's Envoy proxies)
+# Pods created at runtime by delivered components (kgateway Envoy proxies,
+# Strimzi Kafka brokers and entity operators)
 # also pull from the authenticated registry mirror.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -12,7 +13,7 @@ spec:
         any:
           - resources:
               kinds: [Pod]
-              namespaces: [openchoreo-data-plane, argocd]
+              namespaces: [openchoreo-data-plane, argocd, aep-kafka]
       mutate:
         patchStrategicMerge:
           spec:

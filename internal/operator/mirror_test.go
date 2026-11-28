@@ -56,9 +56,15 @@ func TestUpstreamMirrorRendering(t *testing.T) {
 			if e != nil {
 				t.Fatalf("%v: %s", e, out)
 			}
-			for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(string(out), -1) {
-				if !strings.Contains(image[1], "@sha256:") {
-					t.Fatalf("unpinned delivered image: %s", image[1])
+			for _, doc := range strings.Split(string(out), "\n---") {
+				// CRD schemas declare image fields (Strimzi: "image: {}"); they are not workloads.
+				if strings.Contains(doc, "kind: CustomResourceDefinition") {
+					continue
+				}
+				for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(doc, -1) {
+					if !strings.Contains(image[1], "@sha256:") {
+						t.Fatalf("unpinned delivered image: %s", image[1])
+					}
 				}
 			}
 			// Scan all rendered text, including hooks and controller environment defaults.

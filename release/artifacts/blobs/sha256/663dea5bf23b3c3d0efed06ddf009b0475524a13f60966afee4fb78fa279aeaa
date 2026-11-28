@@ -1,1 +1,0 @@
-{"apiVersion":"v2","appVersion":"0.1.0","description":"ServiceClaim CRD and application cluster access for the AEP bridge","name":"aep-bridge-appcluster","type":"application","version":"0.1.2"}

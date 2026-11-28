@@ -87,7 +87,7 @@ spec:
         version: v1.35
         nodeGroups:
           md0: {minReplicas: 2, maxReplicas: 3, instanceType: u1.large}
-      services: {allowedKinds: [Postgres, Redis], maxPreset: u1.large}
+      services: {allowedKinds: [Postgres, Redis, Kafka], maxPreset: u1.large}
     prod:
       cluster:
         version: v1.35
@@ -149,8 +149,9 @@ for future accounting integrations, not billing implementation.
    `aep-system/agent-ca-<org>-<tier>` and copy cert+key to
    `openchoreo-data-plane/aep-agent-ca`. Copy the aep-cp gateway CA **certificate**
    into `cluster-gateway-ca` ConfigMap. Install OCI sources and remote HelmReleases
-   for kgateway-crds/ kgateway v2.3.11 and openchoreo-data-plane 1.4.0-m.3, with
-   explicit dependencies, Cozystack sharding/target labels and the requested
+   for kgateway-crds/ kgateway v2.3.11 and openchoreo-data-plane 1.4.0-m.3 (into
+   `openchoreo-data-plane`) and strimzi-kafka-operator 0.50.0 (into `aep-kafka`,
+   with CRDs replaced on upgrade), with explicit dependencies, Cozystack sharding/target labels and the requested
    `super-admin.svc` kubeconfig reference. Agent certificates use the persistent
    CA; plane IDs are `<org>-<tier>`. Flux release readiness and actual DataPlane
    `status.agentConnection.connected` are both required.
@@ -212,12 +213,51 @@ Use explicit local aep-cp kubeconfig/port-forward if needed. The management oper
 is the supported continuous mode. Do not persist port-forward endpoints in tier
 credentials used by bridge pods.
 
+## Kafka
+
+Cozystack's Kafka application has no client authentication, so the bridge does
+not use it. Allowing `Kafka` in `services.allowedKinds` makes the bridge render
+Strimzi resources inside the tier application cluster, in `aep-kafka`, where the
+operator-delivered Strimzi 0.50.0 watches only its own namespace:
+
+- `Kafka <name>` (KRaft, node pools) with a single internal listener on 9093
+  that requires TLS and SCRAM-SHA-512 and whose NetworkPolicy admits only the
+  claim namespace; `simple` authorization. Internal topic replication factors
+  are `min(replicas, 3)`, `min.insync.replicas` is 1 below three brokers, else 2.
+- `KafkaNodePool <name>-pool` with combined controller/broker nodes, a
+  persistent claim of `size` (`deleteClaim` only when the claim is not retained)
+  and requests/limits from `resourcesPreset`: one CPU unit is 250m and one memory
+  unit 128Mi on the tier ceiling scale, at least 1Gi.
+- One `KafkaTopic` per requested topic (object `<name>-<topic>`, topic name
+  `<topic>`), and `KafkaUser <name>-app` allowed Read, Write, Describe and
+  DescribeConfigs on exactly those topics plus Read and Describe on consumer
+  groups prefixed `<name>-`. No cluster permissions are granted.
+
+`<name>` is the claim's application name (at most 26 characters, shortened with
+a hash suffix if a longer one ever appears) so broker pod names stay DNS labels.
+The bridge server-side applies these objects with the `aep.aenix.io/managed-by`
+label and claim UID annotation, refuses foreign objects, and is limited by a
+Role and an admission policy to bridge-managed Strimzi objects in `aep-kafka`.
+`Ready` requires the Kafka, every topic and the user to report Ready for their
+current generation and the node pool to have all requested nodes. The
+connection Secret `<claim>-conn` holds `bootstrap.servers`, `host`, `port`,
+`username`, `password`, `sasl.jaas.config`, `security.protocol` (`SASL_SSL`),
+`sasl.mechanism` (`SCRAM-SHA-512`), `topics`, `ca.crt` and `uri`; clients connect
+to `<name>-kafka-bootstrap.aep-kafka.svc.cluster.local:9093` directly. Topics
+removed from a claim are deleted unless the claim is retained, in which case they
+are marked `aep.aenix.io/orphaned=true` like the cluster on claim deletion.
+Kafka has no Cozystack backup class: a tier backup policy is reported as
+`BackupReady=False/NotSupported`. Strimzi operands use the restricted Pod Security
+provider; with an authenticated mirror, Strimzi passes `aep-mirror-pull` to broker
+and entity operator pods. External fleet clusters do not receive Strimzi.
+
 ## Deletion and recovery
 
 Deletion requires `aep.aenix.io/confirm-delete=<organization-name>`. Before starting,
 list Components on aep-cp and ServiceClaims in every existing tier; any object or
 failed read blocks deletion and reports its identity/reason. Retained Postgres or
-Redis applications also block deletion to prevent loss through tenant removal.
+Redis applications, and Kafka clusters left in a tier's `aep-kafka` namespace,
+also block deletion to prevent loss through tenant removal.
 Persist the successful preflight, then delete owned OpenChoreo resources, remote
 HelmReleases/sources, CCNPs, bridges/RBAC, workers/clusters, child tenants, parent,
 organization namespace, admission rules and management credentials, waiting for
@@ -245,7 +285,6 @@ of expiration to require a planned trust rotation.
   require that prerequisite.
 - `backupPolicy` is represented in the API but Backups Plan materialization is not
   implemented by the current bridge. Do not interpret it as a backup guarantee.
-- Kafka is not supported by the existing bridge and is rejected explicitly.
 - IdP federation mapping, tenant OIDC/user RBAC, CA rollover/CSR signing,
   decommission workflow, and environment-removal migration are follow-ups. Removed
   environments are not pruned automatically; removal requires platform review.

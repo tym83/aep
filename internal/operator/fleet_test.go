@@ -93,6 +93,9 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 		values   M
 	}{}
 	for _, ch := range charts {
+		if ch.name == StrimziChart {
+			continue
+		}
 		v := M{}
 		if ch.name == "openchoreo-data-plane" {
 			v = M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": "ext-test", "tls": M{"generateCerts": false}}}
@@ -115,7 +118,7 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 	matrix = append(matrix, struct {
 		n, v, ns string
 		values   M
-	}{"aep-bridge-appcluster", "0.1.2", "aep-system", M{}})
+	}{"aep-bridge-appcluster", "0.1.3", "aep-system", M{}})
 	var all []any
 	for _, tc := range matrix {
 		t.Run(tc.n, func(t *testing.T) {

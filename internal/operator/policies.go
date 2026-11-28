@@ -6,12 +6,13 @@ import (
 	"strings"
 
 	api "github.com/tym83/aep/api/v1alpha1"
+	"github.com/tym83/aep/internal/kinds"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 const KyvernoChartVersion = "3.9.2" // Kyverno 1.19.2; legacy ClusterPolicy rules remain supported.
-const PolicyBundleVersion = "0.1.7"
+const PolicyBundleVersion = "0.1.8"
 
 func policyRelease(o *api.Organization, tier, name string, values M) *unstructured.Unstructured {
 	spec := M{"interval": "5m", "timeout": "10m", "releaseName": name, "targetNamespace": "kyverno", "storageNamespace": "kyverno",
@@ -51,7 +52,7 @@ func policyValues(o *api.Organization, tier, key string) map[string]M {
 			"features":    M{"policyExceptions": M{"enabled": true, "namespace": "aep-system"}},
 			"rbac":        M{"roles": M{"aggregate": M{"admin": false}}},
 			"openreports": M{"enabled": false, "installCrds": false}},
-		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries), "platformNamespaces": stringsAny(append([]string{"kube-system", "kyverno", "argocd", "aep-system", "openchoreo-data-plane"}, o.Spec.Policy.PlatformNamespaces...)),
+		"app-cluster-baseline": {"mode": mode, "organizationUID": string(o.UID), "registries": stringsAny(o.Spec.Policy.Registries), "platformNamespaces": stringsAny(append([]string{"kube-system", "kyverno", "argocd", "aep-system", "openchoreo-data-plane", kinds.KafkaNamespace}, o.Spec.Policy.PlatformNamespaces...)),
 			"registryPull": M{"enabled": o.Spec.Policy.RegistryPullSecretRef != nil, "secretName": RegistryPullSecret, "organizationNamespace": o.Name}},
 		"app-cluster-" + tier: {},
 	}

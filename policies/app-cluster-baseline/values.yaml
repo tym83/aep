@@ -5,7 +5,7 @@ agentUsername: system:serviceaccount:openchoreo-data-plane:cluster-agent-datapla
 exceptionUsername: system:serviceaccount:aep-system:policy-exception-manager
 
 argocdHost: ""
-platformNamespaces: [kube-system, kyverno, argocd, aep-system, openchoreo-data-plane]
+platformNamespaces: [kube-system, kyverno, argocd, aep-system, openchoreo-data-plane, aep-kafka]
 # Set by the operator when spec.policy.registryPullSecretRef is configured.
 registryPull:
   enabled: false

@@ -1,5 +1,7 @@
 bridgeNamespace: aep-system
 bridgeServiceAccount: aep-bridge
+# Strimzi namespace that holds Kafka claims (operator-delivered on tiers).
+kafkaNamespace: aep-kafka
 agentNamespace: openchoreo-data-plane
 agentServiceAccount: cluster-agent-dataplane
 

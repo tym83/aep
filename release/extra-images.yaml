@@ -5,3 +5,5 @@
 - ghcr.io/tym83/aep-alert-router:@build
 - quay.io/open-cluster-management/registration:v1.4.0
 - quay.io/open-cluster-management/work:v1.4.0
+# Strimzi selects broker and entity operator images from operator environment variables.
+- quay.io/strimzi/kafka:0.50.0-kafka-4.1.1

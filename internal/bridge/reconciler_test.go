@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
@@ -36,7 +37,42 @@ func harness(t *testing.T, c *api.ServiceClaim) (*Reconciler, *dynamicfake.FakeD
 	_ = api.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	_ = discoveryv1.AddToScheme(s)
-	a := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.ServiceClaim{}).WithObjects(c).WithInterceptorFuncs(interceptor.Funcs{Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
+	for _, kind := range []string{"Kafka", "KafkaNodePool", "KafkaTopic", "KafkaUser"} {
+		gv := schema.GroupVersion{Group: "kafka.strimzi.io", Version: "v1"}
+		s.AddKnownTypeWithName(gv.WithKind(kind), &unstructured.Unstructured{})
+		s.AddKnownTypeWithName(gv.WithKind(kind+"List"), &unstructured.UnstructuredList{})
+	}
+	a := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.ServiceClaim{}).WithObjects(c).WithInterceptorFuncs(interceptor.Funcs{Apply: func(ctx context.Context, cl client.WithWatch, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+		options := &client.ApplyOptions{}
+		for _, o := range opts {
+			o.ApplyToApply(options)
+		}
+		if options.FieldManager != Manager || options.Force == nil || !*options.Force {
+			t.Fatal("wrong field manager or ownership")
+		}
+		b, e := json.Marshal(obj)
+		if e != nil {
+			return e
+		}
+		u := &unstructured.Unstructured{}
+		if e = json.Unmarshal(b, &u.Object); e != nil {
+			return e
+		}
+		old := u.DeepCopy()
+		e = cl.Get(ctx, client.ObjectKeyFromObject(u), old)
+		if errors.IsNotFound(e) {
+			return cl.Create(ctx, u)
+		}
+		if e != nil {
+			return e
+		}
+		// Apply never writes status; the fake client would otherwise clear it.
+		u.SetResourceVersion(old.GetResourceVersion())
+		if status, ok := old.Object["status"]; ok {
+			u.Object["status"] = status
+		}
+		return cl.Update(ctx, u)
+	}, Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
 		if p.Type() != types.ApplyPatchType {
 			return cl.Patch(ctx, obj, p, opts...)
 		}
@@ -59,7 +95,7 @@ func harness(t *testing.T, c *api.ServiceClaim) (*Reconciler, *dynamicfake.FakeD
 		return cl.Update(ctx, obj)
 	}}).Build()
 	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
-	r := &Reconciler{App: a, Management: fake.NewClientBuilder().WithScheme(s).Build(), Dynamic: d, Organization: "org", Tier: "nonprod", TenantNamespace: "tenant-org-nonprod", ClusterID: "cluster", TierDeletionPolicy: "Delete", AllowedKinds: []string{"Postgres", "Redis"}, Policy: policy.Default()}
+	r := &Reconciler{App: a, Management: fake.NewClientBuilder().WithScheme(s).Build(), Dynamic: d, Organization: "org", Tier: "nonprod", TenantNamespace: "tenant-org-nonprod", ClusterID: "cluster", TierDeletionPolicy: "Delete", AllowedKinds: []string{"Postgres", "Redis", "Kafka"}, Policy: policy.Default()}
 	return r, d
 }
 func reconcile(t *testing.T, r *Reconciler, c *api.ServiceClaim) *api.ServiceClaim {

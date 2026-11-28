@@ -6,6 +6,7 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	ext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -92,5 +93,70 @@ func TestDeletion(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func kafkaClaim() *api.ServiceClaim {
+	return &api.ServiceClaim{ObjectMeta: metav1.ObjectMeta{Name: "events", Namespace: "dp-test"}, Spec: api.ServiceClaimSpec{Kind: "Kafka", Resource: api.ResourceIdentity{Project: "payments", Name: "events", Environment: "dev"}, Parameters: map[string]ext.JSON{"topics": {Raw: []byte(`[{"name":"orders"}]`)}}, EnvironmentParameters: map[string]ext.JSON{"resourcesPreset": {Raw: []byte(`"t1.small"`)}, "size": {Raw: []byte(`"10Gi"`)}, "replicas": {Raw: []byte(`1`)}}}}
+}
+func TestKafkaParameters(t *testing.T) {
+	out, err := Validate(kafkaClaim(), Default(), []string{"Kafka"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	topic := out["topics"].([]any)[0].(map[string]any)
+	if out["version"] != "4.1.1" || topic["partitions"] != int64(3) || topic["name"] != "orders" || len(topic["config"].(map[string]any)) != 0 {
+		t.Fatal("defaults not applied", out)
+	}
+	for _, tt := range []struct {
+		name, key, value string
+		valid            bool
+	}{
+		{"five replicas", "replicas", `5`, true},
+		{"six replicas", "replicas", `6`, false},
+		{"version", "version", `"4.1.1"`, true},
+		{"unknown version", "version", `"3.9.0"`, false},
+		{"redis version", "version", `"v8"`, false},
+		{"config", "topics", `[{"name":"orders","partitions":100,"config":{"retention.ms":"60000","cleanup.policy":"compact"}}]`, true},
+		{"empty topics", "topics", `[]`, true},
+		{"long topic", "topics", `[{"name":"` + strings.Repeat("a", 100) + `"}]`, true},
+		{"too long topic", "topics", `[{"name":"` + strings.Repeat("a", 101) + `"}]`, false},
+		{"uppercase topic", "topics", `[{"name":"Orders"}]`, false},
+		{"dotted topic", "topics", `[{"name":"orders.v1"}]`, false},
+		{"duplicate topic", "topics", `[{"name":"orders"},{"name":"orders"}]`, false},
+		{"zero partitions", "topics", `[{"name":"orders","partitions":0}]`, false},
+		{"too many partitions", "topics", `[{"name":"orders","partitions":101}]`, false},
+		{"fractional partitions", "topics", `[{"name":"orders","partitions":1.5}]`, false},
+		{"numeric config", "topics", `[{"name":"orders","config":{"retention.ms":60000}}]`, false},
+		{"bad config key", "topics", `[{"name":"orders","config":{"Retention":"1"}}]`, false},
+		{"unknown topic field", "topics", `[{"name":"orders","replicas":3}]`, false},
+		{"topics object", "topics", `{"orders":{}}`, false},
+		{"postgres users", "users", `{"app":{}}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := kafkaClaim()
+			if _, ok := c.Spec.EnvironmentParameters[tt.key]; ok {
+				c.Spec.EnvironmentParameters[tt.key] = ext.JSON{Raw: []byte(tt.value)}
+			} else {
+				c.Spec.Parameters[tt.key] = ext.JSON{Raw: []byte(tt.value)}
+			}
+			_, err := Validate(c, Default(), []string{"Kafka"})
+			if (err == nil) != tt.valid {
+				t.Fatalf("valid=%v error=%v", tt.valid, err)
+			}
+		})
+	}
+	cfg := Default()
+	l := cfg.Kinds["Kafka"]
+	l.MaxReplicas = 6
+	cfg.Kinds["Kafka"] = l
+	dir := t.TempDir()
+	b, _ := json.Marshal(cfg)
+	path := dir + "/policy.yaml"
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("Kafka replica cap must not be raised by configuration")
 	}
 }

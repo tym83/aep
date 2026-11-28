@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/tym83/aep/config"
+	"github.com/tym83/aep/internal/kinds"
 	"io"
 	authv1 "k8s.io/api/authentication/v1"
 	errors "k8s.io/apimachinery/pkg/api/errors"
@@ -42,6 +43,8 @@ func roleScopes(org string) map[string][]any {
 		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"}),
 			rule("gateway.kgateway.dev", []string{"gatewayparameters"}, []string{"get", "create", "patch"})},
 		"kube-system": {rule("", []string{"secrets"}, []string{"list"})},
+		// Deletion preflight: retained Kafka clusters block organization removal.
+		kinds.KafkaNamespace: {rule("kafka.strimzi.io", []string{"kafkas"}, []string{"list"})},
 		"aep-system": {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}},
 			// Build credentials for the workflow plane's local secret store and
 			// the registry pull credential that Kyverno clones into environments.
@@ -95,7 +98,7 @@ func (s *session) bootstrapRoles(ctx context.Context, c *Cluster) error {
 // mirrorPullNamespaces receive the registry mirror pull credential before the
 // charts delivered there start pulling images (openchoreo-data-plane is
 // already writable through the data plane Role).
-var mirrorPullNamespaces = []string{"kyverno", "argocd"}
+var mirrorPullNamespaces = []string{"kyverno", "argocd", kinds.KafkaNamespace}
 
 // installContract installs the bootstrap contract with the tier's super-admin.
 func (s *session) installContract(ctx context.Context, admin *Cluster) error {
@@ -255,7 +258,7 @@ func (s *session) bundle(ctx context.Context, c *Cluster) error {
 			if u.GetKind() == "Namespace" {
 				continue
 			}
-			resources := map[string]string{"CustomResourceDefinition": "customresourcedefinitions", "ServiceAccount": "serviceaccounts", "ClusterRole": "clusterroles", "ClusterRoleBinding": "clusterrolebindings", "ValidatingAdmissionPolicy": "validatingadmissionpolicies", "ValidatingAdmissionPolicyBinding": "validatingadmissionpolicybindings"}
+			resources := map[string]string{"CustomResourceDefinition": "customresourcedefinitions", "ServiceAccount": "serviceaccounts", "Role": "roles", "RoleBinding": "rolebindings", "ClusterRole": "clusterroles", "ClusterRoleBinding": "clusterrolebindings", "ValidatingAdmissionPolicy": "validatingadmissionpolicies", "ValidatingAdmissionPolicyBinding": "validatingadmissionpolicybindings"}
 			r := resources[u.GetKind()]
 			if r == "" {
 				return fmt.Errorf("unsupported bundle kind %s", u.GetKind())
