@@ -11,8 +11,10 @@ import (
 )
 
 // Once an object is being deleted, the garbage collector and OpenChoreo controllers
-// must still release their finalizers; an update that leaves spec untouched can do nothing else.
-const finalizerReleaseExemption = "!(request.operation == 'UPDATE' && has(oldObject.metadata.deletionTimestamp) && has(object.spec) == has(oldObject.spec) && (!has(object.spec) || object.spec == oldObject.spec))"
+// must still release their finalizers. Controllers resend spec with zero-value fields
+// dropped, so spec equality cannot be required. Only the operator can start deletion of
+// reserved objects, and Kubernetes rejects new finalizers on them.
+const finalizerReleaseExemption = "!(request.operation == 'UPDATE' && has(oldObject.metadata.deletionTimestamp))"
 
 // Delegated role administration is safe only when Kubernetes admission also constrains
 // the roles and bindings written by the OpenChoreo API service account.

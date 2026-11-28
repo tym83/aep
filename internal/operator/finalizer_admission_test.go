@@ -34,8 +34,7 @@ func TestFinalizerReleaseExemption(t *testing.T) {
 	}{
 		{"release on deleting object", "UPDATE", map[string]any{"metadata": deleting, "spec": spec}, map[string]any{"metadata": released, "spec": spec}, false},
 		{"release on object without spec", "UPDATE", map[string]any{"metadata": deleting}, map[string]any{"metadata": released}, false},
-		{"spec change while deleting", "UPDATE", map[string]any{"metadata": deleting, "spec": spec}, map[string]any{"metadata": released, "spec": other}, true},
-		{"spec added while deleting", "UPDATE", map[string]any{"metadata": deleting}, map[string]any{"metadata": released, "spec": spec}, true},
+		{"controller resends spec while deleting", "UPDATE", map[string]any{"metadata": deleting, "spec": spec}, map[string]any{"metadata": released, "spec": other}, false},
 		{"update of live object", "UPDATE", map[string]any{"metadata": live, "spec": spec}, map[string]any{"metadata": map[string]any{}, "spec": spec}, true},
 		{"create", "CREATE", nil, map[string]any{"metadata": map[string]any{}, "spec": spec}, true},
 		{"delete", "DELETE", map[string]any{"metadata": deleting, "spec": spec}, nil, true},
