@@ -45,6 +45,12 @@ func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
 // and unrelated namespaces cannot accidentally map to an Organization. The label
 // is a UID, not a name, and also covers root Tenants in tenant-root.
 func (r *Reconciler) organizationsForObject(ctx context.Context, object client.Object) []ctrl.Request {
+	// A ControlPlane tenant namespace can equal an Organization one (tenant
+	// cp under tenant-root is tenant-cp, as for an Organization named cp);
+	// ControlPlane-owned objects never map to Organizations.
+	if object.GetLabels()[ControlPlaneLabel] != "" {
+		return nil
+	}
 	var organizations api.OrganizationList
 	if err := r.List(ctx, &organizations); err != nil {
 		ctrl.LoggerFrom(ctx).Error(err, "Cannot map dependency to Organizations")

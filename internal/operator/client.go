@@ -19,6 +19,9 @@ import (
 )
 
 const OwnerLabel = "aep.aenix.io/organization"
+
+// ControlPlaneLabel marks objects owned by a ControlPlane with its UID.
+const ControlPlaneLabel = "aep.aenix.io/control-plane"
 const finalizer = "aep.aenix.io/organization-cleanup"
 
 type M = map[string]any
@@ -59,20 +62,53 @@ func obj(av, kind, ns, name string, spec M) *unstructured.Unstructured {
 	}
 	return u
 }
+
+// ownerKey is the label that marks a management or remote object as owned by
+// one AEP resource. Organizations and ControlPlanes use different labels, so
+// neither can adopt the other's objects and watches never confuse them.
+type ownerKey struct {
+	label, value, kind string
+}
+
+func organizationOwner(o *api.Organization) ownerKey {
+	return ownerKey{label: OwnerLabel, value: string(o.UID), kind: "organization"}
+}
+
+func controlPlaneOwner(cp *api.ControlPlane) ownerKey {
+	return ownerKey{label: ControlPlaneLabel, value: string(cp.UID), kind: "control plane"}
+}
+
+// foreign reports a label of another owner kind on the labels of an object
+// owned by k. Organization ownership predates ControlPlanes and stays as it was.
+func (k ownerKey) foreign(labels map[string]string) bool {
+	return k.label == ControlPlaneLabel && labels[OwnerLabel] != ""
+}
+
 func (c *Cluster) apply(ctx context.Context, o *api.Organization, r string, u *unstructured.Unstructured) error {
+	return c.applyAs(ctx, organizationOwner(o), r, u)
+}
+
+// applyAs creates or updates u for owner and refuses objects owned by anyone else.
+func (c *Cluster) applyAs(ctx context.Context, owner ownerKey, r string, u *unstructured.Unstructured) error {
+	if owner.label == ControlPlaneLabel && owner.value == "" {
+		return fmt.Errorf("refusing to apply %s %s/%s without a control plane UID", u.GetKind(), u.GetNamespace(), u.GetName())
+	}
+	if owner.foreign(u.GetLabels()) {
+		return fmt.Errorf("refusing to apply %s %s/%s with labels of another owner", u.GetKind(), u.GetNamespace(), u.GetName())
+	}
 	ri := c.resource(u.GetAPIVersion(), r, u.GetNamespace())
 	old, e := ri.Get(ctx, u.GetName(), metav1.GetOptions{})
 	if e != nil && !errors.IsNotFound(e) {
 		return e
 	}
-	if e == nil && old.GetLabels()[OwnerLabel] != string(o.UID) {
-		return fmt.Errorf("refusing to adopt %s %s/%s without organization ownership", u.GetKind(), u.GetNamespace(), u.GetName())
+	if e == nil && (old.GetLabels()[owner.label] != owner.value || owner.foreign(old.GetLabels())) {
+		return fmt.Errorf("refusing to adopt %s %s/%s without %s ownership", u.GetKind(), u.GetNamespace(), u.GetName(), owner.kind)
 	}
 	labels := u.GetLabels()
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	labels[OwnerLabel] = string(o.UID)
+	labels[owner.label] = owner.value
 	u.SetLabels(labels)
 	// Create with normal API semantics to avoid adopting a racing unowned object through SSA.
 	if errors.IsNotFound(e) {

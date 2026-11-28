@@ -82,3 +82,26 @@ func TestDependencyStatusPredicate(t *testing.T) {
 		})
 	}
 }
+
+// ControlPlane-owned objects never map to Organizations, even in a namespace
+// or with a label that would otherwise match one.
+func TestOrganizationsForObjectIgnoresControlPlaneObjects(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	o := organization()
+	r := &Reconciler{Client: fake.NewClientBuilder().WithScheme(scheme).WithObjects(o).Build()}
+	for _, labels := range []map[string]string{
+		{ControlPlaneLabel: "cp-uid"},
+		{ControlPlaneLabel: "cp-uid", OwnerLabel: string(o.UID)},
+	} {
+		for _, ns := range []string{"tenant-acme", "tenant-acme-prod", "tenant-root"} {
+			u := obj(helmAPI, "HelmRelease", ns, "aep-cp-openchoreo-control-plane", nil)
+			u.SetLabels(labels)
+			if got := r.organizationsForObject(context.Background(), u); len(got) != 0 {
+				t.Fatalf("%s %v mapped to %v", ns, labels, got)
+			}
+		}
+	}
+}
