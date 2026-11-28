@@ -4,3 +4,6 @@ description: Restricted-compliant OpenChoreo golden paths for AEP
 type: application
 version: 0.1.2
 appVersion: "1.4.0"
+annotations:
+  # Delivered by the operator at this exact version; see charts/fixed-versions.yaml.
+  aep.aenix.io/fixed-version: "true"

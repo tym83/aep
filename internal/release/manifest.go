@@ -774,7 +774,28 @@ func (c *Client) ResolveOwn(ctx context.Context, m Manifest, version string) (Ma
 	return m, nil
 }
 
-// WriteBuildValues makes packaged charts use the same version and pins as inventory.
+// FixedVersionAnnotation marks a chart the operator delivers at the exact
+// version in its Chart.yaml. Builds keep that version and its values, so the
+// operator's embedded inventory can pin the chart digest.
+const FixedVersionAnnotation = "aep.aenix.io/fixed-version"
+
+// FixedVersion reports whether the chart in dir carries FixedVersionAnnotation.
+func FixedVersion(dir string) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "Chart.yaml"))
+	if err != nil {
+		return false, err
+	}
+	var meta struct {
+		Annotations map[string]string `json:"annotations"`
+	}
+	if err := yaml.Unmarshal(b, &meta); err != nil {
+		return false, err
+	}
+	return meta.Annotations[FixedVersionAnnotation] == "true", nil
+}
+
+// WriteBuildValues makes packaged charts use the same version and pins as
+// inventory. Fixed-version charts stay unchanged.
 func WriteBuildValues(root string, m Manifest, version string) error {
 	digests := map[string]any{}
 	for _, a := range m.Artifacts {
@@ -787,6 +808,13 @@ func WriteBuildValues(root string, m Manifest, version string) error {
 		return err
 	}
 	for _, path := range paths {
+		fixed, err := FixedVersion(filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		if fixed {
+			continue
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
