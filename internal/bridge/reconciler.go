@@ -57,6 +57,9 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return r.report(ctx, c, "ParameterNotAllowed", e.Error())
 	}
 	m := kinds.Table[c.Spec.Kind]
+	if m.AppCluster {
+		return r.reconcileKafka(ctx, c, desired)
+	}
 	name := policy.Name(r.ClusterID, c.Namespace, c.Name, c.Spec.Resource.Name)
 	apps := r.Dynamic.Resource(m.GVR()).Namespace(r.TenantNamespace)
 	app, e := apps.Get(ctx, name, metav1.GetOptions{})
@@ -227,6 +230,16 @@ func (r *Reconciler) finalize(ctx context.Context, c *api.ServiceClaim) (ctrl.Re
 		return ctrl.Result{}, nil
 	}
 	kind, name := c.Spec.Kind, policy.Name(r.ClusterID, c.Namespace, c.Name, c.Spec.Resource.Name)
+	if kinds.Table[kind].AppCluster {
+		name = KafkaName(name)
+		if ref := c.Status.Application; ref != nil {
+			if ref.Kind != kind || ref.Namespace != kinds.KafkaNamespace {
+				return r.report(ctx, c, "NameConflict", "Binding points outside the Kafka namespace")
+			}
+			name = ref.Name
+		}
+		return r.finalizeKafka(ctx, c, name)
+	}
 	if ref := c.Status.Application; ref != nil {
 		if ref.Namespace != r.TenantNamespace {
 			return r.report(ctx, c, "NameConflict", "Binding points outside the configured tenant")

@@ -18,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	ktesting "k8s.io/client-go/testing"
@@ -36,6 +37,11 @@ func harness(t *testing.T, c *api.ServiceClaim) (*Reconciler, *dynamicfake.FakeD
 	_ = api.AddToScheme(s)
 	_ = corev1.AddToScheme(s)
 	_ = discoveryv1.AddToScheme(s)
+	for _, kind := range []string{"Kafka", "KafkaNodePool", "KafkaTopic", "KafkaUser"} {
+		gv := schema.GroupVersion{Group: "kafka.strimzi.io", Version: "v1"}
+		s.AddKnownTypeWithName(gv.WithKind(kind), &unstructured.Unstructured{})
+		s.AddKnownTypeWithName(gv.WithKind(kind+"List"), &unstructured.UnstructuredList{})
+	}
 	a := fake.NewClientBuilder().WithScheme(s).WithStatusSubresource(&api.ServiceClaim{}).WithObjects(c).WithInterceptorFuncs(interceptor.Funcs{Patch: func(ctx context.Context, cl client.WithWatch, obj client.Object, p client.Patch, opts ...client.PatchOption) error {
 		if p.Type() != types.ApplyPatchType {
 			return cl.Patch(ctx, obj, p, opts...)
@@ -56,10 +62,18 @@ func harness(t *testing.T, c *api.ServiceClaim) (*Reconciler, *dynamicfake.FakeD
 			return e
 		}
 		obj.SetResourceVersion(old.GetResourceVersion())
+		// Apply never writes status; the fake client would otherwise clear it.
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			if _, has := u.Object["status"]; !has {
+				if status, ok := old.(*unstructured.Unstructured).Object["status"]; ok {
+					u.Object["status"] = status
+				}
+			}
+		}
 		return cl.Update(ctx, obj)
 	}}).Build()
 	d := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
-	r := &Reconciler{App: a, Management: fake.NewClientBuilder().WithScheme(s).Build(), Dynamic: d, Organization: "org", Tier: "nonprod", TenantNamespace: "tenant-org-nonprod", ClusterID: "cluster", TierDeletionPolicy: "Delete", AllowedKinds: []string{"Postgres", "Redis"}, Policy: policy.Default()}
+	r := &Reconciler{App: a, Management: fake.NewClientBuilder().WithScheme(s).Build(), Dynamic: d, Organization: "org", Tier: "nonprod", TenantNamespace: "tenant-org-nonprod", ClusterID: "cluster", TierDeletionPolicy: "Delete", AllowedKinds: []string{"Postgres", "Redis", "Kafka"}, Policy: policy.Default()}
 	return r, d
 }
 func reconcile(t *testing.T, r *Reconciler, c *api.ServiceClaim) *api.ServiceClaim {

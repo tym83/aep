@@ -40,7 +40,11 @@ type Config struct {
 func Default() Config {
 	c := Config{Kinds: map[string]Limits{}}
 	for k, m := range kinds.Table {
-		c.Kinds[k] = Limits{AllowedParameters: m.Parameters, MaxPreset: "u1.large", MaxSize: "100Gi", MaxReplicas: 3}
+		replicas := int64(3)
+		if m.MaxReplicas > 0 {
+			replicas = m.MaxReplicas
+		}
+		c.Kinds[k] = Limits{AllowedParameters: m.Parameters, MaxPreset: "u1.large", MaxSize: "100Gi", MaxReplicas: replicas}
 	}
 	return c
 }
@@ -76,6 +80,9 @@ func Load(path string) (Config, error) {
 		if e != nil || q.Sign() <= 0 || l.MaxReplicas < 1 {
 			return c, fmt.Errorf("positive maxSize and maxReplicas required for %s", k)
 		}
+		if m.MaxReplicas > 0 && l.MaxReplicas > m.MaxReplicas {
+			return c, fmt.Errorf("maxReplicas for %s cannot exceed %d", k, m.MaxReplicas)
+		}
 	}
 	if len(c.Kinds) == 0 {
 		return c, fmt.Errorf("at least one kind policy required")
@@ -101,6 +108,10 @@ func Hash(spec map[string]any) string {
 func Retain(tier, tierPolicy, claimPolicy string) bool {
 	return tier == "prod" || tierPolicy == "Retain" || claimPolicy == "Retain"
 }
+
+// Preset returns the relative CPU and memory units of a preset: each size
+// doubles CPU and each series doubles memory per CPU.
+func Preset(s string) (cpu, memory int, ok bool) { return preset(s) }
 func preset(s string) (int, int, bool) {
 	parts := strings.Split(s, ".")
 	if len(parts) != 2 {
@@ -246,23 +257,95 @@ func Validate(c *api.ServiceClaim, cfg Config, allowed []string) (map[string]any
 	if !ok || n < 1 || n > float64(l.MaxReplicas) || n != float64(int64(n)) {
 		return nil, fmt.Errorf("replicas must be an integer between 1 and %d", l.MaxReplicas)
 	}
+	m := kinds.Table[c.Spec.Kind]
+	if m.MaxReplicas > 0 && int64(n) > m.MaxReplicas {
+		return nil, fmt.Errorf("replicas must be an integer between 1 and %d", m.MaxReplicas)
+	}
 	out["replicas"] = int64(n)
+	if _, exists := out["version"]; !exists && m.DefaultVersion != "" {
+		out["version"] = m.DefaultVersion
+	}
 	if v, exists := out["version"]; exists {
 		s, ok := v.(string)
-		versions := []string{"v7", "v8"}
-		if c.Spec.Kind == "Postgres" {
-			versions = []string{"v13", "v14", "v15", "v16", "v17", "v18"}
-		}
-		if !ok || !slices.Contains(versions, s) {
+		if !ok || !slices.Contains(m.Versions, s) {
 			return nil, fmt.Errorf("unsupported version")
 		}
 	}
-	if c.Spec.Kind == "Postgres" {
+	switch c.Spec.Kind {
+	case "Postgres":
 		if e := validatePostgres(out); e != nil {
+			return nil, e
+		}
+	case "Kafka":
+		if e := validateKafka(out); e != nil {
 			return nil, e
 		}
 	}
 	return out, nil
+}
+
+// MaxKafkaTopicName bounds topic names; Kafka itself allows 249 characters.
+const MaxKafkaTopicName = 100
+
+var kafkaTopicName = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+var kafkaConfigKey = regexp.MustCompile(`^[a-z][a-z0-9.]*[a-z0-9]$`)
+
+// validateKafka normalizes topics to name, partitions (default 3) and string config.
+func validateKafka(out map[string]any) error {
+	raw, exists := out["topics"]
+	if !exists {
+		out["topics"] = []any{}
+		return nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("topics must be an array")
+	}
+	seen := map[string]bool{}
+	topics := []any{}
+	for _, item := range list {
+		t, ok := item.(map[string]any)
+		if !ok {
+			return fmt.Errorf("each topic must be an object")
+		}
+		for key := range t {
+			if key != "name" && key != "partitions" && key != "config" {
+				return fmt.Errorf("topic field %s is not allowed", key)
+			}
+		}
+		name, ok := t["name"].(string)
+		if !ok || len(name) > MaxKafkaTopicName || !kafkaTopicName.MatchString(name) {
+			return fmt.Errorf("topic name must be lowercase alphanumeric with '-', at most %d characters", MaxKafkaTopicName)
+		}
+		if seen[name] {
+			return fmt.Errorf("duplicate topic %s", name)
+		}
+		seen[name] = true
+		partitions := int64(3)
+		if v, exists := t["partitions"]; exists {
+			n, ok := v.(float64)
+			if !ok || n < 1 || n > 100 || n != float64(int64(n)) {
+				return fmt.Errorf("topic %s partitions must be an integer between 1 and 100", name)
+			}
+			partitions = int64(n)
+		}
+		config := map[string]any{}
+		if v, exists := t["config"]; exists {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return fmt.Errorf("topic %s config must be a map of strings", name)
+			}
+			for key, value := range m {
+				if _, ok := value.(string); !ok || !kafkaConfigKey.MatchString(key) {
+					return fmt.Errorf("topic %s config must be a map of strings with Kafka property keys", name)
+				}
+				config[key] = value
+			}
+		}
+		topics = append(topics, map[string]any{"name": name, "partitions": partitions, "config": config})
+	}
+	out["topics"] = topics
+	return nil
 }
 func validatePostgres(out map[string]any) error {
 	users, ok := out["users"].(map[string]any)
