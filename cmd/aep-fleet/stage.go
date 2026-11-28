@@ -32,7 +32,8 @@ func stage(args []string) error {
 	}
 	names := map[string]bool{"aep-bridge-appcluster": true, "app-cluster-baseline": true, "app-cluster-nonprod": true, "app-cluster-prod": true}
 	for _, c := range operator.DeliveryCharts() {
-		if c.Name != "argo-cd" {
+		// Fleet clusters never receive Argo CD or control plane charts.
+		if c.Name != "argo-cd" && c.Target != operator.TargetControlPlane {
 			names[c.Name] = true
 		}
 	}

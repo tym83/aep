@@ -107,7 +107,8 @@ func Fingerprint(root string) (string, error) {
 	h := sha256.New()
 	// Explicit Go inputs that define rendered upstream charts and image values.
 	cmd := exec.Command("git", "ls-files", "-z", "--", "charts", "policies", "release", "Dockerfile*", "portal/Dockerfile", ".github/workflows/images.yml",
-		"internal/operator/argocd.go", "internal/operator/delivery.go", "internal/operator/policies.go", "internal/operator/mirror.go")
+		"internal/operator/argocd.go", "internal/operator/delivery.go", "internal/operator/policies.go", "internal/operator/mirror.go",
+		"internal/operator/controlplane_values.go")
 	cmd.Dir = root
 	tracked, err := cmd.Output()
 	if err != nil {

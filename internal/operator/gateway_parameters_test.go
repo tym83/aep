@@ -13,7 +13,7 @@ import (
 )
 
 func TestKgatewayValuesReferenceGatewayParameters(t *testing.T) {
-	v := PullSecretValues("kgateway", M{})
+	v := PullSecretValues("kgateway", "openchoreo-data-plane", M{})
 	name, _, _ := unstructured.NestedString(v, "gatewayClassParametersRefs", "kgateway", "name")
 	ns, _, _ := unstructured.NestedString(v, "gatewayClassParametersRefs", "kgateway", "namespace")
 	if name != MirrorGatewayParameters || ns != "openchoreo-data-plane" {
@@ -21,18 +21,38 @@ func TestKgatewayValuesReferenceGatewayParameters(t *testing.T) {
 	}
 }
 
+func TestGatewayParametersFollowNamespace(t *testing.T) {
+	v := PullSecretValues("kgateway", "openchoreo-control-plane", M{})
+	if ns, _, _ := unstructured.NestedString(v, "gatewayClassParametersRefs", "kgateway", "namespace"); ns != "openchoreo-control-plane" {
+		t.Fatal(v)
+	}
+	s := integrationSession(t)
+	ctx := context.Background()
+	c := s.tiers["nonprod"]
+	s.r.Options.ImageRegistryMirror, s.r.Options.RegistrySecret = "mirror.example/aep", "mirror-auth"
+	if err := s.deliverGatewayParameters(ctx, c, "openchoreo-control-plane"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.get(ctx, "gateway.kgateway.dev/v1alpha1", "gatewayparameters", "openchoreo-control-plane", MirrorGatewayParameters); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.get(ctx, "gateway.kgateway.dev/v1alpha1", "gatewayparameters", "openchoreo-data-plane", MirrorGatewayParameters); !errors.IsNotFound(err) {
+		t.Fatal("GatewayParameters left the requested namespace", err)
+	}
+}
+
 func TestDeliverGatewayParameters(t *testing.T) {
 	s := integrationSession(t)
 	ctx := context.Background()
 	c := s.tiers["nonprod"]
-	if err := s.deliverGatewayParameters(ctx, c); err != nil {
+	if err := s.deliverGatewayParameters(ctx, c, "openchoreo-data-plane"); err != nil {
 		t.Fatal("no mirror must be a no-op", err)
 	}
 	if _, err := c.get(ctx, "gateway.kgateway.dev/v1alpha1", "gatewayparameters", "openchoreo-data-plane", MirrorGatewayParameters); !errors.IsNotFound(err) {
 		t.Fatal("no mirror must not create GatewayParameters", err)
 	}
 	s.r.Options.ImageRegistryMirror, s.r.Options.RegistrySecret = "mirror.example/aep", "mirror-auth"
-	if err := s.deliverGatewayParameters(ctx, c); err != nil {
+	if err := s.deliverGatewayParameters(ctx, c, "openchoreo-data-plane"); err != nil {
 		t.Fatal(err)
 	}
 	gp, err := c.get(ctx, "gateway.kgateway.dev/v1alpha1", "gatewayparameters", "openchoreo-data-plane", MirrorGatewayParameters)
@@ -50,7 +70,7 @@ func TestDeliverGatewayParameters(t *testing.T) {
 	fresh.PrependReactor("*", "gatewayparameters", func(ktesting.Action) (bool, runtime.Object, error) {
 		return true, nil, errors.NewNotFound(gvr.GroupResource(), "")
 	})
-	err = s.deliverGatewayParameters(ctx, &Cluster{Dynamic: fresh})
+	err = s.deliverGatewayParameters(ctx, &Cluster{Dynamic: fresh}, "openchoreo-data-plane")
 	if _, ok := err.(*pendingError); !ok {
 		t.Fatal("missing CRDs must be pending", err)
 	}
