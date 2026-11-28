@@ -28,6 +28,11 @@ func (o Options) chartSource(source *unstructured.Unstructured) error {
 		return err
 	}
 	spec["ref"] = M{"digest": a.Digest}
+	for _, c := range charts {
+		if c.URL == canonical && c.LayerSelector != nil {
+			spec["layerSelector"] = M{"mediaType": c.LayerSelector.MediaType, "operation": c.LayerSelector.Operation}
+		}
+	}
 	spec["url"] = registrymirror.Rewrite(spec["url"].(string), o.ChartRegistryMirror)
 	if o.RegistryInsecure && o.ChartRegistryMirror != "" {
 		spec["insecure"] = true
@@ -59,6 +64,10 @@ func MirrorValues(chart, mirror string, values M) M {
 		setMap(values, []string{"redis", "image", "repository"}, mirror+"/ecr-public.aws.com/docker/library/redis")
 	case "openchoreo-data-plane":
 		values["global"] = M{"imageRegistry": mirror + "/cr.openchoreo.dev"}
+	case ControlPlaneChart:
+		values = mirrorControlPlane(mirror, values)
+	case ExternalSecretsChart:
+		setMap(values, []string{"global", "repository"}, registrymirror.Rewrite(externalSecretsImage, mirror))
 	case "kgateway":
 		setMap(values, []string{"image", "registry"}, mirror+"/cr.kgateway.dev/kgateway-dev")
 	case StrimziChart:
@@ -87,13 +96,13 @@ func setMap(m M, path []string, value any) {
 	m[path[len(path)-1]] = value
 }
 
-// DeliveryCharts exposes the exact operator chart pins to release inventory generation.
-func DeliveryCharts() []struct{ Name, Version, URL string } {
-	out := []struct{ Name, Version, URL string }{}
-	for _, c := range charts {
-		out = append(out, struct{ Name, Version, URL string }{c.name, c.version, c.url + "/" + c.name})
-	}
-	return append(out, struct{ Name, Version, URL string }{"klusterlet", KlusterletVersion, KlusterletChartOCI}, struct{ Name, Version, URL string }{"kyverno", KyvernoChartVersion, "oci://ghcr.io/kyverno/charts/kyverno"}, struct{ Name, Version, URL string }{"argo-cd", ArgoCDChartVersion, ArgoCDChartOCI})
+// DeliveryCharts exposes the exact operator chart pins to release inventory
+// generation: the generic delivery table and the charts with their own paths.
+func DeliveryCharts() []DeliveryChart {
+	return append(append([]DeliveryChart{}, charts...),
+		DeliveryChart{Name: "klusterlet", Version: KlusterletVersion, URL: KlusterletChartOCI, Namespace: "open-cluster-management-agent", Target: TargetFleet},
+		DeliveryChart{Name: "kyverno", Version: KyvernoChartVersion, URL: "oci://ghcr.io/kyverno/charts/kyverno", Namespace: "kyverno", Target: TargetTier},
+		DeliveryChart{Name: "argo-cd", Version: ArgoCDChartVersion, URL: ArgoCDChartOCI, Namespace: "argocd", Target: TargetTier})
 }
 
 // ReleaseValues is the same chart configuration used by reconciliation, with
@@ -110,6 +119,9 @@ func ReleaseValues(chart string) M {
 	}
 	if chart == StrimziChart {
 		return PinValues(chart, StrimziValues())
+	}
+	if chart == ControlPlaneChart {
+		return PinValues(chart, ControlPlaneValues(inventoryControlPlane))
 	}
 	return PinValues(chart, M{})
 }
@@ -179,6 +191,10 @@ func PinValues(chart string, values M) M {
 		pin("cr.kgateway.dev/kgateway-dev/envoy-wrapper", "image", "tag")
 	case "openchoreo-data-plane":
 		pin("cr.openchoreo.dev/openchoreo/cluster-agent", "clusterAgent", "image", "tag")
+	case ControlPlaneChart:
+		values = pinControlPlane(values)
+	case ExternalSecretsChart:
+		values = pinExternalSecrets(values)
 	case StrimziChart:
 		// A tag replaces the chart's per-version suffix, so every Kafka version
 		// maps to the one pinned broker image; the bridge only accepts that version.
@@ -236,11 +252,12 @@ const MirrorPullSecret = "aep-mirror-pull"
 // mirrorPull reports whether delivered images come from an authenticated mirror.
 func (o Options) mirrorPull() bool { return o.ImageRegistryMirror != "" && o.RegistrySecret != "" }
 
-// PullSecretValues adds the mirror pull secret to a delivered chart's pods.
-func PullSecretValues(chart string, values M) M {
+// PullSecretValues adds the mirror pull secret to the pods of a chart released
+// in namespace, which also holds the kgateway GatewayParameters.
+func PullSecretValues(chart, namespace string, values M) M {
 	refs := []any{M{"name": MirrorPullSecret}}
 	switch chart {
-	case "kyverno", "argo-cd", "openchoreo-data-plane":
+	case "kyverno", "argo-cd", "openchoreo-data-plane", ControlPlaneChart, ExternalSecretsChart:
 		setMap(values, []string{"global", "imagePullSecrets"}, refs)
 	case StrimziChart:
 		// The operator also passes these to every operand pod (STRIMZI_IMAGE_PULL_SECRETS).
@@ -249,7 +266,7 @@ func PullSecretValues(chart string, values M) M {
 		values["imagePullSecrets"] = refs
 		// Proxy pods of a fresh tier start before Kyverno and the baseline
 		// policy that adds the pull secret, so kgateway sets it itself.
-		values["gatewayClassParametersRefs"] = M{"kgateway": M{"name": MirrorGatewayParameters, "namespace": "openchoreo-data-plane"}}
+		values["gatewayClassParametersRefs"] = M{"kgateway": M{"name": MirrorGatewayParameters, "namespace": namespace}}
 	}
 	return values
 }
@@ -258,12 +275,13 @@ func PullSecretValues(chart string, values M) M {
 const MirrorGatewayParameters = "aep-mirror-pull"
 
 // deliverGatewayParameters waits for the kgateway CRDs that the delivered
-// charts install, so a fresh tier reports pending rather than failing.
-func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster) error {
+// charts install, so a fresh cluster reports pending rather than failing.
+// namespace is where kgateway is released.
+func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster, namespace string) error {
 	if !s.r.Options.mirrorPull() {
 		return nil
 	}
-	gp := obj("gateway.kgateway.dev/v1alpha1", "GatewayParameters", "openchoreo-data-plane", MirrorGatewayParameters,
+	gp := obj("gateway.kgateway.dev/v1alpha1", "GatewayParameters", namespace, MirrorGatewayParameters,
 		M{"kube": M{"podTemplate": M{"imagePullSecrets": []any{M{"name": MirrorPullSecret}}}}})
 	if e := c.apply(ctx, s.o, "gatewayparameters", gp); e != nil {
 		if errors.IsNotFound(e) {
@@ -274,10 +292,11 @@ func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster) erro
 	return nil
 }
 
-func (s *session) chartValues(chart string, values M) M {
+// chartValues is the delivered configuration of a chart released in namespace.
+func (s *session) chartValues(chart, namespace string, values M) M {
 	values = MirrorValues(chart, s.r.Options.ImageRegistryMirror, values)
 	if s.r.Options.mirrorPull() {
-		values = PullSecretValues(chart, values)
+		values = PullSecretValues(chart, namespace, values)
 	}
 	return values
 }

@@ -11,14 +11,14 @@ import (
 )
 
 func TestPullSecretValuesPerChart(t *testing.T) {
-	for chart, path := range map[string][]string{"kyverno": {"global", "imagePullSecrets"}, "argo-cd": {"global", "imagePullSecrets"}, "openchoreo-data-plane": {"global", "imagePullSecrets"}, "kgateway": {"imagePullSecrets"}} {
-		v := PullSecretValues(chart, M{})
+	for chart, path := range map[string][]string{"kyverno": {"global", "imagePullSecrets"}, "argo-cd": {"global", "imagePullSecrets"}, "openchoreo-data-plane": {"global", "imagePullSecrets"}, "kgateway": {"imagePullSecrets"}, ControlPlaneChart: {"global", "imagePullSecrets"}, ExternalSecretsChart: {"global", "imagePullSecrets"}} {
+		v := PullSecretValues(chart, "openchoreo-data-plane", M{})
 		got, ok, _ := unstructured.NestedSlice(v, path...)
 		if !ok || len(got) != 1 || got[0].(M)["name"] != MirrorPullSecret {
 			t.Fatalf("%s: %v", chart, v)
 		}
 	}
-	if v := PullSecretValues("kgateway-crds", M{}); len(v) != 0 {
+	if v := PullSecretValues("kgateway-crds", "openchoreo-data-plane", M{}); len(v) != 0 {
 		t.Fatal("charts without pods must be unchanged", v)
 	}
 }

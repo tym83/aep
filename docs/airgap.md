@@ -11,15 +11,25 @@ short names are expanded to `docker.io/library/...` or `docker.io/...`.
 The inventory covers the charts in `charts/` and `policies/`, their rendered
 containers (including hooks and init containers), the operator's pinned Kyverno,
 kgateway, Argo CD, OpenChoreo data-plane and Strimzi charts, and standalone/controller-created
-images in `release/extra-images.yaml`. Both production and nonproduction policy
+images in `release/extra-images.yaml`. It also pins the control plane charts:
+`oci://cr.openchoreo.dev/openchoreo/helm-charts/openchoreo-control-plane` 1.4.0-m.3
+with the `cr.openchoreo.dev/openchoreo/{controller,openchoreo-api,cluster-gateway,event-forwarder}:v1.4.0-m.3`
+images, the authorization bootstrap hook image `registry.k8s.io/kubectl:v1.36.0` and
+`ghcr.io/tym83/aep-portal` in place of the OpenChoreo UI, and
+`oci://ghcr.io/external-secrets/charts/external-secrets` 2.0.1 with
+`ghcr.io/external-secrets/external-secrets:v2.0.1`. The external-secrets artifact
+carries layers besides the chart, so its Flux source selects the Helm chart layer.
+Thunder and OpenBao are not part of the inventory. Both production and nonproduction policy
 bundles are included. ServiceClaim CRDs and bootstrap RBAC are embedded in the
 operator; they do not require a GitHub download. The optional LLM and SRE charts
 (including token-proxy), audit-forwarder, control-plane backup and ITSM bridge
 are included, but model weights must be staged separately on their PVC.
 
-This repository currently expects an existing OpenChoreo control plane. It does
-not install ESO, Argo Workflows or the OpenChoreo observability/control
-planes. Inventory and mirror those separately if your installation uses them.
+This repository currently expects an existing OpenChoreo control plane: the
+operator does not install the control plane or ESO yet, although both charts are
+already inventoried and mirrored. Argo Workflows and the OpenChoreo observability
+plane are not covered; inventory and mirror them separately if your installation
+uses them.
 Cozystack, Kubernetes, cert-manager, CNI, storage and Flux are prerequisites, not
 AEP artifacts: follow [Cozystack's air-gap guide](https://cozystack.io/docs/install/kubernetes/air-gapped/) for
 its air-gap installation and registry configuration for your pinned version.
@@ -106,11 +116,19 @@ Main chart publication waits for the image build and uses commit tags with uniqu
 resolution; release chart flags provide the frozen bridge reference, avoiding a
 self-referential operator digest.
 
+Charts the operator itself delivers (`aep-component-types`, `aep-builds`) carry
+the Chart.yaml annotation `aep.aenix.io/fixed-version: "true"`. Builds leave their
+version and values unchanged, so the operator's embedded inventory pins their
+digest. `charts/fixed-versions.yaml` records the digest of each published
+version; a test fails when chart content changes without a version bump, a new
+entry there and the matching operator constant. Bump to a version not yet present
+in the chart registry: publishing refuses to retag an existing version.
+
 `manifest --check` is offline: it checks rendered images, local OCI bytes and a
 fingerprint of tracked `charts/`, `policies/`, `release/`, root Dockerfiles,
 `portal/Dockerfile`, and `.github/workflows/images.yml`. The explicit Go inputs for
 upstream chart/image values are `internal/operator/argocd.go`, `delivery.go`,
-`policies.go`, and `mirror.go`. Tests, the generated manifest/layout and
+`policies.go`, `mirror.go` and `controlplane_values.go`. Tests, the generated manifest/layout and
 `release/.cache` are excluded. Ordinary Go implementation edits do not require
 network re-resolution. After local chart changes, use `manifest --refresh-local`
 to rebuild chart layouts while preserving upstream pins; use full generation when

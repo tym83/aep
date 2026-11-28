@@ -4,8 +4,10 @@ import (
 	"context"
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/version"
+	inventory "github.com/tym83/aep/release"
 	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -62,9 +64,7 @@ func TestUpstreamMirrorRendering(t *testing.T) {
 					continue
 				}
 				for _, image := range regexp.MustCompile(`(?m)^\s+image: *"?([^"\s]+)`).FindAllStringSubmatch(doc, -1) {
-					if !strings.Contains(image[1], "@sha256:") {
-						t.Fatalf("unpinned delivered image: %s", image[1])
-					}
+					checkMirroredImage(t, image[1], "mirror.local/cache/")
 				}
 			}
 			// Scan all rendered text, including hooks and controller environment defaults.
@@ -82,6 +82,78 @@ func TestUpstreamMirrorRendering(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// checkMirroredImage requires exactly one mirror prefix in front of an
+// inventory repository, so a chart cannot re-host an image under another
+// registry path. Upstream images also carry their digest; own images are
+// pinned to the operator build at runtime.
+func checkMirroredImage(t *testing.T, ref, prefix string) {
+	t.Helper()
+	upstream, ok := strings.CutPrefix(ref, prefix)
+	if !ok || strings.Contains(upstream, prefix) {
+		t.Fatalf("image not mirrored exactly once: %s", ref)
+	}
+	repo, _, _ := strings.Cut(upstream, "@")
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	for _, a := range inventory.Artifacts() {
+		if a.Kind == "image" && a.Ref == repo {
+			if !a.Own && !strings.Contains(upstream, "@sha256:") {
+				t.Fatalf("unpinned delivered image: %s", ref)
+			}
+			return
+		}
+	}
+	t.Fatalf("mirrored image is no inventory repository: %s", ref)
+}
+
+func TestChartLayerSelector(t *testing.T) {
+	for _, c := range DeliveryCharts() {
+		u := obj("source.toolkit.fluxcd.io/v1", "OCIRepository", "tenant", "chart", M{"url": c.URL, "ref": M{"tag": c.Version}})
+		if err := (Options{ChartRegistryMirror: "mirror.local/cache"}).chartSource(u); err != nil {
+			t.Fatal(err)
+		}
+		selector, found, _ := unstructured.NestedMap(u.Object, "spec", "layerSelector")
+		if c.Name != ExternalSecretsChart {
+			if found {
+				t.Fatal(c.Name, selector)
+			}
+			continue
+		}
+		if selector["mediaType"] != "application/vnd.cncf.helm.chart.content.v1.tar+gzip" || selector["operation"] != "copy" {
+			t.Fatal(selector)
+		}
+	}
+}
+
+func TestDeliveryTargets(t *testing.T) {
+	var tier, cp []string
+	for _, c := range DeliveryCharts() {
+		switch c.Target {
+		case TargetTier:
+			tier = append(tier, c.Name)
+		case TargetControlPlane:
+			cp = append(cp, c.Name)
+		}
+		if c.Namespace == "" || !strings.HasPrefix(c.URL, "oci://") || !strings.HasSuffix(c.URL, "/"+c.Name) {
+			t.Fatal(c)
+		}
+	}
+	if strings.Join(tier, ",") != "kgateway-crds,kgateway,openchoreo-data-plane,"+StrimziChart+",kyverno,argo-cd" {
+		t.Fatal(tier)
+	}
+	if strings.Join(cp, ",") != ControlPlaneChart+","+ExternalSecretsChart {
+		t.Fatal(cp)
+	}
+	names := []string{}
+	for _, c := range tierCharts {
+		names = append(names, c.Name)
+	}
+	if strings.Join(names, ",") != "kgateway-crds,kgateway,openchoreo-data-plane,"+StrimziChart {
+		t.Fatal("tier delivery changed", names)
 	}
 }
 

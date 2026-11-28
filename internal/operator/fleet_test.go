@@ -92,18 +92,18 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 		n, v, ns string
 		values   M
 	}{}
-	for _, ch := range charts {
-		if ch.name == StrimziChart {
+	for _, ch := range tierCharts {
+		if ch.Name == StrimziChart {
 			continue
 		}
 		v := M{}
-		if ch.name == "openchoreo-data-plane" {
+		if ch.Name == "openchoreo-data-plane" {
 			v = M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": "ext-test", "tls": M{"generateCerts": false}}}
 		}
 		matrix = append(matrix, struct {
 			n, v, ns string
 			values   M
-		}{ch.name, ch.version, "openchoreo-data-plane", v})
+		}{ch.Name, ch.Version, "openchoreo-data-plane", v})
 	}
 	for _, name := range []string{"kyverno", "app-cluster-baseline", "app-cluster-nonprod", "app-cluster-prod"} {
 		v := PolicyBundleVersion

@@ -121,7 +121,7 @@ func (s *session) policies(ctx context.Context) error {
 			if err := s.r.Management.apply(ctx, s.o, "ocirepositories", source); err != nil {
 				return err
 			}
-			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, s.chartValues(name, values[name]))); err != nil {
+			if err := s.r.Management.apply(ctx, s.o, "helmreleases", policyRelease(s.o, tier, name, s.chartValues(name, "kyverno", values[name]))); err != nil {
 				return err
 			}
 		}

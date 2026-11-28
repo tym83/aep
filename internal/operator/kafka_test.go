@@ -34,8 +34,8 @@ func TestRetainedKafkaBlocksDeletion(t *testing.T) {
 
 func strimziIndex(t *testing.T) int {
 	t.Helper()
-	for i, c := range charts {
-		if c.name == StrimziChart {
+	for i, c := range tierCharts {
+		if c.Name == StrimziChart {
 			return i
 		}
 	}
@@ -45,7 +45,7 @@ func strimziIndex(t *testing.T) int {
 
 func TestStrimziDelivery(t *testing.T) {
 	i := strimziIndex(t)
-	if c := charts[i]; c.version != "0.50.0" || c.url != "oci://quay.io/strimzi-helm" {
+	if c := tierCharts[i]; c.Version != "0.50.0" || c.URL != "oci://quay.io/strimzi-helm/strimzi-kafka-operator" {
 		t.Fatal(c)
 	}
 	found := false
@@ -55,7 +55,7 @@ func TestStrimziDelivery(t *testing.T) {
 	if !found {
 		t.Fatal("Strimzi missing from release inventory charts")
 	}
-	hr := deliveryRelease("tenant-acme-nonprod", i, M{})
+	hr := deliveryRelease("tenant-acme-nonprod", tierCharts[i], tierCharts[i-1].Name, M{})
 	spec := hr.Object["spec"].(M)
 	if spec["releaseName"] != StrimziChart || spec["targetNamespace"] != kinds.KafkaNamespace || spec["storageNamespace"] != kinds.KafkaNamespace {
 		t.Fatal(spec)
@@ -63,9 +63,9 @@ func TestStrimziDelivery(t *testing.T) {
 	if spec["install"].(M)["crds"] != "CreateReplace" || spec["upgrade"].(M)["crds"] != "CreateReplace" {
 		t.Fatal("Strimzi CRDs must follow chart upgrades", spec)
 	}
-	for j, c := range charts {
-		if c.name != StrimziChart && deliveryRelease("ns", j, M{}).Object["spec"].(M)["targetNamespace"] != "openchoreo-data-plane" {
-			t.Fatal("data plane charts moved", c.name)
+	for _, c := range tierCharts {
+		if c.Name != StrimziChart && deliveryRelease("ns", c, "", M{}).Object["spec"].(M)["targetNamespace"] != "openchoreo-data-plane" {
+			t.Fatal("data plane charts moved", c.Name)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func TestStrimziValues(t *testing.T) {
 	if tag, _, _ := unstructured.NestedString(plain, "kafka", "image", "tag"); !strings.HasPrefix(tag, "0.50.0-kafka-4.1.1@sha256:") {
 		t.Fatal(tag)
 	}
-	mirrored := PullSecretValues(StrimziChart, MirrorValues(StrimziChart, "mirror.example/aep", StrimziValues()))
+	mirrored := PullSecretValues(StrimziChart, kinds.KafkaNamespace, MirrorValues(StrimziChart, "mirror.example/aep", StrimziValues()))
 	if mirrored["defaultImageRegistry"] != "mirror.example/aep/quay.io" || mirrored["defaultImageRepository"] != nil {
 		t.Fatal(mirrored)
 	}
