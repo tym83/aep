@@ -1,15 +1,31 @@
 # Organization operator (stage 1)
 
 The operator runs on the Cozystack management cluster. It provisions dedicated
-application clusters and registers them with an **existing** OpenChoreo 1.4.0-m.3
-control plane. Organizations do not install aep-cp or change its Helm release;
-a [ControlPlane resource](#controlplane-resource) installs and manages one.
+application clusters and registers them with an OpenChoreo 1.4.0-m.3 control
+plane (aep-cp). The supported path is an operator-managed aep-cp: a
+[ControlPlane resource](#controlplane-resource) installs and manages it, and
+Organizations use it by reference or as the default. An existing, hand-built
+aep-cp can still be used through the legacy `--aepcp-*` flags. Organizations
+never install aep-cp or change its Helm release.
 
 ## Installation
 
 Build the operator image with `docker build -f Dockerfile.operator -t <image> .`
 and the bridge image with the repository's default Dockerfile. Publish images to
 your own registry before deployment; the chart's image names are placeholders.
+
+With an operator-managed control plane (supported), install the operator with
+a default ControlPlane name, then create that ControlPlane (see
+[ControlPlane resource](#controlplane-resource) and [install.md](install.md)):
+
+```sh
+helm upgrade --install aep-operator charts/aep-operator \
+  --namespace aep-system --create-namespace \
+  --set image=<operator-image> --set bridgeImage=<bridge-image> \
+  --set controlPlane.default=default
+```
+
+With an existing aep-cp (legacy), point the operator at it instead:
 
 ```sh
 helm upgrade --install aep-operator charts/aep-operator \
@@ -21,10 +37,12 @@ helm upgrade --install aep-operator charts/aep-operator \
 
 Cozystack's aggregated Tenant/Kubernetes/KubernetesNodes APIs, Kamaji, Flux OCI
 sources and Helm controllers, and Cilium CCNP must already be installed. The
-operator namespace must exist. Supply aep-cp credentials with permission to manage
-organization namespaces, OpenChoreo objects and admission policies, read gateway
-Deployments/Secrets, and create SelfSubjectReviews. Its Kubernetes identity must
-be dedicated to the operator, distinct from OpenChoreo's API identity and users.
+operator namespace must exist. On a managed control plane the operator creates
+its own scoped identity. For a legacy aep-cp, supply credentials with permission
+to manage organization namespaces, OpenChoreo objects and admission policies,
+read gateway Deployments/Secrets, and create SelfSubjectReviews. Its Kubernetes
+identity must be dedicated to the operator, distinct from OpenChoreo's API
+identity and users.
 
 The operator checks installation-wide `ClusterAuthzRoleBindings` before tenant
 provisioning on every Organization reconciliation, including startup reconciliation.
@@ -32,8 +50,11 @@ provisioning on every Organization reconciliation, including startup reconciliat
 for any `groups` claim, `client_id=service_mcp_client`, or the shared
 `workload-publisher-binding`. Failed inspection also reports False. Ready requires
 this condition to be True. Invalid Organizations still poll every minute; pending
-ones retry with their normal provisioning cadence/backoff. At least one Organization
-must exist for this reconciliation-based installation check to run.
+ones retry with their normal provisioning cadence/backoff. On a legacy aep-cp at
+least one Organization must exist for this reconciliation-based installation
+check to run. A managed ControlPlane runs the check itself (`Hardened`), also
+without Organizations, and its Organizations report that result as
+`ControlPlaneHardened` instead of inspecting the installation again.
 
 By default it deletes matching objects only when `app.kubernetes.io/managed-by=Helm`
 and either `app.kubernetes.io/instance=openchoreo-control-plane` or
@@ -194,12 +215,12 @@ justify transferring ownership to pre-existing objects.
 |---|---|
 | `--mgmt-kubeconfig` | Empty: in-cluster credentials |
 | `--namespace` | `aep-system`; chart uses its release namespace |
-| `--aepcp-kubeconfig-secret` | Required unless local file or `--default-control-plane`; management `namespace/name`, key `super-admin.svc` |
+| `--aepcp-kubeconfig-secret` | Legacy aep-cp; required unless local file or `--default-control-plane`; management `namespace/name`, key `super-admin.svc` |
 | `--aepcp-kubeconfig` | Local file; mutually exclusive with Secret reference |
-| `--default-control-plane` | Empty; `ControlPlane` name for Organizations without `controlPlaneRef` (chart `controlPlane.default`); makes the legacy kubeconfig optional. Not resolved yet, see below |
-| `--aepcp-tenant-namespace` | `tenant-aep-cp` |
-| `--aepcp-cluster` | `aepcp` |
-| `--gateway-host-template` | `cluster-gateway.{{.DashedIP}}.nip.io`; also exposes `.ClusterIP` |
+| `--default-control-plane` | Empty; `ControlPlane` name for Organizations without `controlPlaneRef` (chart `controlPlane.default`) when no legacy kubeconfig is set; makes the legacy kubeconfig optional, see [Organizations on a ControlPlane](#organizations-on-a-controlplane) |
+| `--aepcp-tenant-namespace` | Legacy aep-cp; `tenant-aep-cp` |
+| `--aepcp-cluster` | Legacy aep-cp; `aepcp` |
+| `--gateway-host-template` | `cluster-gateway.{{.DashedIP}}.nip.io`; also exposes `.ClusterIP`; used by legacy aep-cp and by ControlPlanes without `spec.clusterGateway.host` |
 | `--tenant-egress-workaround` | `true`; false removes the owned workaround |
 | `--bridge-image` | Required |
 | `--prune-bootstrap-bindings` | `true`; false only reports unsafe installation bindings |
@@ -240,13 +261,43 @@ step; a step waits for the previous ones:
 | `OpenChoreoReady` | Cozystack Postgres `portal`, its credentials as `openchoreo-control-plane/aep-portal-db` and a selectorless Service `aep-portal-db` whose EndpointSlice points at the management ClusterIP of `postgres-portal-rw`; Secret `backstage-secrets` (session secret generated once and kept, client secret from `spec.oidc.portalClient.secretRef`, unused Jenkins key); optional ConfigMap `aep-oidc-ca`; HelmRelease `aep-cp-openchoreo-control-plane` |
 | `GatewayReady` | Finds the management mirror of `cluster-gateway-external`, takes `spec.clusterGateway.host` or `--gateway-host-template`, adds it to the gateway certificate, restarts `cluster-gateway` once per new certificate serial (annotation `aep.aenix.io/server-cert-serial`) and reports `status.gateway.url` |
 | `IngressReady` | Ingresses `aep-cp-public` (console and API, TLS from `clusterIssuer` or `tlsSecretRef`) and `aep-cp-deny-direct-logs` in the tenant namespace, backed by the mirror of `gateway-default`; waits for the TLS Secret |
+| `ContentReady` | The content below; does not block `Hardened` |
 | `Hardened` | Prunes chart-managed broad bootstrap bindings as below, without needing an Organization |
 
-`Ready` is True when these steps succeed. `ContentReady` (resource and component
-types, builds) and `AuditReady` are not implemented in this release: they report
-`NotImplemented` (`AuditReady` reports `Disabled` without `spec.audit`) and do
-not hold `Ready`. Status reports `outputs.kubeconfigSecretRef`,
+`Ready` is True when these steps succeed. `AuditReady` is not implemented in
+this release: it reports `NotImplemented` (`Disabled` without `spec.audit`) and
+does not hold `Ready`. Status reports `outputs.kubeconfigSecretRef`,
 `outputs.tenantNamespace`, `outputs.clusterName`, `endpoints` and `gateway`.
+
+### Content
+
+`ContentReady` delivers what developers build with, as `spec.content` selects:
+
+| Content | Delivered as | Selected by |
+|---|---|---|
+| ClusterResourceTypes `cozystack-kafka`, `cozystack-postgres`, `cozystack-redis` (embedded from `resource-types/`) | Server-side applied to aep-cp | `resourceTypes`; empty applies all |
+| `aep-component-types` 0.3.0 | HelmRelease `aep-cp-aep-component-types`, `buildOrganizations` = the build organizations below | `componentTypes`, default `true` |
+| `aep-builds` 0.3.0, `plane=control` | HelmRelease `aep-cp-aep-builds`: `organizations[]` = `{namespace: <org>, workflowPlane: nonprod}`, `registry.host` = `builds.registryHost`, `openchoreo.apiUrl` = `https://api.<domain>`, `openchoreo.tokenUrl` = `oidc.tokenURL` or `<issuer>/protocol/openid-connect/token` | `builds` set |
+
+Both charts come from `oci://ghcr.io/tym83/aep/charts` at fixed versions,
+pinned by digest through the release inventory and mirrored like the other
+charts; they depend on `aep-cp-openchoreo-control-plane`. Build organizations
+are the Organizations on this control plane that have `spec.vcs` (the build
+credential source, see [VCS](vcs.md#in-platform-builds)) and whose OpenChoreo
+namespace exists on aep-cp; Organization changes update the lists. The nonprod
+WorkflowPlane, its secret store, the registry push robot and the publisher
+client stay prerequisites. `builds.publisherClientIDTemplate` (Go template with
+`.Organization`) may render the chart default `aep-<org>-publisher` or one ID
+shared by all build organizations: the chart takes a single override.
+
+Content switched off is removed when the control plane owns it: Flux uninstalls
+a removed chart, and a deselected resource type is deleted from aep-cp, which
+breaks resources still using it. `ContentReady` is True when everything
+selected is applied and both releases are Ready. Existing ClusterResourceTypes
+without the control plane label are adopted only when `spec.adoption.confirm`
+is set; objects labelled for an Organization or another ControlPlane are never
+adopted. Content failures hold `Ready` but not `Hardened`, so they do not stop
+Organizations.
 
 The chart values never disable TLS verification and set the bootstrap
 mappings to the system clients only (portal catalog reader, FinOps, RCA,
@@ -270,20 +321,57 @@ changes and deletion; the last conditions stay as they were.
 Deleting a ControlPlane requires the annotation
 `aep.aenix.io/confirm-delete=<name>` and is blocked while an Organization
 references it (or would use it as `--default-control-plane` without legacy
-flags). The operator then removes, one layer at a time, the control plane
-chart, kgateway, chart sources, Ingresses and the network policy, the cluster,
+flags). The operator then removes, one layer at a time, the content charts,
+the control plane chart, kgateway, chart sources, Ingresses and the network policy, the cluster,
 the portal database, the tenant and the operator credential. The portal
 database is kept, and with it the tenant, until the annotation
 `aep.aenix.io/delete-portal-database=true` is set or the database is deleted by
 hand.
 
-`Organization.spec.controlPlaneRef` is accepted and recorded in
-`status.controlPlaneRef` but not resolved yet: every Organization still uses the
-legacy `--aepcp-*` flags, so keep `aepcpKubeconfigSecret` set even when
-`controlPlane.default` is. The reference is immutable once set. On an
-Organization that was already reconciled without one, the operator accepts a new
-reference only with the annotation `aep.aenix.io/adopt-control-plane=<name>`
-naming the same ControlPlane; otherwise the Organization is `Rejected`.
+### Organizations on a ControlPlane
+
+An Organization resolves its aep-cp once per reconciliation, and never switches
+implicitly:
+
+1. `spec.controlPlaneRef`, recorded in `status.controlPlaneRef` when accepted;
+2. otherwise `--default-control-plane`, but only when no legacy kubeconfig
+   (`--aepcp-kubeconfig-secret`, `--aepcp-kubeconfig`) is configured: with
+   both, unreferenced Organizations stay on the legacy aep-cp;
+3. otherwise the legacy `--aepcp-*` flags, exactly as before ControlPlanes.
+
+On a ControlPlane the Organization connects with the scoped credential in
+`status.outputs.kubeconfigSecretRef` (refused unless the Secret carries the
+ControlPlane's label), finds the gateway mirror in the ControlPlane tenant
+namespace, admits its tier agents to it and dials `status.gateway.url`; the
+gateway CA, OpenChoreo objects, fleet data planes and deletion use the same
+credential. Its tenants are created right away, but `ClustersReady` waits with
+reason `ControlPlaneNotReady` (phase `Pending`) until the ControlPlane reports
+`OpenChoreoReady`, `GatewayReady` and `Hardened` for its generation and has
+published its credential and gateway. A missing default ControlPlane is
+reported the same way. ControlPlane status changes requeue the Organizations it
+serves.
+
+An Organization is `Rejected` when `spec.controlPlaneRef` names a ControlPlane
+that does not exist, or when a ControlPlane tenant namespace equals one of the
+Organization's (`tenant-<org>`, `tenant-<org>-<tier>`); a ControlPlane is
+`Rejected` for the same collision, whichever came first. The reference is
+immutable once set. On an Organization that was already reconciled without one,
+the operator accepts a new reference only with the annotation
+`aep.aenix.io/adopt-control-plane=<name>` naming the same ControlPlane;
+otherwise the Organization is `Rejected`.
+
+### Gateway host in air gaps
+
+Without `spec.clusterGateway.host` the gateway host comes from
+`--gateway-host-template`, by default `nip.io`, which needs public DNS. Set a
+fixed host such as `cluster-gateway.<name>.aep.internal` for air-gapped
+installations: it goes into the gateway certificate, and every tier cluster of
+the Organizations on this control plane resolves it to the management mirror
+ClusterIP of the gateway. The operator adds that entry through the Kubernetes
+application's `addons.coredns.valuesOverride`: a separate CoreDNS server block
+for the host in the coredns chart's `extraConfig` (Cozystack v0.36 or later),
+next to the unchanged Cozystack Corefile. External fleet clusters do not get
+this entry; they need a DNS record for the host in corporate DNS.
 
 ## Kafka
 
@@ -351,7 +439,11 @@ of expiration to require a planned trust rotation.
 
 ## Still manual / follow-up
 
-- aep-cp installation, SAN configuration/restart, OIDC and review of unsafe bindings without chart management labels.
+- DNS records for `console.<domain>` and `api.<domain>`, the IdP realm,
+  federation and group mapping, the portal and CLI clients and per-organization
+  service clients (publisher, change), and review of unsafe bindings without
+  chart management labels. A legacy aep-cp additionally needs its installation,
+  SAN configuration/restart and OIDC by hand.
 - ESO and the `default` ClusterSecretStore/backend on every data plane. The core
   charts do not provision a secret backend; components needing SecretReference
   require that prerequisite.

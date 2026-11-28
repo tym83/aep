@@ -4,14 +4,17 @@ For disconnected installation and upgrades, follow [airgap.md](airgap.md) first.
 
 Run these commands from the repository root with kubectl and Helm pointed at the
 **Cozystack management cluster**. This guide installs the organization operator,
-its managed bridges, the change service and the read API. OpenChoreo runs in an
-existing, separate control plane; this installation does not install it.
+its managed bridges, the change service and the read API. OpenChoreo runs in a
+separate control plane (aep-cp). The supported path lets the operator install
+and manage it from a `ControlPlane` resource (section 1); an existing,
+hand-built aep-cp can still be used through the legacy flags.
 
 ## Prerequisites and installation values
 
 The management cluster needs Cozystack Tenant/Kubernetes/KubernetesNodes APIs,
-Kamaji, Flux source/Helm controllers and Cilium. Prepare the existing OpenChoreo
-control plane and its cluster gateway as described in [operator.md](operator.md).
+Kamaji, Flux source/Helm controllers and Cilium. With a legacy aep-cp, prepare
+the existing OpenChoreo control plane and its cluster gateway as described in
+[operator.md](operator.md).
 For public API endpoints, install an ingress controller, configure DNS to its
 address, and either install cert-manager with a ClusterIssuer or supply TLS
 Secrets yourself. Images must be published and pullable by management nodes.
@@ -24,8 +27,8 @@ Choose the following values before installing:
 | Operator and bridge images | Published immutable tags for `image` and `bridgeImage` in the operator chart |
 | Change image tag | `image.tag`, shared by `ghcr.io/tym83/aep-change-api` and `ghcr.io/tym83/aep-change-controller` |
 | Read API image | Full `image` reference, including a published immutable tag |
-| OpenChoreo Kubernetes credentials | Operator `aepcpKubeconfigSecret`: management `namespace/name`, key `super-admin.svc` containing the control-plane kubeconfig |
-| OpenChoreo cluster location | `aepcpTenantNamespace`, `aepcpCluster`, and `gatewayHostTemplate` matching the gateway certificate SANs |
+| Control plane | Supported: operator `controlPlane.default` and a `ControlPlane` resource of that name (domain, ingress, OIDC). Legacy: `aepcpKubeconfigSecret` (management `namespace/name`, key `super-admin.svc`), `aepcpTenantNamespace`, `aepcpCluster` |
+| Cluster gateway host | `ControlPlane` `spec.clusterGateway.host` (fixed, required in air gaps), else `gatewayHostTemplate`; for a legacy aep-cp it must match the gateway certificate SANs |
 | Keycloak realm issuer | Both APIs' `oidc.issuer`, e.g. `https://id.example.org/realms/aep` |
 | JWKS URL | `oidc.jwksUrl`; empty uses `<issuer>/protocol/openid-connect/certs` |
 | Token audience and claims | Both APIs' `oidc.audience`; `usernameClaim` and `groupsClaim` default to `preferred_username` and `groups` |
@@ -58,22 +61,31 @@ kubectl apply -f config/mgmt/ingress-to-aep-system.yaml
 
 Adjust the selector if your ingress controller runs in another tenant.
 
-## 1. Operator and managed bridges
+## 1. Operator, control plane and managed bridges
 
-Create `operator-values.yaml` with your published image versions and locations:
+Create `operator-values.yaml` with your published image versions:
 
 ```yaml
 image: ghcr.io/tym83/aep-operator:REPLACE_TAG
 bridgeImage: ghcr.io/tym83/aep-bridge:REPLACE_TAG
-aepcpKubeconfigSecret: tenant-aep-cp/kubernetes-aepcp-admin-kubeconfig
-aepcpTenantNamespace: tenant-aep-cp
-aepcpCluster: aepcp
-gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
+# Supported: an operator-managed control plane.
+controlPlane:
+  default: default
 keycloak:
   enabled: false
   url: https://id.example.org
   realm: aep
   credentialsSecret: aep-system/keycloak-admin
+```
+
+For a legacy, hand-built aep-cp, leave `controlPlane.default` empty and set
+its location instead; the operator then behaves exactly as before ControlPlanes:
+
+```yaml
+aepcpKubeconfigSecret: tenant-aep-cp/kubernetes-aepcp-admin-kubeconfig
+aepcpTenantNamespace: tenant-aep-cp
+aepcpCluster: aepcp
+gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
 ```
 
 If enabling operator-managed Keycloak groups, create `keycloak-admin` with
@@ -86,6 +98,50 @@ helm upgrade --install aep-operator charts/aep-operator \
   --namespace aep-system --create-namespace -f operator-values.yaml
 kubectl -n aep-system rollout status deployment/aep-operator
 ```
+
+### Control plane
+
+Skip this for a legacy aep-cp. Prepare what the operator does not manage:
+
+- DNS records for `console.<domain>` and `api.<domain>` pointing at the
+  management ingress;
+- the IdP realm, its federation and group mapping, and its clients: the portal
+  client (secret in a Secret in `aep-system`, key `client-secret`), the CLI
+  client `openchoreo-cli`, and the per-organization publisher and change
+  clients;
+- quota headroom in the parent tenant for the control plane tenant;
+- for in-platform builds, the registry and each organization's nonprod
+  WorkflowPlane with its secret store ([VCS](vcs.md#in-platform-builds)).
+
+Then store the portal client secret as `aep-system/aep-portal-client` and
+create the ControlPlane named by `controlPlane.default`:
+
+```yaml
+apiVersion: aep.aenix.io/v1alpha1
+kind: ControlPlane
+metadata:
+  name: default
+spec:
+  domain: cp.example.org
+  ingress:
+    className: tenant-root
+    clusterIssuer: letsencrypt-prod
+  oidc:
+    issuer: https://id.example.org/realms/aep
+    portalClient:  # clientID defaults to openchoreo-backstage-client
+      secretRef: {name: aep-portal-client}
+  # Air-gapped installations: a fixed host, resolved inside tier clusters.
+  # clusterGateway: {host: cluster-gateway.default.aep.internal}
+  # content:
+  #   builds: {registryHost: harbor.example.org}
+```
+
+The operator creates the tenant, the cluster, its own scoped identity,
+kgateway, the OpenChoreo control plane with the portal and its database, the
+gateway, the public ingress and the content (resource types, component types,
+builds), and hardens the installation. Follow the conditions until
+`Ready=True`; [operator.md](operator.md#controlplane-resource) lists them.
+Organizations created meanwhile wait with reason `ControlPlaneNotReady`.
 
 Create Organizations using the contract in [operator.md](operator.md), including
 access groups, quotas, environments, tier settings and production image trust
