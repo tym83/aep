@@ -91,8 +91,8 @@ func TestOperatorChart(t *testing.T) {
 		t.Fatalf("%v: %s", e, b)
 	}
 	docs := decode(t, b)
-	if len(docs) != 7 {
-		t.Fatalf("expected three CRDs, SA, RBAC and Deployment, got %d", len(docs))
+	if len(docs) != 8 {
+		t.Fatalf("expected four CRDs, SA, RBAC and Deployment, got %d", len(docs))
 	}
 	for _, d := range docs {
 		if d["kind"] != "ClusterRole" {
@@ -109,16 +109,22 @@ func TestOperatorChart(t *testing.T) {
 			}
 		}
 	}
-	source, e := os.ReadFile("../../config/crd/aep.aenix.io_organizations.yaml")
-	if e != nil {
-		t.Fatal(e)
+	packagedCRDs, e := filepath.Glob("../../charts/aep-operator/crds/*.yaml")
+	if e != nil || len(packagedCRDs) != 4 {
+		t.Fatalf("operator chart CRDs %v: %v", packagedCRDs, e)
 	}
-	packaged, e := os.ReadFile("../../charts/aep-operator/crds/aep.aenix.io_organizations.yaml")
-	if e != nil {
-		t.Fatal(e)
-	}
-	if string(source) != string(packaged) {
-		t.Fatal("operator chart CRD drift")
+	for _, path := range packagedCRDs {
+		source, e := os.ReadFile("../../config/crd/" + filepath.Base(path))
+		if e != nil {
+			t.Fatal(e)
+		}
+		packaged, e := os.ReadFile(path)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if string(source) != string(packaged) {
+			t.Fatalf("operator chart CRD drift: %s", filepath.Base(path))
+		}
 	}
 }
 

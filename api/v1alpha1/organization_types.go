@@ -75,6 +75,11 @@ type PolicySpec struct {
 	Mode            string `json:"mode,omitempty"`
 }
 
+// AdoptControlPlaneAnnotation permits setting spec.controlPlaneRef on an
+// Organization that was already reconciled without one; its value must equal
+// the reference.
+const AdoptControlPlaneAnnotation = "aep.aenix.io/adopt-control-plane"
+
 type OrganizationSpec struct {
 	VCS          *VCSSpec            `json:"vcs,omitempty"`
 	Policy       PolicySpec          `json:"policy,omitempty"`
@@ -85,6 +90,10 @@ type OrganizationSpec struct {
 	Environments []Environment       `json:"environments"`
 	Tiers        map[string]TierSpec `json:"tiers"`
 	Access       map[string][]string `json:"access,omitempty"`
+	// ControlPlaneRef names the ControlPlane serving this Organization. It is
+	// immutable once set; an existing Organization may set it once only with
+	// the AdoptControlPlaneAnnotation naming the same ControlPlane.
+	ControlPlaneRef string `json:"controlPlaneRef,omitempty"`
 }
 type Remediation struct {
 	Time      metav1.Time `json:"time"`
@@ -93,9 +102,11 @@ type Remediation struct {
 	Reason    string      `json:"reason"`
 }
 type OrganizationStatus struct {
-	ArgoCDURL              string                 `json:"argocdURL,omitempty"`
-	DeletionStarted        bool                   `json:"deletionStarted,omitempty"`
-	Phase                  string                 `json:"phase,omitempty"`
+	ArgoCDURL       string `json:"argocdURL,omitempty"`
+	DeletionStarted bool   `json:"deletionStarted,omitempty"`
+	Phase           string `json:"phase,omitempty"`
+	// ControlPlaneRef records the accepted spec.controlPlaneRef.
+	ControlPlaneRef        string                 `json:"controlPlaneRef,omitempty"`
 	Conditions             []metav1.Condition     `json:"conditions,omitempty"`
 	ControlPlaneReadySince map[string]metav1.Time `json:"controlPlaneReadySince,omitempty"`
 	Remediations           []Remediation          `json:"remediations,omitempty"`

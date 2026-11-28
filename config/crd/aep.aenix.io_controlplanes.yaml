@@ -1,0 +1,493 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: controlplanes.aep.aenix.io
+spec:
+  group: aep.aenix.io
+  names:
+    kind: ControlPlane
+    listKind: ControlPlaneList
+    plural: controlplanes
+    shortNames:
+    - aepcp
+    singular: controlplane
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.domain
+      name: Domain
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ControlPlane is an operator-managed aep-cp. Usually one named
+          default exists.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ControlPlaneSpec declares an aep-cp (OpenChoreo control plane) that the
+              operator installs in a Cozystack tenant. Secret references name Secrets in
+              the operator namespace unless stated otherwise.
+            properties:
+              adoption:
+                description: Adoption takes over an existing, hand-built control plane.
+                properties:
+                  confirm:
+                    description: Confirm is "<tenant namespace>/<cluster>" of the
+                      existing control plane.
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                required:
+                - confirm
+                type: object
+              audit:
+                description: Audit is optional; nil disables audit forwarding.
+                properties:
+                  forwarderService:
+                    description: ForwarderService is the namespace/name of the management
+                      audit forwarder Service.
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?/[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  openChoreoAPI:
+                    description: OpenChoreoAPI also enables OpenChoreo API audit events.
+                    type: boolean
+                  tokenSecretRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - forwarderService
+                type: object
+              backup:
+                description: Backup is optional; nil disables backup reader provisioning.
+                properties:
+                  readerKubeconfigSecret:
+                    minLength: 1
+                    type: string
+                required:
+                - readerKubeconfigSecret
+                type: object
+              cluster:
+                default: {}
+                description: ControlPlaneCluster is the Cozystack Kubernetes application
+                  hosting aep-cp.
+                properties:
+                  name:
+                    default: aepcp
+                    maxLength: 40
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: cluster name is immutable
+                      rule: self == oldSelf
+                  nodeGroup:
+                    default: {}
+                    properties:
+                      diskSize:
+                        default: 20Gi
+                        pattern: ^[0-9]+(Mi|Gi|Ti)$
+                        type: string
+                      instanceType:
+                        default: u1.large
+                        minLength: 1
+                        type: string
+                      maxReplicas:
+                        default: 4
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      minReplicas:
+                        default: 3
+                        format: int32
+                        minimum: 1
+                        type: integer
+                    type: object
+                    x-kubernetes-validations:
+                    - message: maxReplicas must not be lower than minReplicas
+                      rule: '!has(self.minReplicas) || !has(self.maxReplicas) || self.maxReplicas
+                        >= self.minReplicas'
+                  storageClass:
+                    default: replicated
+                    minLength: 1
+                    type: string
+                  version:
+                    default: v1.35
+                    pattern: ^v1\.[0-9]+$
+                    type: string
+                type: object
+              clusterGateway:
+                properties:
+                  host:
+                    description: |-
+                      Host is a fixed cluster-gateway hostname placed in its certificate,
+                      required for air-gapped data planes; empty uses --gateway-host-template.
+                    maxLength: 253
+                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                type: object
+              content:
+                default: {}
+                properties:
+                  builds:
+                    properties:
+                      publisherClientIDTemplate:
+                        description: PublisherClientIDTemplate is a Go template with
+                          Organization.
+                        type: string
+                      registryHost:
+                        minLength: 1
+                        type: string
+                    required:
+                    - registryHost
+                    type: object
+                  componentTypes:
+                    default: true
+                    type: boolean
+                  resourceTypes:
+                    description: ResourceTypes lists the embedded ClusterResourceTypes
+                      to apply; empty applies all.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+              domain:
+                description: |-
+                  Domain is the public DNS suffix: the portal is served at
+                  console.<domain> and the OpenChoreo API at api.<domain>.
+                maxLength: 245
+                minLength: 3
+                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?\.)+[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              ingress:
+                description: |-
+                  ControlPlaneIngress publishes console.<domain> and api.<domain> through the
+                  management ingress. Exactly one certificate source is required.
+                properties:
+                  className:
+                    default: tenant-root
+                    minLength: 1
+                    type: string
+                  clusterIssuer:
+                    description: ClusterIssuer is a cert-manager ClusterIssuer that
+                      issues the host certificate.
+                    minLength: 1
+                    type: string
+                  tlsSecretRef:
+                    description: TLSSecretRef names an existing kubernetes.io/tls
+                      Secret in the Ingress namespace.
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of clusterIssuer or tlsSecretRef is required
+                  rule: has(self.clusterIssuer) != has(self.tlsSecretRef)
+              oidc:
+                description: |-
+                  ControlPlaneOIDC configures portal and API sign-in. Endpoints default to the
+                  Keycloak layout below the issuer.
+                properties:
+                  authorizationURL:
+                    pattern: ^https://[^\s]+$
+                    type: string
+                  caBundleSecretRef:
+                    description: CABundleSecretRef holds a PEM bundle for a privately
+                      issued IdP certificate.
+                    properties:
+                      key:
+                        description: 'Key defaults per field: client-secret for clients,
+                          ca.crt for CA bundles.'
+                        maxLength: 253
+                        type: string
+                      name:
+                        maxLength: 253
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  cliClientID:
+                    default: openchoreo-cli
+                    minLength: 1
+                    type: string
+                  issuer:
+                    pattern: ^https://[^\s]+$
+                    type: string
+                  jwksURL:
+                    pattern: ^https://[^\s]+$
+                    type: string
+                  portalClient:
+                    description: ControlPlaneClient is a confidential OIDC client.
+                    properties:
+                      clientID:
+                        default: openchoreo-backstage-client
+                        minLength: 1
+                        type: string
+                      secretRef:
+                        description: SecretRef holds the client secret.
+                        properties:
+                          key:
+                            description: 'Key defaults per field: client-secret for
+                              clients, ca.crt for CA bundles.'
+                            maxLength: 253
+                            type: string
+                          name:
+                            maxLength: 253
+                            minLength: 1
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    required:
+                    - secretRef
+                    type: object
+                  tokenURL:
+                    pattern: ^https://[^\s]+$
+                    type: string
+                  usernameClaim:
+                    default: preferred_username
+                    minLength: 1
+                    type: string
+                  wellKnownURL:
+                    pattern: ^https://[^\s]+$
+                    type: string
+                required:
+                - issuer
+                - portalClient
+                type: object
+              portal:
+                default: {}
+                properties:
+                  changeAPIURL:
+                    pattern: ^https?://[^\s]+$
+                    type: string
+                  database:
+                    default: {}
+                    description: ControlPlaneDatabase is the Cozystack Postgres of
+                      the portal.
+                    properties:
+                      replicas:
+                        default: 1
+                        format: int32
+                        maximum: 5
+                        minimum: 1
+                        type: integer
+                      resourcesPreset:
+                        default: small
+                        enum:
+                        - nano
+                        - micro
+                        - small
+                        - medium
+                        - large
+                        - xlarge
+                        - 2xlarge
+                        type: string
+                      size:
+                        default: 5Gi
+                        pattern: ^[0-9]+(Mi|Gi|Ti)$
+                        type: string
+                    type: object
+                  image:
+                    description: |-
+                      Image overrides the portal image; empty uses the aep-portal image of the
+                      operator release.
+                    type: string
+                  readAPIURL:
+                    pattern: ^https?://[^\s]+$
+                    type: string
+                type: object
+              suspend:
+                description: |-
+                  Suspend stops reconciliation of this control plane without removing
+                  anything, for example during a disaster-recovery drill.
+                type: boolean
+              tenant:
+                default: {}
+                description: |-
+                  ControlPlaneTenant places the control plane in a Cozystack tenant. Its
+                  namespace is tenant-<name> under tenant-root, otherwise <parent>-<name>.
+                properties:
+                  name:
+                    default: aep-cp
+                    maxLength: 32
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: tenant name is immutable
+                      rule: self == oldSelf
+                  parent:
+                    default: tenant-root
+                    description: Parent is the namespace of the parent tenant.
+                    maxLength: 63
+                    pattern: ^tenant-[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                    x-kubernetes-validations:
+                    - message: tenant parent is immutable
+                      rule: self == oldSelf
+                  quotas:
+                    additionalProperties:
+                      type: string
+                    description: Quotas are Cozystack tenant resourceQuotas, for example
+                      cpu or memory.
+                    type: object
+                type: object
+            required:
+            - domain
+            - ingress
+            - oidc
+            type: object
+          status:
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              endpoints:
+                properties:
+                  api:
+                    type: string
+                  apiHost:
+                    type: string
+                  console:
+                    type: string
+                  internalAPI:
+                    type: string
+                type: object
+              gateway:
+                properties:
+                  host:
+                    type: string
+                  mirrorService:
+                    type: string
+                  servedCertSerial:
+                    type: string
+                  targetPort:
+                    format: int32
+                    type: integer
+                  url:
+                    type: string
+                type: object
+              observedGeneration:
+                format: int64
+                type: integer
+              outputs:
+                description: ControlPlaneOutputs are what consumers of the control
+                  plane read.
+                properties:
+                  clusterName:
+                    type: string
+                  kubeconfigSecretRef:
+                    description: KubeconfigSecretRef is the operator-scoped aep-cp
+                      credential in the operator namespace.
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  tenantNamespace:
+                    type: string
+                type: object
+              phase:
+                type: string
+              versions:
+                additionalProperties:
+                  type: string
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

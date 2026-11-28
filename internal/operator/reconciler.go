@@ -85,6 +85,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		o.Status.Phase = "Rejected"
 		return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
 	}
+	// Record an accepted reference before the finalizer marks the
+	// Organization as reconciled, so a failed status write cannot turn a
+	// reference given at creation into an unannotated late change.
+	if o.Spec.ControlPlaneRef != "" && o.Status.ControlPlaneRef == "" {
+		o.Status.ControlPlaneRef = o.Spec.ControlPlaneRef
+		if e := r.Status().Update(ctx, o); e != nil {
+			return ctrl.Result{}, e
+		}
+	}
 	if !slices.Contains(o.Finalizers, finalizer) {
 		base := o.DeepCopy()
 		o.Finalizers = append(o.Finalizers, finalizer)
