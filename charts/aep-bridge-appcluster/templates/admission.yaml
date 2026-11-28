@@ -62,3 +62,34 @@ metadata:
 spec:
   policyName: {{ .Release.Name }}-writers
   validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Name }}-kafka
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kafka.strimzi.io]
+        apiVersions: ["*"]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [kafkas, kafkanodepools, kafkatopics, kafkausers]
+  matchConditions:
+    - name: bridge-identity
+      expression: "request.userInfo.username == 'system:serviceaccount:{{ .Values.bridgeNamespace }}:{{ .Values.bridgeServiceAccount }}'"
+  validations:
+    - expression: "request.namespace == '{{ .Values.kafkaNamespace }}'"
+      message: Bridge Kafka resources must be in the {{ .Values.kafkaNamespace }} namespace.
+    - expression: "request.operation == 'DELETE' || (has(object.metadata.labels) && 'aep.aenix.io/managed-by' in object.metadata.labels && object.metadata.labels['aep.aenix.io/managed-by'] == 'bridge')"
+      message: Kafka resources must carry the bridge management label.
+    - expression: "oldObject == null || (has(oldObject.metadata.labels) && 'aep.aenix.io/managed-by' in oldObject.metadata.labels && oldObject.metadata.labels['aep.aenix.io/managed-by'] == 'bridge')"
+      message: The bridge may not adopt, change or delete unmanaged Kafka resources.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Name }}-kafka
+spec:
+  policyName: {{ .Release.Name }}-kafka
+  validationActions: [Deny]

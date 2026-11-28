@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/robfig/cron/v3"
+	"github.com/tym83/aep/internal/kinds"
 	"github.com/tym83/aep/internal/policy"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -77,7 +78,8 @@ func (s *session) backupPolicy(ctx context.Context, tier string) (*policy.Backup
 		filtered = append(filtered, m)
 	}
 	for _, kind := range s.o.Spec.Tiers[tier].Services.AllowedKinds {
-		if !seen[kind] {
+		// Kafka runs in the tier cluster; Cozystack backup classes do not cover it.
+		if !seen[kind] && !kinds.Table[kind].AppCluster {
 			return nil, fmt.Errorf("backup class %s has no strategy for %s", source, kind)
 		}
 	}

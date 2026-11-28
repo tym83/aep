@@ -241,7 +241,7 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 		}
 		manifests = append(manifests, rendered...)
 	}
-	bridge, err := f.Renderer.Render(ctx, "aep-bridge-appcluster", "0.1.2", "aep-system", M{})
+	bridge, err := f.Renderer.Render(ctx, "aep-bridge-appcluster", "0.1.3", "aep-system", M{})
 	if err != nil {
 		return err
 	}

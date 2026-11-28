@@ -2,14 +2,19 @@ package operator
 
 import (
 	"context"
+	"github.com/tym83/aep/internal/kinds"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-var charts = []struct{ name, version, url string }{
-	{"kgateway-crds", "v2.3.11", "oci://cr.kgateway.dev/kgateway-dev/charts"},
-	{"kgateway", "v2.3.11", "oci://cr.kgateway.dev/kgateway-dev/charts"},
-	{"openchoreo-data-plane", "1.4.0-m.3", "oci://cr.openchoreo.dev/openchoreo/helm-charts"},
+// StrimziChart is the Kafka operator chart; Kafka claims run on it.
+const StrimziChart = "strimzi-kafka-operator"
+
+var charts = []struct{ name, version, url, namespace string }{
+	{"kgateway-crds", "v2.3.11", "oci://cr.kgateway.dev/kgateway-dev/charts", "openchoreo-data-plane"},
+	{"kgateway", "v2.3.11", "oci://cr.kgateway.dev/kgateway-dev/charts", "openchoreo-data-plane"},
+	{"openchoreo-data-plane", "1.4.0-m.3", "oci://cr.openchoreo.dev/openchoreo/helm-charts", "openchoreo-data-plane"},
+	{StrimziChart, "0.50.0", "oci://quay.io/strimzi-helm", kinds.KafkaNamespace},
 }
 
 func (s *session) delivery(ctx context.Context) error {
@@ -56,16 +61,13 @@ func (s *session) delivery(ctx context.Context) error {
 				return e
 			}
 			values := M{}
-			if ch.name == "openchoreo-data-plane" {
+			switch ch.name {
+			case "openchoreo-data-plane":
 				values = DataPlaneValues(s.o.Name+"-"+tier, s.gateway)
+			case StrimziChart:
+				values = StrimziValues()
 			}
-			values = s.chartValues(ch.name, values)
-			spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.name, "targetNamespace": "openchoreo-data-plane", "storageNamespace": "openchoreo-data-plane", "chartRef": M{"kind": "OCIRepository", "name": "aep-" + ch.name}, "kubeConfig": M{"secretRef": M{"name": "kubernetes-apps-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
-			if i > 0 {
-				spec["dependsOn"] = []any{M{"name": "aep-" + charts[i-1].name}}
-			}
-			hr := obj(helmAPI, "HelmRelease", ns, "aep-"+ch.name, spec)
-			hr.SetLabels(map[string]string{"cozystack.io/target-cluster-name": "kubernetes-apps", "internal.cozystack.io/tenantresource": "true", "sharding.fluxcd.io/key": "tenants"})
+			hr := deliveryRelease(ns, i, s.chartValues(ch.name, values))
 			if e = s.r.Management.apply(ctx, s.o, "helmreleases", hr); e != nil {
 				return e
 			}
@@ -78,6 +80,23 @@ func (s *session) delivery(ctx context.Context) error {
 		}
 	}
 	return waiting
+}
+
+// deliveryRelease is the tier HelmRelease of charts[i] in tenant namespace ns.
+func deliveryRelease(ns string, i int, values M) *unstructured.Unstructured {
+	ch := charts[i]
+	spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.name, "targetNamespace": ch.namespace, "storageNamespace": ch.namespace, "chartRef": M{"kind": "OCIRepository", "name": "aep-" + ch.name}, "kubeConfig": M{"secretRef": M{"name": "kubernetes-apps-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
+	if i > 0 {
+		spec["dependsOn"] = []any{M{"name": "aep-" + charts[i-1].name}}
+	}
+	if ch.name == StrimziChart {
+		// Helm never upgrades crds/; keep Strimzi CRDs in step with the operator.
+		spec["install"].(M)["crds"] = "CreateReplace"
+		spec["upgrade"].(M)["crds"] = "CreateReplace"
+	}
+	hr := obj(helmAPI, "HelmRelease", ns, "aep-"+ch.name, spec)
+	hr.SetLabels(map[string]string{"cozystack.io/target-cluster-name": "kubernetes-apps", "internal.cozystack.io/tenantresource": "true", "sharding.fluxcd.io/key": "tenants"})
+	return hr
 }
 func (s *session) connected(ctx context.Context) error {
 	for _, tier := range Tiers(s.o) {

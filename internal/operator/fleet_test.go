@@ -115,7 +115,7 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 	matrix = append(matrix, struct {
 		n, v, ns string
 		values   M
-	}{"aep-bridge-appcluster", "0.1.2", "aep-system", M{}})
+	}{"aep-bridge-appcluster", "0.1.3", "aep-system", M{}})
 	var all []any
 	for _, tc := range matrix {
 		t.Run(tc.n, func(t *testing.T) {

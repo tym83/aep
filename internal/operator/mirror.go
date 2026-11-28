@@ -61,6 +61,9 @@ func MirrorValues(chart, mirror string, values M) M {
 		values["global"] = M{"imageRegistry": mirror + "/cr.openchoreo.dev"}
 	case "kgateway":
 		setMap(values, []string{"image", "registry"}, mirror+"/cr.kgateway.dev/kgateway-dev")
+	case StrimziChart:
+		// Operand images (brokers, entity operator) derive from the same registry.
+		values["defaultImageRegistry"] = mirror + "/quay.io"
 	case "kyverno":
 		// Do not use global.image.registry: hooks use ghcr.io instead of reg.kyverno.io.
 		for _, path := range [][]string{{"admissionController", "initContainer", "image"}, {"admissionController", "container", "image"}, {"backgroundController", "image"}, {"cleanupController", "image"}, {"reportsController", "image"}, {"crds", "migration", "image"}} {
@@ -105,7 +108,19 @@ func ReleaseValues(chart string) M {
 	if chart == "openchoreo-data-plane" {
 		return PinValues(chart, DataPlaneValues("inventory", "wss://gateway.invalid"))
 	}
+	if chart == StrimziChart {
+		return PinValues(chart, StrimziValues())
+	}
 	return PinValues(chart, M{})
+}
+
+// StrimziValues makes the operator and its operands satisfy restricted Pod
+// Security; the operator watches only its own namespace.
+func StrimziValues() M {
+	return M{"watchNamespaces": []any{},
+		"podSecurityContext": M{"runAsNonRoot": true, "seccompProfile": M{"type": "RuntimeDefault"}},
+		"securityContext":    M{"allowPrivilegeEscalation": false, "capabilities": M{"drop": []any{"ALL"}}},
+		"extraEnvs":          []any{M{"name": "STRIMZI_POD_SECURITY_PROVIDER_CLASS", "value": "restricted"}}}
 }
 func DataPlaneValues(plane, gateway string) M {
 	return M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": plane, "serverUrl": gateway, "tls": M{"generateCerts": false, "caSecretName": "aep-agent-ca"}}}
@@ -164,6 +179,19 @@ func PinValues(chart string, values M) M {
 		pin("cr.kgateway.dev/kgateway-dev/envoy-wrapper", "image", "tag")
 	case "openchoreo-data-plane":
 		pin("cr.openchoreo.dev/openchoreo/cluster-agent", "clusterAgent", "image", "tag")
+	case StrimziChart:
+		// A tag replaces the chart's per-version suffix, so every Kafka version
+		// maps to the one pinned broker image; the bridge only accepts that version.
+		for _, key := range []string{"image", "topicOperator", "userOperator", "kafkaInit"} {
+			path := []string{"image", "tag"}
+			if key != "image" {
+				path = []string{key, "image", "tag"}
+			}
+			pin("quay.io/strimzi/operator", path...)
+		}
+		for _, key := range []string{"kafka", "kafkaConnect", "kafkaMirrorMaker2", "kafkaExporter", "cruiseControl"} {
+			pin("quay.io/strimzi/kafka", key, "image", "tag")
+		}
 	case "kyverno":
 		for _, p := range []struct {
 			repo string
@@ -214,6 +242,9 @@ func PullSecretValues(chart string, values M) M {
 	switch chart {
 	case "kyverno", "argo-cd", "openchoreo-data-plane":
 		setMap(values, []string{"global", "imagePullSecrets"}, refs)
+	case StrimziChart:
+		// The operator also passes these to every operand pod (STRIMZI_IMAGE_PULL_SECRETS).
+		setMap(values, []string{"image", "imagePullSecrets"}, refs)
 	case "kgateway":
 		values["imagePullSecrets"] = refs
 		// Proxy pods of a fresh tier start before Kyverno and the baseline

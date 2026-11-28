@@ -71,6 +71,7 @@ jobs:
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway --version v2.3.11 --untar --untardir release/.cache
           helm pull oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds --version v2.3.11 --untar --untardir release/.cache
           helm pull oci://cr.openchoreo.dev/openchoreo/helm-charts/openchoreo-data-plane --version 1.4.0-m.3 --untar --untardir release/.cache
+          helm pull oci://quay.io/strimzi-helm/strimzi-kafka-operator --version 0.50.0 --untar --untardir release/.cache
       - name: Check immutable release inventory offline
         run: go run ./cmd/aep-release manifest --check
       - name: Verify mirrored manifests and disconnected transfer

@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	api "github.com/tym83/aep/api/v1alpha1"
+	"github.com/tym83/aep/internal/kinds"
 	errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -89,6 +90,9 @@ func (s *session) delete(ctx context.Context) error {
 				if len(items) > 0 {
 					return pending("managed service %s/%s blocks tenant deletion", ns, items[0].GetName())
 				}
+			}
+			if e = retainedKafka(ctx, c, t); e != nil {
+				return e
 			}
 		}
 		s.o.Status.DeletionStarted = true
@@ -177,6 +181,20 @@ func (s *session) delete(ctx context.Context) error {
 		}
 	}
 	return s.deleteOwned(ctx, s.r.Management, "v1", "secrets", s.r.Options.Namespace)
+}
+
+// retainedKafka blocks deletion while a tier cluster still holds Kafka. With
+// no ServiceClaims left, every remaining bridge Kafka is a retained one.
+// Without the Strimzi CRDs there is none.
+func retainedKafka(ctx context.Context, c *Cluster, tier string) error {
+	kafkas, e := c.list(ctx, "kafka.strimzi.io/v1", "kafkas", kinds.KafkaNamespace)
+	if e != nil && !errors.IsNotFound(e) {
+		return e
+	}
+	if len(kafkas) > 0 {
+		return pending("managed service %s/%s in %s blocks tenant deletion", kinds.KafkaNamespace, kafkas[0].GetName(), tier)
+	}
+	return nil
 }
 func (s *session) deleteOwned(ctx context.Context, c *Cluster, av, r, ns string) error {
 	items, e := c.resource(av, r, ns).List(ctx, metav1.ListOptions{LabelSelector: OwnerLabel + "=" + string(s.o.UID)})

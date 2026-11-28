@@ -1,0 +1,1 @@
+{"apiVersion":"v2","description":"Mandatory restricted Pod Security for nonproduction workloads","name":"app-cluster-nonprod","version":"0.1.8"}

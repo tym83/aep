@@ -37,6 +37,40 @@ subjects:
     name: aep-bridge
     namespace: aep-system
 ---
+# Kafka claims are Strimzi resources in this namespace only; Strimzi writes
+# the user and cluster CA Secrets the bridge reads into claim outputs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: aep-kafka
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: aep-bridge-kafka
+  namespace: aep-kafka
+rules:
+  - apiGroups: [kafka.strimzi.io]
+    resources: [kafkas, kafkanodepools, kafkatopics, kafkausers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aep-bridge-kafka
+  namespace: aep-kafka
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: aep-bridge-kafka
+subjects:
+  - kind: ServiceAccount
+    name: aep-bridge
+    namespace: aep-system
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

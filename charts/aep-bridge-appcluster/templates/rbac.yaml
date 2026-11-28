@@ -37,6 +37,40 @@ subjects:
     name: {{ .Values.bridgeServiceAccount }}
     namespace: {{ .Values.bridgeNamespace }}
 ---
+# Kafka claims are Strimzi resources in this namespace only; Strimzi writes
+# the user and cluster CA Secrets the bridge reads into claim outputs.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.kafkaNamespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Values.bridgeServiceAccount }}-kafka
+  namespace: {{ .Values.kafkaNamespace }}
+rules:
+  - apiGroups: [kafka.strimzi.io]
+    resources: [kafkas, kafkanodepools, kafkatopics, kafkausers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Values.bridgeServiceAccount }}-kafka
+  namespace: {{ .Values.kafkaNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Values.bridgeServiceAccount }}-kafka
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.bridgeServiceAccount }}
+    namespace: {{ .Values.bridgeNamespace }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
