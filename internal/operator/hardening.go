@@ -9,6 +9,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 )
 
 const DefaultBootstrapBindingSystemClients = "openchoreo-backstage-client,openchoreo-observer-resource-reader-client,openchoreo-rca-agent,openchoreo-finops-agent"
@@ -43,16 +45,23 @@ func (s *session) hardenControlPlane(ctx context.Context) {
 		setCondition(s.o, "ControlPlaneHardened", false, "InspectionFailed", err.Error())
 		return
 	}
-	ri := s.cp.Dynamic.Resource(gvr(ocAPI, "clusterauthzrolebindings"))
+	ok, reason, message := hardenBootstrapBindings(ctx, s.cp, s.r.Options.PruneBootstrapBindings, s.r.Options.BootstrapBindingSystemClients, s.r.Recorder, s.o)
+	setCondition(s.o, "ControlPlaneHardened", ok, reason, message)
+}
+
+// hardenBootstrapBindings prunes chart-managed ClusterAuthzRoleBindings that
+// grant more than the allowed system clients when prune is set, and reports
+// whether none remain. Events about deletions are recorded on subject.
+func hardenBootstrapBindings(ctx context.Context, c *Cluster, prune bool, allowed string, recorder record.EventRecorder, subject runtime.Object) (bool, string, string) {
+	ri := c.Dynamic.Resource(gvr(ocAPI, "clusterauthzrolebindings"))
 	list, err := ri.List(ctx, metav1.ListOptions{})
 	if err != nil {
-		setCondition(s.o, "ControlPlaneHardened", false, "InspectionFailed", err.Error())
-		return
+		return false, "InspectionFailed", err.Error()
 	}
 	var failures []string
 	for i := range list.Items {
 		u := &list.Items[i]
-		if !bootstrapBindingOffends(u, s.r.Options.BootstrapBindingSystemClients) || !s.r.Options.PruneBootstrapBindings || !chartManagedBinding(u) {
+		if !bootstrapBindingOffends(u, allowed) || !prune || !chartManagedBinding(u) {
 			continue
 		}
 		// Both preconditions prevent deleting a replacement or an object whose ownership changed.
@@ -63,19 +72,18 @@ func (s *session) hardenControlPlane(ctx context.Context) {
 		}
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", u.GetName(), err))
-		} else if s.r.Recorder != nil {
-			s.r.Recorder.Eventf(s.o, "Normal", "BootstrapBindingPruned", "Deleted ClusterAuthzRoleBinding %s from the control-plane installation", u.GetName())
+		} else if recorder != nil {
+			recorder.Eventf(subject, "Normal", "BootstrapBindingPruned", "Deleted ClusterAuthzRoleBinding %s from the control-plane installation", u.GetName())
 		}
 	}
 	// Re-list so terminating objects and concurrent chart recreation cannot yield a false success.
 	list, err = ri.List(ctx, metav1.ListOptions{})
 	if err != nil {
-		setCondition(s.o, "ControlPlaneHardened", false, "InspectionFailed", err.Error())
-		return
+		return false, "InspectionFailed", err.Error()
 	}
 	var offenders []string
 	for i := range list.Items {
-		if bootstrapBindingOffends(&list.Items[i], s.r.Options.BootstrapBindingSystemClients) {
+		if bootstrapBindingOffends(&list.Items[i], allowed) {
 			offenders = append(offenders, list.Items[i].GetName())
 		}
 	}
@@ -85,8 +93,7 @@ func (s *session) hardenControlPlane(ctx context.Context) {
 		if len(failures) > 0 {
 			message += "; deletion errors: " + strings.Join(failures, "; ")
 		}
-		setCondition(s.o, "ControlPlaneHardened", false, "BootstrapBindingsPresent", message)
-		return
+		return false, "BootstrapBindingsPresent", message
 	}
-	setCondition(s.o, "ControlPlaneHardened", true, "Verified", "No offending ClusterAuthzRoleBindings")
+	return true, "Verified", "No offending ClusterAuthzRoleBindings"
 }

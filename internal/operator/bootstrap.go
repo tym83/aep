@@ -229,8 +229,13 @@ func (s *session) bootstrap(ctx context.Context, tier string) (*Cluster, error) 
 	return c, e
 }
 func requestToken(ctx context.Context, c *Cluster, name string) (string, time.Time, error) {
+	return requestTokenIn(ctx, c, "aep-system", name)
+}
+
+// requestTokenIn mints a one-day token of ServiceAccount ns/name.
+func requestTokenIn(ctx context.Context, c *Cluster, ns, name string) (string, time.Time, error) {
 	seconds := int64(86400)
-	t, e := c.Kube.CoreV1().ServiceAccounts("aep-system").CreateToken(ctx, name, &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{ExpirationSeconds: &seconds}}, metav1.CreateOptions{})
+	t, e := c.Kube.CoreV1().ServiceAccounts(ns).CreateToken(ctx, name, &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{ExpirationSeconds: &seconds}}, metav1.CreateOptions{})
 	if e != nil {
 		return "", time.Time{}, e
 	}

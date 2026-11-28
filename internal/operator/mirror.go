@@ -147,17 +147,23 @@ func (o *Options) Normalize() {
 // Source credentials are namespace-local in Flux. Copy only explicitly configured
 // secrets, using organization ownership checks to avoid adopting tenant data.
 func (s *session) mirrorSecrets(ctx context.Context, ns string) error {
-	for _, name := range []string{s.r.Options.RegistrySecret, s.r.Options.RegistryCASecret} {
+	return copyRegistrySecrets(ctx, s.r.Options, s.r.Management, organizationOwner(s.o), "aep-system", ns)
+}
+
+// copyRegistrySecrets copies the configured Flux source Secrets from
+// namespace from into the source namespace ns for owner.
+func copyRegistrySecrets(ctx context.Context, o Options, mgmt *Cluster, owner ownerKey, from, ns string) error {
+	for _, name := range []string{o.RegistrySecret, o.RegistryCASecret} {
 		if name == "" {
 			continue
 		}
-		source, err := s.r.Management.Kube.CoreV1().Secrets("aep-system").Get(ctx, name, metav1.GetOptions{})
+		source, err := mgmt.Kube.CoreV1().Secrets(from).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return err
 		}
 		target := secretObject(ns, name, source.Data)
 		target.Object["type"] = string(source.Type)
-		if err := s.r.Management.apply(ctx, s.o, "secrets", target); err != nil {
+		if err := mgmt.applyAs(ctx, owner, "secrets", target); err != nil {
 			return err
 		}
 	}
@@ -278,12 +284,16 @@ const MirrorGatewayParameters = "aep-mirror-pull"
 // charts install, so a fresh cluster reports pending rather than failing.
 // namespace is where kgateway is released.
 func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster, namespace string) error {
-	if !s.r.Options.mirrorPull() {
+	return applyGatewayParameters(ctx, s.r.Options, c, organizationOwner(s.o), namespace)
+}
+
+func applyGatewayParameters(ctx context.Context, o Options, c *Cluster, owner ownerKey, namespace string) error {
+	if !o.mirrorPull() {
 		return nil
 	}
 	gp := obj("gateway.kgateway.dev/v1alpha1", "GatewayParameters", namespace, MirrorGatewayParameters,
 		M{"kube": M{"podTemplate": M{"imagePullSecrets": []any{M{"name": MirrorPullSecret}}}}})
-	if e := c.apply(ctx, s.o, "gatewayparameters", gp); e != nil {
+	if e := c.applyAs(ctx, owner, "gatewayparameters", gp); e != nil {
 		if errors.IsNotFound(e) {
 			return pending("waiting for kgateway CRDs")
 		}
@@ -294,8 +304,12 @@ func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster, name
 
 // chartValues is the delivered configuration of a chart released in namespace.
 func (s *session) chartValues(chart, namespace string, values M) M {
-	values = MirrorValues(chart, s.r.Options.ImageRegistryMirror, values)
-	if s.r.Options.mirrorPull() {
+	return s.r.Options.chartValues(chart, namespace, values)
+}
+
+func (o Options) chartValues(chart, namespace string, values M) M {
+	values = MirrorValues(chart, o.ImageRegistryMirror, values)
+	if o.mirrorPull() {
 		values = PullSecretValues(chart, namespace, values)
 	}
 	return values
@@ -304,20 +318,26 @@ func (s *session) chartValues(chart, namespace string, values M) M {
 // deliverMirrorPull copies the mirror credential into the tier namespaces of
 // delivered charts before their pods start pulling.
 func (s *session) deliverMirrorPull(ctx context.Context, c *Cluster) error {
-	if !s.r.Options.mirrorPull() {
+	return copyMirrorPull(ctx, s.r.Options, s.r.Management, c, organizationOwner(s.o), append([]string{"openchoreo-data-plane"}, mirrorPullNamespaces...))
+}
+
+// copyMirrorPull copies the mirror credential into namespaces of cluster c
+// for owner; it does nothing without an authenticated mirror.
+func copyMirrorPull(ctx context.Context, o Options, mgmt, c *Cluster, owner ownerKey, namespaces []string) error {
+	if !o.mirrorPull() {
 		return nil
 	}
-	src, err := s.r.Management.Kube.CoreV1().Secrets(s.r.Options.Namespace).Get(ctx, s.r.Options.RegistrySecret, metav1.GetOptions{})
+	src, err := mgmt.Kube.CoreV1().Secrets(o.Namespace).Get(ctx, o.RegistrySecret, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 	if src.Type != "kubernetes.io/dockerconfigjson" || len(src.Data[".dockerconfigjson"]) == 0 {
 		return fmt.Errorf("registry Secret %s must be kubernetes.io/dockerconfigjson to authenticate image pulls", src.Name)
 	}
-	for _, ns := range append([]string{"openchoreo-data-plane"}, mirrorPullNamespaces...) {
+	for _, ns := range namespaces {
 		u := secretObject(ns, MirrorPullSecret, map[string][]byte{".dockerconfigjson": src.Data[".dockerconfigjson"]})
 		u.Object["type"] = "kubernetes.io/dockerconfigjson"
-		if err = c.apply(ctx, s.o, "secrets", u); err != nil {
+		if err = c.applyAs(ctx, owner, "secrets", u); err != nil {
 			return err
 		}
 	}
