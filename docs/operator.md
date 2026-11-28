@@ -222,9 +222,9 @@ Persist the successful preflight, then delete owned OpenChoreo resources, remote
 HelmReleases/sources, CCNPs, bridges/RBAC, workers/clusters, child tenants, parent,
 organization namespace, admission rules and management credentials, waiting for
 each dependency layer. UID preconditions protect against replacement races.
-The organization admission rules let any client release finalizers on an object
-that is already being deleted, as long as its spec is unchanged, so garbage
-collection and OpenChoreo cleanup can finish. Deletion re-applies these rules
+The organization admission rules do not apply to updates of an object that is
+already being deleted, so garbage collection and OpenChoreo cleanup can release
+their finalizers. Only the operator can start deletion of reserved objects. Deletion re-applies these rules
 first, which also fixes organizations created by older releases.
 
 Stop user writes before confirming deletion. Stage 1 does not provide an atomic
