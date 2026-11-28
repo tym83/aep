@@ -7,6 +7,7 @@ import (
 	"github.com/tym83/aep/internal/operator"
 	"github.com/tym83/aep/internal/version"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"os"
@@ -24,57 +25,86 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// settings are the parsed command line beyond the reconciler options.
+type settings struct {
+	mgmt, fleetHub, fleetCharts, fleetGateway string
+	logOpts                                   zap.Options
+}
+
 func run() error {
+	r, cli, e := parseFlags(flag.CommandLine, os.Args[1:])
+	if e != nil {
+		return e
+	}
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&cli.logOpts)))
+	return start(r, cli)
+}
+
+// parseFlags parses and validates the operator command line.
+func parseFlags(fs *flag.FlagSet, args []string) (*operator.Reconciler, *settings, error) {
 	r := &operator.Reconciler{}
 	o := &r.Options
-	flag.StringVar(&o.ArgoCDChartURL, "argocd-chart-url", "https://argoproj.github.io/argo-helm", "Argo CD Helm repository mirror URL")
-	flag.StringVar(&o.ArgoCDHostTemplate, "argocd-host-template", "", "Argo CD ingress hostname template with Organization and Tier")
-	flag.StringVar(&o.ArgoCDACMEServer, "argocd-acme-server", "", "ACME directory URL for the Argo CD host certificate in the tier cluster; empty uses the ingress default certificate")
-	flag.StringVar(&o.VCSWebhookURL, "vcs-webhook-url", "", "OpenChoreo HTTPS /api/v1alpha1/autobuild endpoint; empty disables hook registration")
-	flag.StringVar(&o.ImageRegistryMirror, "image-registry-mirror", "", "Mirror registry prefix for every delivered image")
-	flag.StringVar(&o.ChartRegistryMirror, "chart-registry-mirror", "", "Mirror registry prefix for OCI charts")
-	flag.BoolVar(&o.RegistryInsecure, "registry-insecure", false, "Use HTTP for Flux OCI sources on the configured chart mirror")
-	flag.StringVar(&o.RegistrySecret, "registry-secret", "", "Flux authentication Secret in each source namespace")
-	flag.StringVar(&o.RegistryCASecret, "registry-ca-secret", "", "Flux CA Secret in each source namespace")
-	flag.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")
-	flag.StringVar(&o.KyvernoChartURL, "kyverno-chart-url", "oci://ghcr.io/kyverno/charts/kyverno", "Kyverno OCI chart URL; override for air-gap mirror")
-	var mgmt, fleetHub, fleetCharts, fleetGateway string
-	flag.StringVar(&fleetHub, "fleet-hub-config", "", "OCM hub config; empty uses management")
-	flag.StringVar(&fleetCharts, "fleet-chart-dir", "", "Enable fleet using locally staged pinned charts")
-	flag.StringVar(&fleetGateway, "fleet-gateway-url", "", "Externally reachable wss:// OpenChoreo gateway")
-	flag.StringVar(&mgmt, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
-	flag.StringVar(&o.Namespace, "namespace", "aep-system", "Operator namespace")
-	flag.StringVar(&o.CPSecret, "aepcp-kubeconfig-secret", "", "Management namespace/name Secret, key super-admin.svc")
-	flag.StringVar(&o.CPFile, "aepcp-kubeconfig", "", "Local control-plane kubeconfig")
-	flag.StringVar(&o.CPNamespace, "aepcp-tenant-namespace", "tenant-aep-cp", "Management namespace containing the aep-cp cluster")
-	flag.StringVar(&o.CPCluster, "aepcp-cluster", "aepcp", "Cozystack aep-cp cluster name")
-	flag.StringVar(&o.GatewayHostTemplate, "gateway-host-template", "cluster-gateway.{{.DashedIP}}.nip.io", "Go template with ClusterIP and DashedIP")
-	flag.BoolVar(&o.TenantEgressWorkaround, "tenant-egress-workaround", true, "Allow root etcd and ingress until cozystack#5442 ships")
-	flag.StringVar(&o.BridgeImage, "bridge-image", "ghcr.io/tym83/aep-bridge:"+version.Version, "Bridge container image (required)")
-	flag.BoolVar(&o.PruneBootstrapBindings, "prune-bootstrap-bindings", true, "Remove chart-managed cluster-wide bootstrap authorization bindings")
-	flag.StringVar(&o.BootstrapBindingSystemClients, "bootstrap-binding-system-clients", operator.DefaultBootstrapBindingSystemClients, "Comma-separated client IDs exempt from bootstrap binding pruning; empty exempts none")
-	flag.BoolVar(&o.KeycloakEnabled, "keycloak-enabled", false, "Create groups in an existing Keycloak realm")
-	flag.StringVar(&o.KeycloakURL, "keycloak-url", "", "Keycloak HTTPS URL")
-	flag.StringVar(&o.KeycloakRealm, "keycloak-realm", "", "Existing isolated realm")
-	flag.StringVar(&o.KeycloakCredentialsSecret, "keycloak-credentials-secret", "", "namespace/name with username and password")
-	flag.BoolVar(&o.RestoreVerification, "restore-verification", false, "Enable monthly same-namespace prod restore checks")
-	logOpts := zap.Options{}
-	logOpts.BindFlags(flag.CommandLine)
-	flag.Parse()
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&logOpts)))
-	if (o.CPSecret == "") == (o.CPFile == "") {
-		return fmt.Errorf("specify exactly one aep-cp kubeconfig source")
+	cli := &settings{}
+	fs.StringVar(&o.ArgoCDChartURL, "argocd-chart-url", "https://argoproj.github.io/argo-helm", "Argo CD Helm repository mirror URL")
+	fs.StringVar(&o.ArgoCDHostTemplate, "argocd-host-template", "", "Argo CD ingress hostname template with Organization and Tier")
+	fs.StringVar(&o.ArgoCDACMEServer, "argocd-acme-server", "", "ACME directory URL for the Argo CD host certificate in the tier cluster; empty uses the ingress default certificate")
+	fs.StringVar(&o.VCSWebhookURL, "vcs-webhook-url", "", "OpenChoreo HTTPS /api/v1alpha1/autobuild endpoint; empty disables hook registration")
+	fs.StringVar(&o.ImageRegistryMirror, "image-registry-mirror", "", "Mirror registry prefix for every delivered image")
+	fs.StringVar(&o.ChartRegistryMirror, "chart-registry-mirror", "", "Mirror registry prefix for OCI charts")
+	fs.BoolVar(&o.RegistryInsecure, "registry-insecure", false, "Use HTTP for Flux OCI sources on the configured chart mirror")
+	fs.StringVar(&o.RegistrySecret, "registry-secret", "", "Flux authentication Secret in each source namespace")
+	fs.StringVar(&o.RegistryCASecret, "registry-ca-secret", "", "Flux CA Secret in each source namespace")
+	fs.StringVar(&o.PolicyBundleRepository, "policy-bundle-repository", "oci://ghcr.io/tym83/aep/policies", "OCI repository containing the versioned AEP policy charts")
+	fs.StringVar(&o.KyvernoChartURL, "kyverno-chart-url", "oci://ghcr.io/kyverno/charts/kyverno", "Kyverno OCI chart URL; override for air-gap mirror")
+	fs.StringVar(&cli.fleetHub, "fleet-hub-config", "", "OCM hub config; empty uses management")
+	fs.StringVar(&cli.fleetCharts, "fleet-chart-dir", "", "Enable fleet using locally staged pinned charts")
+	fs.StringVar(&cli.fleetGateway, "fleet-gateway-url", "", "Externally reachable wss:// OpenChoreo gateway")
+	fs.StringVar(&cli.mgmt, "mgmt-kubeconfig", "", "Management kubeconfig; default in-cluster")
+	fs.StringVar(&o.Namespace, "namespace", "aep-system", "Operator namespace")
+	fs.StringVar(&o.CPSecret, "aepcp-kubeconfig-secret", "", "Management namespace/name Secret, key super-admin.svc")
+	fs.StringVar(&o.CPFile, "aepcp-kubeconfig", "", "Local control-plane kubeconfig")
+	fs.StringVar(&o.DefaultControlPlane, "default-control-plane", "", "ControlPlane resource serving Organizations without controlPlaneRef; when set, the legacy aep-cp kubeconfig flags may be omitted")
+	fs.StringVar(&o.CPNamespace, "aepcp-tenant-namespace", "tenant-aep-cp", "Management namespace containing the aep-cp cluster")
+	fs.StringVar(&o.CPCluster, "aepcp-cluster", "aepcp", "Cozystack aep-cp cluster name")
+	fs.StringVar(&o.GatewayHostTemplate, "gateway-host-template", "cluster-gateway.{{.DashedIP}}.nip.io", "Go template with ClusterIP and DashedIP")
+	fs.BoolVar(&o.TenantEgressWorkaround, "tenant-egress-workaround", true, "Allow root etcd and ingress until cozystack#5442 ships")
+	fs.StringVar(&o.BridgeImage, "bridge-image", "ghcr.io/tym83/aep-bridge:"+version.Version, "Bridge container image (required)")
+	fs.BoolVar(&o.PruneBootstrapBindings, "prune-bootstrap-bindings", true, "Remove chart-managed cluster-wide bootstrap authorization bindings")
+	fs.StringVar(&o.BootstrapBindingSystemClients, "bootstrap-binding-system-clients", operator.DefaultBootstrapBindingSystemClients, "Comma-separated client IDs exempt from bootstrap binding pruning; empty exempts none")
+	fs.BoolVar(&o.KeycloakEnabled, "keycloak-enabled", false, "Create groups in an existing Keycloak realm")
+	fs.StringVar(&o.KeycloakURL, "keycloak-url", "", "Keycloak HTTPS URL")
+	fs.StringVar(&o.KeycloakRealm, "keycloak-realm", "", "Existing isolated realm")
+	fs.StringVar(&o.KeycloakCredentialsSecret, "keycloak-credentials-secret", "", "namespace/name with username and password")
+	fs.BoolVar(&o.RestoreVerification, "restore-verification", false, "Enable monthly same-namespace prod restore checks")
+	cli.logOpts.BindFlags(fs)
+	if e := fs.Parse(args); e != nil {
+		return nil, nil, e
+	}
+	if o.CPSecret != "" && o.CPFile != "" {
+		return nil, nil, fmt.Errorf("specify at most one aep-cp kubeconfig source")
+	}
+	if o.CPSecret == "" && o.CPFile == "" && o.DefaultControlPlane == "" {
+		return nil, nil, fmt.Errorf("specify an aep-cp kubeconfig source or --default-control-plane")
+	}
+	if o.DefaultControlPlane != "" && len(validation.IsDNS1123Subdomain(o.DefaultControlPlane)) > 0 {
+		return nil, nil, fmt.Errorf("default-control-plane must be a ControlPlane name")
 	}
 	if o.BridgeImage == "" {
-		return fmt.Errorf("bridge-image required")
+		return nil, nil, fmt.Errorf("bridge-image required")
 	}
 	if o.KeycloakEnabled && (o.KeycloakURL == "" || o.KeycloakRealm == "" || o.KeycloakCredentialsSecret == "") {
-		return fmt.Errorf("Keycloak URL, realm and credentials required")
+		return nil, nil, fmt.Errorf("keycloak-url, keycloak-realm and keycloak-credentials-secret required when keycloak-enabled")
 	}
+	return r, cli, nil
+}
+
+func start(r *operator.Reconciler, cli *settings) error {
+	o := &r.Options
 	var cfg *rest.Config
 	var e error
-	if mgmt != "" {
-		cfg, e = clientcmd.BuildConfigFromFlags("", mgmt)
+	if cli.mgmt != "" {
+		cfg, e = clientcmd.BuildConfigFromFlags("", cli.mgmt)
 	} else {
 		cfg, e = rest.InClusterConfig()
 	}
@@ -98,13 +128,16 @@ func run() error {
 	if e = r.SetupWithManager(mgr); e != nil {
 		return e
 	}
-	if fleetCharts != "" {
-		if !strings.HasPrefix(fleetGateway, "wss://") {
+	if e = (&operator.ControlPlaneReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); e != nil {
+		return e
+	}
+	if cli.fleetCharts != "" {
+		if !strings.HasPrefix(cli.fleetGateway, "wss://") {
 			return fmt.Errorf("fleet-gateway-url must use wss://")
 		}
 		hub := r.Management
-		if fleetHub != "" {
-			hc, err := clientcmd.BuildConfigFromFlags("", fleetHub)
+		if cli.fleetHub != "" {
+			hc, err := clientcmd.BuildConfigFromFlags("", cli.fleetHub)
 			if err != nil {
 				return err
 			}
@@ -113,7 +146,7 @@ func run() error {
 				return err
 			}
 		}
-		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: fleetCharts, Mirror: r.Options.ImageRegistryMirror}, Gateway: fleetGateway}
+		fleet := &operator.FleetReconciler{Reconciler: r, Hub: hub, Renderer: operator.HelmFleetRenderer{Directory: cli.fleetCharts, Mirror: r.Options.ImageRegistryMirror}, Gateway: cli.fleetGateway}
 		if e = ctrl.NewControllerManagedBy(mgr).For(&api.ExternalCluster{}, builder.WithPredicates(operator.FleetPredicate())).Complete(fleet); e != nil {
 			return e
 		}

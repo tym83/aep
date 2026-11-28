@@ -49,7 +49,14 @@ spec:
             - {{ printf "--restore-verification=%t" .Values.restoreVerification | quote }}
             - {{ printf "--namespace=%s" .Release.Namespace | quote }}
             - {{ printf "--bridge-image=%s" (include "aep.mirror" (dict "root" . "ref" (include "aep.ownImage" (dict "root" . "image" .Values.bridgeImage)))) | quote }}
-            - {{ printf "--aepcp-kubeconfig-secret=%s" (required "aepcpKubeconfigSecret required" .Values.aepcpKubeconfigSecret) | quote }}
+            {{- if .Values.aepcpKubeconfigSecret }}
+            - {{ printf "--aepcp-kubeconfig-secret=%s" .Values.aepcpKubeconfigSecret | quote }}
+            {{- else if not .Values.controlPlane.default }}
+            {{- fail "aepcpKubeconfigSecret required unless controlPlane.default is set" }}
+            {{- end }}
+            {{- with .Values.controlPlane.default }}
+            - {{ printf "--default-control-plane=%s" . | quote }}
+            {{- end }}
             - {{ printf "--aepcp-tenant-namespace=%s" .Values.aepcpTenantNamespace | quote }}
             - {{ printf "--aepcp-cluster=%s" .Values.aepcpCluster | quote }}
             - {{ printf "--gateway-host-template=%s" .Values.gatewayHostTemplate | quote }}

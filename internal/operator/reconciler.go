@@ -30,6 +30,9 @@ type Options struct {
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
+	// DefaultControlPlane names the ControlPlane for Organizations without
+	// controlPlaneRef. It is accepted but not resolved yet.
+	DefaultControlPlane string
 }
 type Reconciler struct {
 	client.Client

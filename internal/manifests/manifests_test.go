@@ -94,6 +94,11 @@ func TestOperatorChart(t *testing.T) {
 	if len(docs) != 8 {
 		t.Fatalf("expected four CRDs, SA, RBAC and Deployment, got %d", len(docs))
 	}
+	for _, want := range []string{"controlplanes/status", "controlplanes/finalizers", "ingresses", "controlplanes.aep.aenix.io"} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("operator chart lacks %s", want)
+		}
+	}
 	for _, d := range docs {
 		if d["kind"] != "ClusterRole" {
 			continue
@@ -124,6 +129,43 @@ func TestOperatorChart(t *testing.T) {
 		}
 		if string(source) != string(packaged) {
 			t.Fatalf("operator chart CRD drift: %s", filepath.Base(path))
+		}
+	}
+}
+
+// The legacy aep-cp kubeconfig is required unless a default ControlPlane is set.
+func TestOperatorChartControlPlaneSources(t *testing.T) {
+	if _, e := exec.LookPath("helm"); e != nil {
+		t.Skip("helm unavailable")
+	}
+	if b, e := exec.Command("helm", "template", "operator", "../../charts/aep-operator").CombinedOutput(); e == nil || !strings.Contains(string(b), "aepcpKubeconfigSecret required unless controlPlane.default is set") {
+		t.Fatalf("missing source accepted: %v: %s", e, b)
+	}
+	for _, tc := range []struct {
+		set       []string
+		want, not []string
+	}{
+		{[]string{"aepcpKubeconfigSecret=cp/access"}, []string{`"--aepcp-kubeconfig-secret=cp/access"`}, []string{"--default-control-plane"}},
+		{[]string{"controlPlane.default=default"}, []string{`"--default-control-plane=default"`}, []string{"--aepcp-kubeconfig-secret"}},
+		{[]string{"controlPlane.default=default", "aepcpKubeconfigSecret=cp/access"}, []string{`"--default-control-plane=default"`, `"--aepcp-kubeconfig-secret=cp/access"`}, nil},
+	} {
+		args := []string{"template", "operator", "../../charts/aep-operator", "--show-only", "templates/deployment.yaml"}
+		for _, s := range tc.set {
+			args = append(args, "--set", s)
+		}
+		b, e := exec.Command("helm", args...).CombinedOutput()
+		if e != nil {
+			t.Fatalf("%v: %s", e, b)
+		}
+		for _, w := range tc.want {
+			if !strings.Contains(string(b), w) {
+				t.Errorf("%v: missing %s", tc.set, w)
+			}
+		}
+		for _, n := range tc.not {
+			if strings.Contains(string(b), n) {
+				t.Errorf("%v: unexpected %s", tc.set, n)
+			}
 		}
 	}
 }

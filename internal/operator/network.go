@@ -65,6 +65,11 @@ func (s *session) controlPlane(ctx context.Context) error {
 	if s.cp != nil {
 		return nil
 	}
+	if s.r.Options.CPFile == "" && s.r.Options.CPSecret == "" {
+		// Only --default-control-plane allows this; Organizations cannot use a
+		// ControlPlane resource yet.
+		return fmt.Errorf("no legacy aep-cp kubeconfig configured and ControlPlane resolution is not implemented yet")
+	}
 	var e error
 	if s.r.Options.CPFile != "" {
 		cfg, err := clientcmd.BuildConfigFromFlags("", s.r.Options.CPFile)
