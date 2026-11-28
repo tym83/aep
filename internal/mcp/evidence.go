@@ -219,6 +219,11 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 			selector := labels.Set{"aep.aenix.io/resource": parts[2], "aep.aenix.io/managed-by": "bridge", "aep.aenix.io/organization": sc.org}.AsSelector().String()
 			apps = s.listSelected(ctx, &e, g, ns, selector)
 		}
+		if len(apps) == 0 && parts[1] == "Kafka" {
+			// Bridge Kafka claims are Strimzi clusters in the tier application
+			// cluster, which this management-cluster client cannot read.
+			return e, fmt.Errorf("Kafka ServiceClaims run on Strimzi in the %s application cluster; their state is reported only in ServiceClaim status", parts[0])
+		}
 		if len(apps) == 0 {
 			return e, fmt.Errorf("service unavailable")
 		}
