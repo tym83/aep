@@ -128,6 +128,8 @@ func controlPlaneOperatorRules() []any {
 		rule("", []string{"namespaces"}, crud),
 		rule("admissionregistration.k8s.io", []string{"validatingadmissionpolicies", "validatingadmissionpolicybindings"}, crud),
 		rule("rbac.authorization.k8s.io", []string{"roles", "rolebindings", "clusterroles", "clusterrolebindings"}, crud),
+		// The shared cluster wait counts Ready nodes, as for tier contracts.
+		rule("", []string{"nodes"}, []string{"list"}),
 	}
 }
 
@@ -147,10 +149,16 @@ func controlPlaneNamespaceRules() []any {
 	}
 }
 
+// controlPlaneTokenRules let bootstrap-token remediation inspect kube-system
+// Secrets, as tier contracts do.
+func controlPlaneTokenRules() []any {
+	return []any{rule("", []string{"secrets"}, []string{"list"})}
+}
+
 // controlPlaneContractRevision identifies the installed identity contract,
 // so a changed contract is reinstalled with the super-admin credential.
 func controlPlaneContractRevision() (string, error) {
-	b, e := json.Marshal([]any{controlPlaneOperatorRules(), controlPlaneNamespaceRules()})
+	b, e := json.Marshal([]any{controlPlaneOperatorRules(), controlPlaneNamespaceRules(), controlPlaneTokenRules()})
 	if e != nil {
 		return "", e
 	}
@@ -193,12 +201,18 @@ func (s *controlPlaneSession) installContract(ctx context.Context, admin *Cluste
 	nsBinding := obj("rbac.authorization.k8s.io/v1", "RoleBinding", OpenChoreoNamespace, controlPlaneOperatorAccount, nil)
 	nsBinding.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": controlPlaneOperatorAccount}
 	nsBinding.Object["subjects"] = subject
+	tokenRole := obj("rbac.authorization.k8s.io/v1", "Role", "kube-system", controlPlaneOperatorAccount, nil)
+	tokenRole.Object["rules"] = controlPlaneTokenRules()
+	tokenBinding := obj("rbac.authorization.k8s.io/v1", "RoleBinding", "kube-system", controlPlaneOperatorAccount, nil)
+	tokenBinding.Object["roleRef"] = M{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": controlPlaneOperatorAccount}
+	tokenBinding.Object["subjects"] = subject
 	for _, item := range []struct {
 		resource string
 		u        *unstructured.Unstructured
 	}{
 		{"serviceaccounts", obj("v1", "ServiceAccount", controlPlaneOperatorNamespace, controlPlaneOperatorAccount, nil)},
 		{"clusterroles", role}, {"clusterrolebindings", binding}, {"roles", nsRole}, {"rolebindings", nsBinding},
+		{"roles", tokenRole}, {"rolebindings", tokenBinding},
 	} {
 		if e := admin.applyAs(ctx, s.owner, item.resource, item.u); e != nil {
 			return e
