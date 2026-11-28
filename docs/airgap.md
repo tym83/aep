@@ -226,7 +226,9 @@ copies it as `aep-mirror-pull` into `openchoreo-data-plane`, `kyverno` and
 `argocd` before the charts start (the bootstrap contract creates those
 namespaces and a Role limited to that Secret), sets each delivered chart's
 `imagePullSecrets`, and the baseline bundle adds it to pods created at runtime
-there, such as kgateway's Envoy proxies. Cozystack's own addons pull from the
+there. kgateway's Envoy proxies get it from GatewayClass parameters instead
+(GatewayParameters `openchoreo-data-plane/aep-mirror-pull`), because on a fresh
+tier they start before Kyverno and the baseline policy. Cozystack's own addons pull from the
 registry configured for Cozystack, not from this mirror.
 
 ```sh

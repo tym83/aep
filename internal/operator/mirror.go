@@ -6,6 +6,7 @@ import (
 	api "github.com/tym83/aep/api/v1alpha1"
 	"github.com/tym83/aep/internal/registrymirror"
 	inventory "github.com/tym83/aep/release"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"strings"
@@ -215,8 +216,31 @@ func PullSecretValues(chart string, values M) M {
 		setMap(values, []string{"global", "imagePullSecrets"}, refs)
 	case "kgateway":
 		values["imagePullSecrets"] = refs
+		// Proxy pods of a fresh tier start before Kyverno and the baseline
+		// policy that adds the pull secret, so kgateway sets it itself.
+		values["gatewayClassParametersRefs"] = M{"kgateway": M{"name": MirrorGatewayParameters, "namespace": "openchoreo-data-plane"}}
 	}
 	return values
+}
+
+// MirrorGatewayParameters gives kgateway proxy pods the mirror pull secret.
+const MirrorGatewayParameters = "aep-mirror-pull"
+
+// deliverGatewayParameters waits for the kgateway CRDs that the delivered
+// charts install, so a fresh tier reports pending rather than failing.
+func (s *session) deliverGatewayParameters(ctx context.Context, c *Cluster) error {
+	if !s.r.Options.mirrorPull() {
+		return nil
+	}
+	gp := obj("gateway.kgateway.dev/v1alpha1", "GatewayParameters", "openchoreo-data-plane", MirrorGatewayParameters,
+		M{"kube": M{"podTemplate": M{"imagePullSecrets": []any{M{"name": MirrorPullSecret}}}}})
+	if e := c.apply(ctx, s.o, "gatewayparameters", gp); e != nil {
+		if errors.IsNotFound(e) {
+			return pending("waiting for kgateway CRDs")
+		}
+		return e
+	}
+	return nil
 }
 
 func (s *session) chartValues(chart string, values M) M {
