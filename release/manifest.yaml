@@ -11,6 +11,22 @@ artifacts:
   kind: image
   ref: cr.openchoreo.dev/openchoreo/cluster-agent
   version: v1.4.0-m.3
+- digest: sha256:60258027eed0653ca84108946f3e9647ef00acc2236bb1f1b9173a4d59f6dfed
+  kind: image
+  ref: cr.openchoreo.dev/openchoreo/cluster-gateway
+  version: v1.4.0-m.3
+- digest: sha256:963396dd97a015adf49a20ea1dc20e7325ed6cfb327fb918356f22cae602609f
+  kind: image
+  ref: cr.openchoreo.dev/openchoreo/controller
+  version: v1.4.0-m.3
+- digest: sha256:5df170c739978bd8a43ebcea14fe51ed9cf1077e195813b1e0192831bd25306b
+  kind: image
+  ref: cr.openchoreo.dev/openchoreo/event-forwarder
+  version: v1.4.0-m.3
+- digest: sha256:a57d88bae0c0b53a32631f85459c9bad2174702239685e35e3544b33f9b120c5
+  kind: image
+  ref: cr.openchoreo.dev/openchoreo/openchoreo-api
+  version: v1.4.0-m.3
 - digest: sha256:875af12e9f679dccc8abd41afbf1b4a9cd19b336e181d8393d901125a97a3055
   kind: image
   ref: cr.openchoreo.dev/openchoreo/openchoreo-cli
@@ -28,6 +44,11 @@ artifacts:
   ref: gcr.io/kaniko-project/executor
   signature: sha256:9891a369942d9b65143dc4bccdfd31bbc31defde93152ff462f9d9aaca4edae1
   version: v1.23.2
+- digest: sha256:e4ca217803202017da604dc2e7627d37c32ed57bd70e34585dbcd39b065ea23f
+  kind: image
+  ref: ghcr.io/external-secrets/external-secrets
+  signature: sha256:295ed2c19b8663bab0cb9cb02d5a7a7c169226491dbf7aee97d03d65848adafc
+  version: v2.0.1
 - digest: sha256:02600428e7c956e222f4376413525866ed9fec28e6bcb1222774ce6bf5fc904a
   kind: image
   ref: ghcr.io/kyverno/readiness-checker
@@ -122,10 +143,19 @@ artifacts:
   kind: chart
   ref: oci://cr.kgateway.dev/kgateway-dev/charts/kgateway-crds
   version: v2.3.11
+- digest: sha256:1f2d760a7e8d31e60dc1d875d2d18b4e09d1bc284f83d613feb93bcbb9a635b1
+  kind: chart
+  ref: oci://cr.openchoreo.dev/openchoreo/helm-charts/openchoreo-control-plane
+  version: 1.4.0-m.3
 - digest: sha256:363ede76132a95590a84fb54b520457608576c5f7fd133b0711b7b0f41b4c4ac
   kind: chart
   ref: oci://cr.openchoreo.dev/openchoreo/helm-charts/openchoreo-data-plane
   version: 1.4.0-m.3
+- digest: sha256:b65f599920488db6e2585e3dca56bc9f0e186e6dc9c5e295dd5872a6acdbcf4a
+  kind: chart
+  ref: oci://ghcr.io/external-secrets/charts/external-secrets
+  signature: sha256:a38b70aabc4c599a1c41701ab07d4c4f8e630ba2db31aa08099e792e2f803727
+  version: 2.0.1
 - digest: sha256:83054f30148c3cfc001087c1f5772eda7c7224e9b74b7f0e70c39c9cafe009d1
   kind: chart
   ref: oci://ghcr.io/kyverno/charts/kyverno
@@ -148,7 +178,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
   signature: required-at-publish
   version: 0.1.3
-- digest: sha256:d6c189fe9928794d3a7ea354f83e2badd80b4aab39bd5f113a89c57f0df4b5be
+- digest: sha256:85429d7c0499c722cbcd622cd85757ad1cbbfdfc59f443aa9d1b97e2eb031b5d
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-builds
@@ -160,7 +190,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
   signature: required-at-publish
   version: 0.1.5
-- digest: sha256:da08dd70154a51487351145470bf87a449212ba86ec55fffa81503b85bcf9d77
+- digest: sha256:7acb498c14209f63f496a5a39e18bc9a9a68403065eedabf574007079e6032cb
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-component-types
@@ -350,5 +380,10 @@ artifacts:
   ref: registry.gitlab.com/gitlab-org/build/cng/kubectl
   signature: sha256:6f6f65edde6e818a870aa51713db6035a0f7af02f86c30e6104e5ba3c9babcb0
   version: v19.6.2
-inputs: 6ed63ff22cf08894cf07a43fd8d7554a53d22ebce7f8d749a80e87567973cef7
+- digest: sha256:63e5e76b746bb8b891a94968d380736c035e768dab0d56ddad1f50c750a4be39
+  kind: image
+  ref: registry.k8s.io/kubectl
+  signature: sha256:77ca989196efec4180f9ece74600f78388bf5dc6b514f0f26a7ecee0562ab8e8
+  version: v1.36.0
+inputs: d3fcd939ca06f4fd5831c8c9fb2cc68373ae7a211d89d4177a3380db96096ae8
 schema: 1
