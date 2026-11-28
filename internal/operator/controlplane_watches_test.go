@@ -50,7 +50,11 @@ func TestControlPlanesForObject(t *testing.T) {
 }
 
 func TestControlPlanesForOrganization(t *testing.T) {
-	r := &ControlPlaneReconciler{Options: Options{DefaultControlPlane: "default"}}
+	scheme := runtime.NewScheme()
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	r := &ControlPlaneReconciler{Client: fake.NewClientBuilder().WithScheme(scheme).Build(), Options: Options{DefaultControlPlane: "default"}}
 	o := organization()
 	if got := r.controlPlanesForOrganization(context.Background(), o); !reflect.DeepEqual(got, []ctrl.Request{{NamespacedName: types.NamespacedName{Name: "default"}}}) {
 		t.Fatal(got)
@@ -60,6 +64,14 @@ func TestControlPlanesForOrganization(t *testing.T) {
 		t.Fatal(got)
 	}
 	if got := r.controlPlanesForOrganization(context.Background(), &corev1.Service{}); got != nil {
+		t.Fatal(got)
+	}
+	// A ControlPlane in a tenant namespace of the Organization is requeued
+	// to be rejected.
+	colliding := controlPlane()
+	colliding.Name, colliding.Spec.Tenant.Name = "clash", "acme"
+	r.Client = fake.NewClientBuilder().WithScheme(scheme).WithObjects(colliding).Build()
+	if got := r.controlPlanesForOrganization(context.Background(), o); !reflect.DeepEqual(got, []ctrl.Request{{NamespacedName: types.NamespacedName{Name: "clash"}}, {NamespacedName: types.NamespacedName{Name: "cp2"}}}) {
 		t.Fatal(got)
 	}
 }

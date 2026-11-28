@@ -204,8 +204,8 @@ func shortName(name string) string {
 // keeps spec.controlPlaneRef immutable once set but cannot read annotations,
 // so an Organization already reconciled without a reference (it carries the
 // finalizer and no accepted reference) may only gain one through the
-// adoption annotation naming the same ControlPlane. The reference is not
-// resolved yet: Organizations still use the legacy aep-cp flags.
+// adoption annotation naming the same ControlPlane. Whether the referenced
+// ControlPlane exists is checked by the reconciler (controlPlaneRejection).
 func validateControlPlaneRef(o *api.Organization) error {
 	ref, accepted := o.Spec.ControlPlaneRef, o.Status.ControlPlaneRef
 	if ref != "" && len(validation.IsDNS1123Subdomain(ref)) > 0 {

@@ -69,6 +69,15 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !evaluateControlPlane(cp) {
 		return ctrl.Result{}, r.writeStatus(ctx, cp, before)
 	}
+	collision, err := r.organizationCollision(ctx, cp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if collision != "" {
+		cp.Status.Phase = "Rejected"
+		setControlPlaneCondition(cp, "Ready", false, "InvalidSpec", collision)
+		return ctrl.Result{RequeueAfter: time.Minute}, r.writeStatus(ctx, cp, before)
+	}
 	if !slices.Contains(cp.Finalizers, ControlPlaneFinalizer) {
 		base := cp.DeepCopy()
 		cp.Finalizers = append(cp.Finalizers, ControlPlaneFinalizer)
@@ -78,6 +87,23 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	s := r.session(cp)
 	return runReconcileSteps(ctx, controlPlaneStatus{s: s, before: before}, s.steps())
+}
+
+// organizationCollision reports Organizations whose tenant namespaces
+// include the tenant namespace of cp, or "". Installing there would mix the
+// control plane with an Organization's tenant.
+func (r *ControlPlaneReconciler) organizationCollision(ctx context.Context, cp *api.ControlPlane) (string, error) {
+	var organizations api.OrganizationList
+	if err := r.List(ctx, &organizations); err != nil {
+		return "", err
+	}
+	var collisions []string
+	for i := range organizations.Items {
+		if c := namespaceCollision(cp, &organizations.Items[i]); c != "" {
+			collisions = append(collisions, c)
+		}
+	}
+	return strings.Join(collisions, "; "), nil
 }
 
 func (r *ControlPlaneReconciler) writeStatus(ctx context.Context, cp *api.ControlPlane, before *api.ControlPlaneStatus) error {

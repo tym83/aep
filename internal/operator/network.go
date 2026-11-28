@@ -88,12 +88,17 @@ func (s *session) controlPlane(ctx context.Context) error {
 	if s.cp != nil {
 		return nil
 	}
-	if s.r.Options.CPFile == "" && s.r.Options.CPSecret == "" {
-		// Only --default-control-plane allows this; Organizations cannot use a
-		// ControlPlane resource yet.
-		return fmt.Errorf("no legacy aep-cp kubeconfig configured and ControlPlane resolution is not implemented yet")
+	t, e := s.target(ctx)
+	if e != nil {
+		return e
 	}
-	var e error
+	if t.managed() {
+		s.cp, e = s.managedControlPlane(ctx, t)
+		return e
+	}
+	if s.r.Options.CPFile == "" && s.r.Options.CPSecret == "" {
+		return fmt.Errorf("no aep-cp configured: set spec.controlPlaneRef, --default-control-plane or a legacy aep-cp kubeconfig")
+	}
 	if s.r.Options.CPFile != "" {
 		cfg, err := clientcmd.BuildConfigFromFlags("", s.r.Options.CPFile)
 		if err != nil {
@@ -105,16 +110,24 @@ func (s *session) controlPlane(ctx context.Context) error {
 	}
 	return e
 }
+
+// network allows the tier agents to reach the cluster-gateway mirror of
+// their aep-cp and verifies that the gateway serves a certificate for the
+// host they dial.
 func (s *session) network(ctx context.Context) error {
-	svcs, e := s.r.Management.Kube.CoreV1().Services(s.r.Options.CPNamespace).List(ctx, metav1.ListOptions{LabelSelector: "cluster.x-k8s.io/tenant-service-name=cluster-gateway-external"})
+	t, e := s.target(ctx)
+	if e != nil {
+		return e
+	}
+	svcs, e := s.r.Management.Kube.CoreV1().Services(t.namespace).List(ctx, metav1.ListOptions{LabelSelector: "cluster.x-k8s.io/tenant-service-name=cluster-gateway-external"})
 	if e != nil {
 		return e
 	}
 	if len(svcs.Items) != 1 {
-		return pending("expected exactly one gateway mirror Service in %s", s.r.Options.CPNamespace)
+		return pending("expected exactly one gateway mirror Service in %s", t.namespace)
 	}
 	svc := &svcs.Items[0]
-	policies, e := RenderNetwork(s.o, svc, s.r.Options.CPCluster)
+	policies, e := RenderNetwork(s.o, svc, t.cluster)
 	if e != nil {
 		return e
 	}
@@ -123,11 +136,16 @@ func (s *session) network(ctx context.Context) error {
 			return e
 		}
 	}
-	host, e := gatewayHost(s.r.Options.GatewayHostTemplate, svc.Spec.ClusterIP)
-	if e != nil {
-		return e
+	var host string
+	if t.managed() {
+		// The ControlPlane chose the host and placed it in the certificate.
+		host, s.gateway = t.cp.Status.Gateway.Host, t.cp.Status.Gateway.URL
+	} else {
+		if host, e = gatewayHost(s.r.Options.GatewayHostTemplate, svc.Spec.ClusterIP); e != nil {
+			return e
+		}
+		s.gateway = "wss://" + host + ":8443/ws"
 	}
-	s.gateway = "wss://" + host + ":8443/ws"
 	if e = s.controlPlane(ctx); e != nil {
 		return e
 	}
@@ -138,7 +156,9 @@ func (s *session) network(ctx context.Context) error {
 	if cert != nil {
 		return nil
 	}
-
+	if t.managed() {
+		return pending("waiting for ControlPlane %s to serve a cluster-gateway certificate for %s", t.cp.Name, host)
+	}
 	return pending("add %s to aep-cp clusterGateway.tls.dnsNames, reconcile its chart and restart cluster-gateway", host)
 }
 

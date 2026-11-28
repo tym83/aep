@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -39,8 +40,19 @@ func chartManagedBinding(u *unstructured.Unstructured) bool {
 		(labels["app.kubernetes.io/instance"] == "openchoreo-control-plane" || labels["release"] == "openchoreo-control-plane")
 }
 
-// This installation-wide check intentionally runs independently of tenant readiness.
+// This installation-wide check intentionally runs independently of tenant
+// readiness. A managed ControlPlane hardens its installation itself, so its
+// Organizations report its Hardened condition.
 func (s *session) hardenControlPlane(ctx context.Context) {
+	if t, err := s.target(ctx); err == nil && t.managed() {
+		c := meta.FindStatusCondition(t.cp.Status.Conditions, "Hardened")
+		if c == nil {
+			setCondition(s.o, "ControlPlaneHardened", false, "Pending", "ControlPlane "+t.cp.Name+" has not reported Hardened yet")
+			return
+		}
+		setCondition(s.o, "ControlPlaneHardened", c.Status == metav1.ConditionTrue, c.Reason, "ControlPlane "+t.cp.Name+": "+c.Message)
+		return
+	}
 	if err := s.controlPlane(ctx); err != nil {
 		setCondition(s.o, "ControlPlaneHardened", false, "InspectionFailed", err.Error())
 		return

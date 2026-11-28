@@ -30,8 +30,8 @@ type Options struct {
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
-	// DefaultControlPlane names the ControlPlane for Organizations without
-	// controlPlaneRef. It is accepted but not resolved yet.
+	// DefaultControlPlane names the ControlPlane serving Organizations
+	// without controlPlaneRef when no legacy aep-cp kubeconfig is configured.
 	DefaultControlPlane string
 }
 type Reconciler struct {
@@ -50,6 +50,8 @@ type session struct {
 	cp          *Cluster
 	tiers       map[string]*Cluster
 	gateway     string
+	// resolved is the aep-cp serving the Organization, once resolved.
+	resolved *controlPlaneTarget
 }
 
 var conditionTypes = []string{"TenantsReady", "ClustersReady", "NetworkPathsReady", "DataPlanesConnected", "PoliciesReady", "OpenChoreoNamespaceReady", "BridgesReady", "AccessReady", "VCSReady", "ArgoCDReady"}
@@ -82,11 +84,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	}
 	if e := Validate(o); e != nil {
-		for _, t := range conditionTypes {
-			setCondition(o, t, false, "InvalidSpec", e.Error())
-		}
-		o.Status.Phase = "Rejected"
-		return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
+		return r.reject(ctx, o, e.Error())
+	}
+	rejection, e := r.controlPlaneRejection(ctx, o)
+	if e != nil {
+		return ctrl.Result{}, e
+	}
+	if rejection != "" {
+		return r.reject(ctx, o, rejection)
 	}
 	// Record an accepted reference before the finalizer marks the
 	// Organization as reconciled, so a failed status write cannot turn a
@@ -107,12 +112,24 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	return r.runSteps(ctx, o, s.steps())
 }
 
+// reject records an invalid Organization; nothing is reconciled until it changes.
+func (r *Reconciler) reject(ctx context.Context, o *api.Organization, message string) (ctrl.Result, error) {
+	for _, t := range conditionTypes {
+		setCondition(o, t, false, "InvalidSpec", message)
+	}
+	o.Status.Phase = "Rejected"
+	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
+}
+
 // steps lists the organization reconcile steps in dependency order.
 func (s *session) steps() []reconcileStep {
 	return []reconcileStep{
 		{name: "TenantsReady", run: s.tenants},
 		// Root etcd must be reachable before a control plane can become Ready.
 		{name: "NetworkPathsReady", run: s.workaround, partial: true},
+		// Tier clusters receive the gateway host of a managed control plane,
+		// and everything after them talks to it.
+		{name: "ClustersReady", run: s.controlPlaneReady, partial: true, reason: controlPlaneNotReadyReason},
 		{name: "ClustersReady", run: s.clusters},
 		{name: "NetworkPathsReady", run: s.network},
 		// Policies need only the tier cluster. Delivering them after the data
