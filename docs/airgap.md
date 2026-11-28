@@ -121,7 +121,8 @@ the Chart.yaml annotation `aep.aenix.io/fixed-version: "true"`. Builds leave the
 version and values unchanged, so the operator's embedded inventory pins their
 digest. `charts/fixed-versions.yaml` records the digest of each published
 version; a test fails when chart content changes without a version bump, a new
-entry there and the matching operator constant.
+entry there and the matching operator constant. Bump to a version not yet present
+in the chart registry: publishing refuses to retag an existing version.
 
 `manifest --check` is offline: it checks rendered images, local OCI bytes and a
 fingerprint of tracked `charts/`, `policies/`, `release/`, root Dockerfiles,

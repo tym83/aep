@@ -178,24 +178,24 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-bridge-appcluster
   signature: required-at-publish
   version: 0.1.3
-- digest: sha256:85429d7c0499c722cbcd622cd85757ad1cbbfdfc59f443aa9d1b97e2eb031b5d
+- digest: sha256:afe47c0c03fa716fa8c138651b046fe7080ecd973e1e684e417bdd99da441ea8
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-builds
   signature: required-at-publish
-  version: 0.1.0
+  version: 0.3.0
 - digest: sha256:1b389235247a03b31569a347a9bbaa20cddd9ace8948e5c2e3195de547777351
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-change
   signature: required-at-publish
   version: 0.1.5
-- digest: sha256:7acb498c14209f63f496a5a39e18bc9a9a68403065eedabf574007079e6032cb
+- digest: sha256:de34cc16477ad3536ab750cafc1281233d14f3574291af060cfd925ea0064572
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-component-types
   signature: required-at-publish
-  version: 0.1.2
+  version: 0.3.0
 - digest: sha256:5c2c0ac946f7c2f971086da8e137a7ffb876e01474f717935429d360e293150a
   kind: chart
   layout: release/artifacts
@@ -385,5 +385,5 @@ artifacts:
   ref: registry.k8s.io/kubectl
   signature: sha256:77ca989196efec4180f9ece74600f78388bf5dc6b514f0f26a7ecee0562ab8e8
   version: v1.36.0
-inputs: d3fcd939ca06f4fd5831c8c9fb2cc68373ae7a211d89d4177a3380db96096ae8
+inputs: 95dfa3ae3873fca48b07b53b610b63b8f569b482e6b805208869118729070fc6
 schema: 1

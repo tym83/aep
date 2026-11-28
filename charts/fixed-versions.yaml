@@ -1,7 +1,8 @@
 # Published digests of fixed-version charts (aep.aenix.io/fixed-version), by
 # chart and version. A version is published once: change chart content only
-# with a version bump and a new entry; never edit an existing one.
+# with a version bump and a new entry; never edit an existing one. Bump to a
+# version not yet present in the chart registry, or publishing refuses to retag.
 aep-builds:
-  0.1.0: sha256:85429d7c0499c722cbcd622cd85757ad1cbbfdfc59f443aa9d1b97e2eb031b5d
+  0.3.0: sha256:afe47c0c03fa716fa8c138651b046fe7080ecd973e1e684e417bdd99da441ea8
 aep-component-types:
-  0.1.2: sha256:7acb498c14209f63f496a5a39e18bc9a9a68403065eedabf574007079e6032cb
+  0.3.0: sha256:de34cc16477ad3536ab750cafc1281233d14f3574291af060cfd925ea0064572

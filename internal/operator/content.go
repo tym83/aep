@@ -6,7 +6,7 @@ package operator
 const (
 	OwnChartRepository         = "oci://ghcr.io/tym83/aep/charts"
 	ComponentTypesChart        = "aep-component-types"
-	ComponentTypesChartVersion = "0.1.2"
+	ComponentTypesChartVersion = "0.3.0"
 	BuildsChart                = "aep-builds"
-	BuildsChartVersion         = "0.1.0"
+	BuildsChartVersion         = "0.3.0"
 )
