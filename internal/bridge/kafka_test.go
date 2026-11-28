@@ -266,7 +266,7 @@ func TestKafkaTopicRemoval(t *testing.T) {
 			if e := r.App.Update(ctx, c); e != nil {
 				t.Fatal(e)
 			}
-			c = reconcile(t, r, c)
+			reconcile(t, r, c)
 			audit := strimzi(t, r, "KafkaTopic", name+"-audit")
 			if retain && (audit == nil || audit.GetAnnotations()[Domain+"orphaned"] != "true") {
 				t.Fatal("retained topic must remain, marked orphaned")

@@ -222,7 +222,7 @@ func (s *Server) query(ctx context.Context, name string, a Args) (Evidence, erro
 		if len(apps) == 0 && parts[1] == "Kafka" {
 			// Bridge Kafka claims are Strimzi clusters in the tier application
 			// cluster, which this management-cluster client cannot read.
-			return e, fmt.Errorf("Kafka ServiceClaims run on Strimzi in the %s application cluster; their state is reported only in ServiceClaim status", parts[0])
+			return e, fmt.Errorf("bridge Kafka runs on Strimzi in the %s application cluster; its state is reported only in ServiceClaim status", parts[0])
 		}
 		if len(apps) == 0 {
 			return e, fmt.Errorf("service unavailable")

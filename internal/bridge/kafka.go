@@ -282,7 +282,7 @@ func (r *Reconciler) reconcileKafka(ctx context.Context, c *api.ServiceClaim, de
 		}
 	}
 	for _, obj := range objects {
-		if e := r.App.Patch(ctx, obj, client.Apply, client.FieldOwner(Manager), client.ForceOwnership); e != nil {
+		if e := r.App.Apply(ctx, client.ApplyConfigurationFromUnstructured(obj), client.FieldOwner(Manager), client.ForceOwnership); e != nil {
 			return r.reportError(ctx, c, "ApplyFailed", e)
 		}
 	}
@@ -467,11 +467,11 @@ func (r *Reconciler) strimziSecret(ctx context.Context, name, cluster, kind stri
 		return nil, e
 	}
 	if s.Labels["strimzi.io/cluster"] != cluster || s.Labels["strimzi.io/kind"] != kind {
-		return nil, fmt.Errorf("Secret %s/%s is not managed by Strimzi for %s", kinds.KafkaNamespace, name, cluster)
+		return nil, fmt.Errorf("secret %s/%s is not managed by Strimzi for %s", kinds.KafkaNamespace, name, cluster)
 	}
 	for _, k := range keys {
 		if len(s.Data[k]) == 0 {
-			return nil, fmt.Errorf("Secret %s/%s is missing key %s", kinds.KafkaNamespace, name, k)
+			return nil, fmt.Errorf("secret %s/%s is missing key %s", kinds.KafkaNamespace, name, k)
 		}
 	}
 	return s.Data, nil
