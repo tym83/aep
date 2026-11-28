@@ -10,7 +10,7 @@ short names are expanded to `docker.io/library/...` or `docker.io/...`.
 
 The inventory covers the charts in `charts/` and `policies/`, their rendered
 containers (including hooks and init containers), the operator's pinned Kyverno,
-kgateway, Argo CD and OpenChoreo data-plane charts, and standalone/controller-created
+kgateway, Argo CD, OpenChoreo data-plane and Strimzi charts, and standalone/controller-created
 images in `release/extra-images.yaml`. Both production and nonproduction policy
 bundles are included. ServiceClaim CRDs and bootstrap RBAC are embedded in the
 operator; they do not require a GitHub download. The optional LLM and SRE charts
@@ -222,13 +222,16 @@ registryInsecure: true (operator --registry-insecure).
 
 When `registrySecret` is a `kubernetes.io/dockerconfigjson` Secret and an image
 mirror is set, it also authenticates image pulls in tier clusters. The operator
-copies it as `aep-mirror-pull` into `openchoreo-data-plane`, `kyverno` and
-`argocd` before the charts start (the bootstrap contract creates those
+copies it as `aep-mirror-pull` into `openchoreo-data-plane`, `kyverno`,
+`argocd` and `aep-kafka` before the charts start (the bootstrap contract creates those
 namespaces and a Role limited to that Secret), sets each delivered chart's
 `imagePullSecrets`, and the baseline bundle adds it to pods created at runtime
 there. kgateway's Envoy proxies get it from GatewayClass parameters instead
 (GatewayParameters `openchoreo-data-plane/aep-mirror-pull`), because on a fresh
-tier they start before Kyverno and the baseline policy. Cozystack's own addons pull from the
+tier they start before Kyverno and the baseline policy. Strimzi passes the chart's
+pull secret to the Kafka brokers and entity operators it creates. Its broker
+image `quay.io/strimzi/kafka:0.50.0-kafka-4.1.1` is selected through operator
+environment variables, so it is listed in `release/extra-images.yaml`. Cozystack's own addons pull from the
 registry configured for Cozystack, not from this mirror.
 
 ```sh
