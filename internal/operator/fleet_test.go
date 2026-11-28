@@ -93,6 +93,9 @@ func TestFleetPinnedChartRendering(t *testing.T) {
 		values   M
 	}{}
 	for _, ch := range charts {
+		if ch.name == StrimziChart {
+			continue
+		}
 		v := M{}
 		if ch.name == "openchoreo-data-plane" {
 			v = M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": "ext-test", "tls": M{"generateCerts": false}}}

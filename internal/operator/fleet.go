@@ -222,6 +222,10 @@ func (f *FleetReconciler) reconcileFleet(ctx context.Context, ec *api.ExternalCl
 	cm.Object["data"] = M{"ca.crt": string(gateway.Data["ca.crt"])}
 	manifests := []any{ns.Object, secretObject("openchoreo-data-plane", "cluster-agent-tls", leaf).Object, cm.Object}
 	for _, ch := range charts {
+		// External clusters carry only the data plane; Kafka claims need a Cozystack tier.
+		if ch.name == StrimziChart {
+			continue
+		}
 		values := M{}
 		if ch.name == "openchoreo-data-plane" {
 			values = M{"gateway": M{"tls": M{"enabled": false}}, "clusterAgent": M{"planeID": id, "serverUrl": f.Gateway, "tls": M{"generateCerts": false, "clientSecretName": "cluster-agent-tls"}}}
