@@ -128,7 +128,8 @@ func start(r *operator.Reconciler, cli *settings) error {
 	if e = r.SetupWithManager(mgr); e != nil {
 		return e
 	}
-	if e = (&operator.ControlPlaneReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); e != nil {
+	cp := &operator.ControlPlaneReconciler{Client: mgr.GetClient(), Management: r.Management, Options: r.Options, Recorder: mgr.GetEventRecorderFor("aep-operator")}
+	if e = cp.SetupWithManager(mgr); e != nil {
 		return e
 	}
 	if cli.fleetCharts != "" {

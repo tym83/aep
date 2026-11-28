@@ -102,18 +102,18 @@ func TestValidateControlPlane(t *testing.T) {
 	}
 }
 
-func TestControlPlaneReconcilerOnlyReportsValidation(t *testing.T) {
+func TestControlPlaneReconcilerRejectsAndSuspends(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := api.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	valid, invalid, suspended := controlPlane(), controlPlane(), controlPlane()
+	invalid, suspended := controlPlane(), controlPlane()
 	invalid.Name, invalid.Spec.Ingress.ClusterIssuer = "broken", ""
 	suspended.Name, suspended.Spec.Suspend = "drill", true
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(valid, invalid, suspended).WithStatusSubresource(&api.ControlPlane{}).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(invalid, suspended).WithStatusSubresource(&api.ControlPlane{}).Build()
+	// No management cluster: neither a rejected nor a suspended ControlPlane may touch one.
 	r := &ControlPlaneReconciler{Client: c}
 	for _, tc := range []struct{ name, phase, reason string }{
-		{"default", "Pending", "NotImplemented"},
 		{"broken", "Rejected", "InvalidSpec"},
 		{"drill", "Suspended", "Suspended"},
 	} {
@@ -131,7 +131,7 @@ func TestControlPlaneReconcilerOnlyReportsValidation(t *testing.T) {
 				t.Fatalf("status %+v", got.Status)
 			}
 			if len(got.Status.Conditions) != 1 || got.Finalizers != nil {
-				t.Fatalf("validation-only reconcile changed more than Ready: %+v %v", got.Status.Conditions, got.Finalizers)
+				t.Fatalf("observe-only reconcile changed more than Ready: %+v %v", got.Status.Conditions, got.Finalizers)
 			}
 			// A second pass writes nothing.
 			version := got.ResourceVersion

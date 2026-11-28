@@ -187,8 +187,7 @@ func (s *session) remediate(ctx context.Context, ns, name, reason string) error 
 		}
 	}
 	now := metav1.Now()
-	payload := []byte(`{"metadata":{"annotations":{"reconcile.fluxcd.io/requestedAt":"` + now.Format(time.RFC3339Nano) + `","reconcile.fluxcd.io/forceAt":"` + now.Format(time.RFC3339Nano) + `"}}}`)
-	if _, e := s.r.Management.resource(helmAPI, "helmreleases", ns).Patch(ctx, name, types.MergePatchType, payload, metav1.PatchOptions{}); e != nil {
+	if e := forceReconcile(ctx, s.r.Management, ns, name, now); e != nil {
 		return e
 	}
 	s.o.Status.Remediations = append(s.o.Status.Remediations, api.Remediation{Time: now, Namespace: ns, Release: name, Reason: reason})
@@ -222,4 +221,11 @@ func tierNodeRoles(addons M) []any {
 		return []any{"ingress-nginx"}
 	}
 	return []any{}
+}
+
+// forceReconcile asks Flux to reconcile and force-upgrade a HelmRelease now.
+func forceReconcile(ctx context.Context, mgmt *Cluster, ns, name string, now metav1.Time) error {
+	payload := []byte(`{"metadata":{"annotations":{"reconcile.fluxcd.io/requestedAt":"` + now.Format(time.RFC3339Nano) + `","reconcile.fluxcd.io/forceAt":"` + now.Format(time.RFC3339Nano) + `"}}}`)
+	_, e := mgmt.resource(helmAPI, "helmreleases", ns).Patch(ctx, name, types.MergePatchType, payload, metav1.PatchOptions{})
+	return e
 }

@@ -290,12 +290,7 @@ func (s *session) saveOperatorCredential(ctx context.Context, name string, c *re
 	if e != nil {
 		return e
 	}
-	cfg := clientcmdapi.NewConfig()
-	cfg.Clusters["app"] = &clientcmdapi.Cluster{Server: c.Host, CertificateAuthorityData: c.CAData, TLSServerName: c.ServerName}
-	cfg.AuthInfos["operator"] = &clientcmdapi.AuthInfo{Token: c.BearerToken}
-	cfg.Contexts["app"] = &clientcmdapi.Context{Cluster: "app", AuthInfo: "operator"}
-	cfg.CurrentContext = "app"
-	data, e := clientcmd.Write(*cfg)
+	data, e := operatorKubeconfig(c)
 	if e != nil {
 		return e
 	}
@@ -325,4 +320,14 @@ func (s *session) contractDrift(ctx context.Context, tier string, err error) err
 	}
 	delete(s.tiers, tier)
 	return fmt.Errorf("%s tier denied the operator, reinstalling its bootstrap contract: %w", tier, err)
+}
+
+// operatorKubeconfig serializes the token credential c.
+func operatorKubeconfig(c *rest.Config) ([]byte, error) {
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["app"] = &clientcmdapi.Cluster{Server: c.Host, CertificateAuthorityData: c.CAData, TLSServerName: c.ServerName}
+	cfg.AuthInfos["operator"] = &clientcmdapi.AuthInfo{Token: c.BearerToken}
+	cfg.Contexts["app"] = &clientcmdapi.Context{Cluster: "app", AuthInfo: "operator"}
+	cfg.CurrentContext = "app"
+	return clientcmd.Write(*cfg)
 }
