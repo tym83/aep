@@ -2,7 +2,8 @@
 
 The operator runs on the Cozystack management cluster. It provisions dedicated
 application clusters and registers them with an **existing** OpenChoreo 1.4.0-m.3
-control plane. It does not install aep-cp or change its Helm release.
+control plane. Organizations do not install aep-cp or change its Helm release;
+a [ControlPlane resource](#controlplane-resource) installs and manages one.
 
 ## Installation
 
@@ -214,7 +215,7 @@ Use explicit local aep-cp kubeconfig/port-forward if needed. The management oper
 is the supported continuous mode. Do not persist port-forward endpoints in tier
 credentials used by bridge pods.
 
-## ControlPlane resource (not yet reconciled)
+## ControlPlane resource
 
 `ControlPlane.aep.aenix.io/v1alpha1` (cluster-scoped, short name `aepcp`)
 declares an operator-managed aep-cp: Cozystack tenant and cluster, `domain`
@@ -223,16 +224,61 @@ declares an operator-managed aep-cp: Cozystack tenant and cluster, `domain`
 audit, backup and adoption. The CRD defaults the tenant (`tenant-root`/`aepcp`, namespace `tenant-aepcp`;
 tenant names are alphanumeric because Cozystack joins them with dashes),
 cluster (`aepcp`, `v1.35`, `replicated`, 3–4 × `u1.large`, 20Gi) and portal
-database, and keeps the tenant and cluster names immutable.
+database, and keeps the tenant and cluster names immutable. An invalid spec is
+`Rejected` (`Ready=False`, reason `InvalidSpec`).
 
-This release only validates ControlPlanes: `Ready` stays False with reason
-`NotImplemented` for a valid spec, `InvalidSpec` (phase `Rejected`) otherwise,
-or `Suspended` when `spec.suspend` is set. The operator creates nothing for a
-ControlPlane, and objects it will own are labelled
-`aep.aenix.io/control-plane=<UID>`, never with the Organization label.
+The operator installs a valid ControlPlane in this order, one condition per
+step; a step waits for the previous ones:
+
+| Condition | What the operator does |
+|---|---|
+| `TenantReady` | Tenant `spec.tenant.name` in `spec.tenant.parent`, all tenant services off, `spec.tenant.quotas` |
+| `NetworkPathsReady` | With `--tenant-egress-workaround`, CCNP `aep-cp-<name>-root-egress` lets the tenant reach root etcd and ingress |
+| `ClusterReady` | Kubernetes `spec.cluster.name` with cert-manager and Gateway API addons, KubernetesNodes `<cluster>-md0`; waits for the control plane, addons and `minReplicas` Ready nodes, with the same remediation as tier clusters |
+| `AccessReady` | With the cluster's super-admin kubeconfig, only once or when the contract changes: ServiceAccount `kube-system/aep-operator`, a ClusterRole for OpenChoreo resources, namespaces, admission policies and RBAC, and a Role in `openchoreo-control-plane`; the token is stored in `<namespace>/operator-access-cp-<name>` and renewed before expiry |
+| `PrerequisitesReady` | Mirror pull secret in `openchoreo-control-plane`, HelmReleases `aep-cp-kgateway-crds` and `aep-cp-kgateway`, GatewayParameters `aep-mirror-pull`. No External Secrets or OpenBao |
+| `OpenChoreoReady` | Cozystack Postgres `portal`, its credentials as `openchoreo-control-plane/aep-portal-db` and a selectorless Service `aep-portal-db` whose EndpointSlice points at the management ClusterIP of `postgres-portal-rw`; Secret `backstage-secrets` (session secret generated once and kept, client secret from `spec.oidc.portalClient.secretRef`, unused Jenkins key); optional ConfigMap `aep-oidc-ca`; HelmRelease `aep-cp-openchoreo-control-plane` |
+| `GatewayReady` | Finds the management mirror of `cluster-gateway-external`, takes `spec.clusterGateway.host` or `--gateway-host-template`, adds it to the gateway certificate, restarts `cluster-gateway` once per new certificate serial (annotation `aep.aenix.io/server-cert-serial`) and reports `status.gateway.url` |
+| `IngressReady` | Ingresses `aep-cp-public` (console and API, TLS from `clusterIssuer` or `tlsSecretRef`) and `aep-cp-deny-direct-logs` in the tenant namespace, backed by the mirror of `gateway-default`; waits for the TLS Secret |
+| `Hardened` | Prunes chart-managed broad bootstrap bindings as below, without needing an Organization |
+
+`Ready` is True when these steps succeed. `ContentReady` (resource and component
+types, builds) and `AuditReady` are not implemented in this release: they report
+`NotImplemented` (`AuditReady` reports `Disabled` without `spec.audit`) and do
+not hold `Ready`. Status reports `outputs.kubeconfigSecretRef`,
+`outputs.tenantNamespace`, `outputs.clusterName`, `endpoints` and `gateway`.
+
+The chart values never disable TLS verification and set the bootstrap
+mappings to the system clients only (portal catalog reader, FinOps, RCA,
+observer), so hardening normally finds nothing to prune. A privately issued IdP
+certificate is trusted by the portal through `spec.oidc.caBundleSecretRef`
+(`NODE_EXTRA_CA_CERTS`); the chart offers no CA option for the OpenChoreo API,
+so its JWKS endpoint needs a publicly trusted certificate.
+
+The chart's authorization bootstrap hook Job sets no `imagePullSecrets`, and
+Helm recreates its ServiceAccount `openchoreo-authz-bootstrap` on every hook
+run. With an authenticated mirror (`--image-registry-mirror` and
+`--registry-secret`) the operator adds `aep-mirror-pull` to that
+ServiceAccount and deletes, once, each hook pod admitted before the patch that
+fails to pull; the Job recreates it with the secret.
+
+Objects the operator creates are labelled `aep.aenix.io/control-plane=<UID>`,
+never with the Organization label; existing objects without that label are
+never adopted, so the step reports the conflict. `spec.suspend` stops all
+changes and deletion; the last conditions stay as they were.
+
+Deleting a ControlPlane requires the annotation
+`aep.aenix.io/confirm-delete=<name>` and is blocked while an Organization
+references it (or would use it as `--default-control-plane` without legacy
+flags). The operator then removes, one layer at a time, the control plane
+chart, kgateway, chart sources, Ingresses and the network policy, the cluster,
+the portal database, the tenant and the operator credential. The portal
+database is kept, and with it the tenant, until the annotation
+`aep.aenix.io/delete-portal-database=true` is set or the database is deleted by
+hand.
 
 `Organization.spec.controlPlaneRef` is accepted and recorded in
-`status.controlPlaneRef` but not resolved: every Organization still uses the
+`status.controlPlaneRef` but not resolved yet: every Organization still uses the
 legacy `--aepcp-*` flags, so keep `aepcpKubeconfigSecret` set even when
 `controlPlane.default` is. The reference is immutable once set. On an
 Organization that was already reconciled without one, the operator accepts a new

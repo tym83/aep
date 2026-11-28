@@ -9,30 +9,53 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"text/template"
+	"time"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	resourcetypes "github.com/tym83/aep/resource-types"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ControlPlaneReconciler owns ControlPlane resources. This operator version
-// only validates them and reports the result; it creates nothing.
+// ControlPlaneReconciler installs and manages ControlPlane resources: the
+// Cozystack tenant and cluster of an aep-cp, the operator identity in it, the
+// OpenChoreo control plane chart and its management ingress.
 type ControlPlaneReconciler struct {
 	client.Client
+	Management *Cluster
+	Options    Options
+	Recorder   record.EventRecorder
+	// Connect builds the clients of an aep-cp REST config; nil uses NewCluster.
+	Connect func(*rest.Config) (*Cluster, error)
+
+	mu    sync.Mutex
+	state map[types.UID]*controlPlaneMemory
 }
 
-func (r *ControlPlaneReconciler) SetupWithManager(m ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(m).
-		For(&api.ControlPlane{}).
-		Named("controlplane").
-		Complete(r)
+// controlPlaneMemory is the per-ControlPlane state that only times
+// remediation; losing it on restart merely restarts the timers.
+type controlPlaneMemory struct {
+	readySince   time.Time
+	remediations map[string]time.Time
 }
+
+// ControlPlaneFinalizer orders the teardown of an installed control plane.
+const ControlPlaneFinalizer = "aep.aenix.io/control-plane-cleanup"
+
+// DeletePortalDatabaseAnnotation set to "true" lets deletion remove the portal database.
+const DeletePortalDatabaseAnnotation = "aep.aenix.io/delete-portal-database"
+
+// controlPlaneConditionTypes are the conditions of the implemented steps.
+var controlPlaneConditionTypes = []string{"TenantReady", "NetworkPathsReady", "ClusterReady", "AccessReady", "PrerequisitesReady", "OpenChoreoReady", "GatewayReady", "IngressReady", "Hardened"}
 
 func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cp := &api.ControlPlane{}
@@ -40,30 +63,150 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 	if !cp.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, nil
+		return r.finalize(ctx, cp)
 	}
 	before := cp.Status.DeepCopy()
-	evaluateControlPlane(cp)
-	if reflect.DeepEqual(before, &cp.Status) {
-		return ctrl.Result{}, nil
+	if !evaluateControlPlane(cp) {
+		return ctrl.Result{}, r.writeStatus(ctx, cp, before)
 	}
-	return ctrl.Result{}, r.Status().Update(ctx, cp)
+	if !slices.Contains(cp.Finalizers, ControlPlaneFinalizer) {
+		base := cp.DeepCopy()
+		cp.Finalizers = append(cp.Finalizers, ControlPlaneFinalizer)
+		if err := r.Patch(ctx, cp, client.MergeFrom(base)); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+	s := r.session(cp)
+	return runReconcileSteps(ctx, controlPlaneStatus{s: s, before: before}, s.steps())
 }
 
-// evaluateControlPlane records the validation result in status.
-func evaluateControlPlane(cp *api.ControlPlane) {
+func (r *ControlPlaneReconciler) writeStatus(ctx context.Context, cp *api.ControlPlane, before *api.ControlPlaneStatus) error {
+	if reflect.DeepEqual(before, &cp.Status) {
+		return nil
+	}
+	return r.Status().Update(ctx, cp)
+}
+
+// evaluateControlPlane records validation and suspension in status and
+// reports whether the control plane is to be reconciled.
+func evaluateControlPlane(cp *api.ControlPlane) bool {
 	cp.Status.ObservedGeneration = cp.Generation
 	switch err := ValidateControlPlane(cp); {
-	case cp.Spec.Suspend:
-		cp.Status.Phase = "Suspended"
-		setControlPlaneCondition(cp, "Ready", false, "Suspended", "Reconciliation is suspended")
 	case err != nil:
 		cp.Status.Phase = "Rejected"
 		setControlPlaneCondition(cp, "Ready", false, "InvalidSpec", err.Error())
+	case cp.Spec.Suspend:
+		// Observe only: nothing is applied or deleted, conditions keep their last state.
+		cp.Status.Phase = "Suspended"
+		setControlPlaneCondition(cp, "Ready", false, "Suspended", "Reconciliation is suspended")
 	default:
-		cp.Status.Phase = "Pending"
-		setControlPlaneCondition(cp, "Ready", false, "NotImplemented", "Spec is valid; this operator version does not install ControlPlanes yet")
+		return true
 	}
+	return false
+}
+
+func (r *ControlPlaneReconciler) memory(uid types.UID) *controlPlaneMemory {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.state == nil {
+		r.state = map[types.UID]*controlPlaneMemory{}
+	}
+	m := r.state[uid]
+	if m == nil {
+		m = &controlPlaneMemory{remediations: map[string]time.Time{}}
+		r.state[uid] = m
+	}
+	return m
+}
+
+func (r *ControlPlaneReconciler) connect(cfg *rest.Config) (*Cluster, error) {
+	if r.Connect != nil {
+		return r.Connect(cfg)
+	}
+	return NewCluster(cfg)
+}
+
+// controlPlaneSession is one reconcile pass of a ControlPlane.
+type controlPlaneSession struct {
+	r     *ControlPlaneReconciler
+	cp    *api.ControlPlane
+	owner ownerKey
+	// ns is the Cozystack tenant namespace holding the cluster.
+	ns string
+	// remote is the operator identity on aep-cp, once bootstrapped.
+	remote *Cluster
+	// gatewayHost is the cluster-gateway host placed in its certificate;
+	// empty until it is known.
+	gatewayHost string
+	// hardenReason is the reason of the last Hardened failure.
+	hardenReason string
+}
+
+func (r *ControlPlaneReconciler) session(cp *api.ControlPlane) *controlPlaneSession {
+	s := &controlPlaneSession{r: r, cp: cp, owner: controlPlaneOwner(cp), ns: ControlPlaneNamespace(cp)}
+	s.gatewayHost = orDefault(cp.Spec.ClusterGateway.Host, cp.Status.Gateway.Host)
+	cp.Status.Outputs.TenantNamespace = s.ns
+	cp.Status.Outputs.ClusterName = cp.Spec.Cluster.Name
+	cp.Status.Versions = map[string]string{ControlPlaneChart: ControlPlaneChartVersion}
+	return s
+}
+
+// steps lists the control plane reconcile steps in dependency order.
+// Content (ContentReady) and audit (AuditReady) are not implemented yet and
+// do not hold Ready.
+func (s *controlPlaneSession) steps() []reconcileStep {
+	return []reconcileStep{
+		{name: "TenantReady", run: s.tenant},
+		// Root etcd must be reachable before the cluster can become Ready.
+		{name: "NetworkPathsReady", run: s.networkPaths},
+		{name: "ClusterReady", run: s.cluster},
+		{name: "AccessReady", run: s.access},
+		{name: "PrerequisitesReady", run: s.prerequisites},
+		{name: "OpenChoreoReady", run: s.openChoreo},
+		{name: "GatewayReady", run: s.gateway, message: func() string { return s.cp.Status.Gateway.URL }},
+		{name: "IngressReady", run: s.ingress, message: func() string { return s.cp.Status.Endpoints.Console }},
+		{name: "Hardened", run: s.harden, reason: func(error) string { return s.hardenReason }},
+	}
+}
+
+// controlPlaneStatus adapts a ControlPlane to the step runner.
+type controlPlaneStatus struct {
+	s      *controlPlaneSession
+	before *api.ControlPlaneStatus
+}
+
+func (c controlPlaneStatus) conditionTypes() []string       { return controlPlaneConditionTypes }
+func (c controlPlaneStatus) conditions() []metav1.Condition { return c.s.cp.Status.Conditions }
+func (c controlPlaneStatus) generation() int64              { return c.s.cp.Generation }
+func (c controlPlaneStatus) setPhase(phase string)          { c.s.cp.Status.Phase = phase }
+func (c controlPlaneStatus) readyPhase() string             { return "Ready" }
+func (c controlPlaneStatus) setCondition(t string, ok bool, reason, msg string) {
+	setControlPlaneCondition(c.s.cp, t, ok, reason, msg)
+}
+
+// updateStatus derives Ready from the step conditions and writes status
+// only when it changed.
+func (c controlPlaneStatus) updateStatus(ctx context.Context) error {
+	cp := c.s.cp
+	setControlPlaneCondition(cp, "ContentReady", false, "NotImplemented", "Content delivery is not implemented in this operator version; Ready does not wait for it")
+	if cp.Spec.Audit == nil {
+		setControlPlaneCondition(cp, "AuditReady", true, "Disabled", "Audit is not configured")
+	} else {
+		setControlPlaneCondition(cp, "AuditReady", false, "NotImplemented", "Audit provisioning is not implemented in this operator version; Ready does not wait for it")
+	}
+	if cp.Status.Phase == "Ready" {
+		setControlPlaneCondition(cp, "Ready", true, "Reconciled", "Control plane is ready")
+	} else {
+		reason, message := "Pending", "Waiting for dependencies"
+		for _, t := range controlPlaneConditionTypes {
+			if cond := meta.FindStatusCondition(cp.Status.Conditions, t); cond != nil && cond.Status != metav1.ConditionTrue {
+				reason, message = cond.Reason, t+": "+cond.Message
+				break
+			}
+		}
+		setControlPlaneCondition(cp, "Ready", false, reason, message)
+	}
+	return c.s.r.writeStatus(ctx, cp, c.before)
 }
 
 func setControlPlaneCondition(cp *api.ControlPlane, t string, ok bool, reason, msg string) {

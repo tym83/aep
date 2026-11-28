@@ -1,0 +1,163 @@
+backstage:
+  auth:
+    clientId: aep-cp-portal
+    redirectUrls:
+    - https://console.cp.example.org/api/auth/openchoreo-auth/handler/frame
+  baseUrl: https://console.cp.example.org
+  extraArgs:
+  - --config
+  - app-config.production.yaml
+  extraEnv:
+  - name: PORTAL_BASE_URL
+    value: https://console.cp.example.org
+  - name: KEYCLOAK_ISSUER
+    value: https://id.example.org/realms/aep
+  - name: KEYCLOAK_CLIENT_ID
+    value: aep-cp-portal
+  - name: KEYCLOAK_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        key: client-secret
+        name: backstage-secrets
+  - name: OPENCHOREO_CLIENT_ID
+    value: aep-cp-portal
+  - name: OPENCHOREO_CLIENT_SECRET
+    valueFrom:
+      secretKeyRef:
+        key: client-secret
+        name: backstage-secrets
+  - name: AUTH_SESSION_SECRET
+    valueFrom:
+      secretKeyRef:
+        key: backend-secret
+        name: backstage-secrets
+  - name: AEP_READ_API_URL
+    value: https://read.example.org
+  - name: AEP_CHANGE_API_URL
+    value: https://change.example.org
+  - name: POSTGRES_HOST
+    value: aep-portal-db
+  - name: POSTGRES_PORT
+    value: "5432"
+  - name: POSTGRES_USER
+    valueFrom:
+      secretKeyRef:
+        key: user
+        name: aep-portal-db
+  - name: POSTGRES_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        key: password
+        name: aep-portal-db
+  - name: APP_CONFIG_backend_database_pluginDivisionMode
+    value: schema
+  - name: APP_CONFIG_backend_database_connection_database
+    value: portal
+  - name: NODE_EXTRA_CA_CERTS
+    value: /etc/aep-oidc-ca/ca.crt
+  extraVolumeMounts:
+  - mountPath: /etc/aep-oidc-ca
+    name: aep-oidc-ca
+    readOnly: true
+  extraVolumes:
+  - configMap:
+      name: aep-oidc-ca
+    name: aep-oidc-ca
+  http:
+    hostnames:
+    - console.cp.example.org
+  image:
+    repository: ghcr.io/tym83/aep-portal
+    tag: v1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000
+  secretName: backstage-secrets
+clusterGateway:
+  service:
+    type: LoadBalancer
+  tls:
+    dnsNames:
+    - cluster-gateway.openchoreo-control-plane.svc
+    - cluster-gateway.openchoreo-control-plane.svc.cluster.local
+    - cluster-gateway.cp.aep.internal
+gateway:
+  tls:
+    enabled: false
+openchoreoApi:
+  config:
+    security:
+      authentication:
+        jwt:
+          jwks:
+            skip_tls_verify: false
+      authorization:
+        bootstrap:
+          mappings:
+          - effect: allow
+            entitlement:
+              claim: client_id
+              value: aep-cp-portal
+            kind: ClusterAuthzRoleBinding
+            name: backstage-catalog-reader-binding
+            roleMappings:
+            - roleRef:
+                kind: ClusterAuthzRole
+                name: backstage-catalog-reader
+            system: true
+          - effect: allow
+            entitlement:
+              claim: client_id
+              value: openchoreo-finops-agent
+            kind: ClusterAuthzRoleBinding
+            name: finops-agent-binding
+            roleMappings:
+            - roleRef:
+                kind: ClusterAuthzRole
+                name: finops-agent
+            system: true
+          - effect: allow
+            entitlement:
+              claim: client_id
+              value: openchoreo-rca-agent
+            kind: ClusterAuthzRoleBinding
+            name: rca-agent-binding
+            roleMappings:
+            - roleRef:
+                kind: ClusterAuthzRole
+                name: rca-agent
+            system: true
+          - effect: allow
+            entitlement:
+              claim: client_id
+              value: openchoreo-observer-resource-reader-client
+            kind: ClusterAuthzRoleBinding
+            name: observer-resource-reader-binding
+            roleMappings:
+            - roleRef:
+                kind: ClusterAuthzRole
+                name: observer-resource-reader
+            system: true
+      subjects:
+        user:
+          mechanisms:
+            jwt:
+              readable_id_claim: preferred_username
+    server:
+      publicUrl: https://api.cp.example.org
+  http:
+    hostnames:
+    - api.cp.example.org
+security:
+  oidc:
+    authorizationUrl: https://id.example.org/realms/aep/protocol/openid-connect/auth
+    externalClients:
+    - client_id: openchoreo-cli
+      name: cli
+      scopes:
+      - openid
+      - profile
+      - email
+    issuer: https://id.example.org/realms/aep
+    jwksUrl: https://id.example.org/realms/aep/protocol/openid-connect/certs
+    jwksUrlTlsInsecureSkipVerify: false
+    tokenUrl: https://id.example.org/realms/aep/protocol/openid-connect/token
+    uidResolverTlsInsecureSkipVerify: false
+    wellKnownEndpoint: https://id.example.org/realms/aep/.well-known/openid-configuration

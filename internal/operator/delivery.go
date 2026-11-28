@@ -137,17 +137,29 @@ func (s *session) delivery(ctx context.Context) error {
 // deliveryRelease is the tier HelmRelease of ch in tenant namespace ns; after
 // names the chart it depends on, if any.
 func deliveryRelease(ns string, ch DeliveryChart, after string, values M) *unstructured.Unstructured {
-	spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.Name, "targetNamespace": ch.Namespace, "storageNamespace": ch.Namespace, "chartRef": M{"kind": "OCIRepository", "name": "aep-" + ch.Name}, "kubeConfig": M{"secretRef": M{"name": "kubernetes-apps-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
+	dependsOn := ""
 	if after != "" {
-		spec["dependsOn"] = []any{M{"name": "aep-" + after}}
+		dependsOn = "aep-" + after
+	}
+	return fluxRelease(ns, "aep-"+ch.Name, "apps", ch, dependsOn, values)
+}
+
+// fluxRelease is the management HelmRelease name in namespace ns that installs
+// ch into the Cozystack cluster, from the OCIRepository of the same name,
+// after the HelmRelease dependsOn when set.
+func fluxRelease(ns, name, cluster string, ch DeliveryChart, dependsOn string, values M) *unstructured.Unstructured {
+	target := "kubernetes-" + cluster
+	spec := M{"interval": "5m", "timeout": "10m", "releaseName": ch.Name, "targetNamespace": ch.Namespace, "storageNamespace": ch.Namespace, "chartRef": M{"kind": "OCIRepository", "name": name}, "kubeConfig": M{"secretRef": M{"name": target + "-admin-kubeconfig", "key": "super-admin.svc"}}, "install": M{"createNamespace": true, "remediation": M{"retries": int64(-1)}}, "upgrade": M{"remediation": M{"retries": int64(-1)}}, "values": values}
+	if dependsOn != "" {
+		spec["dependsOn"] = []any{M{"name": dependsOn}}
 	}
 	if ch.Name == StrimziChart {
 		// Helm never upgrades crds/; keep Strimzi CRDs in step with the operator.
 		spec["install"].(M)["crds"] = "CreateReplace"
 		spec["upgrade"].(M)["crds"] = "CreateReplace"
 	}
-	hr := obj(helmAPI, "HelmRelease", ns, "aep-"+ch.Name, spec)
-	hr.SetLabels(map[string]string{"cozystack.io/target-cluster-name": "kubernetes-apps", "internal.cozystack.io/tenantresource": "true", "sharding.fluxcd.io/key": "tenants"})
+	hr := obj(helmAPI, "HelmRelease", ns, name, spec)
+	hr.SetLabels(map[string]string{"cozystack.io/target-cluster-name": target, "internal.cozystack.io/tenantresource": "true", "sharding.fluxcd.io/key": "tenants"})
 	return hr
 }
 func (s *session) connected(ctx context.Context) error {

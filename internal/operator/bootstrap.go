@@ -229,8 +229,13 @@ func (s *session) bootstrap(ctx context.Context, tier string) (*Cluster, error) 
 	return c, e
 }
 func requestToken(ctx context.Context, c *Cluster, name string) (string, time.Time, error) {
+	return requestTokenIn(ctx, c, "aep-system", name)
+}
+
+// requestTokenIn mints a one-day token of ServiceAccount ns/name.
+func requestTokenIn(ctx context.Context, c *Cluster, ns, name string) (string, time.Time, error) {
 	seconds := int64(86400)
-	t, e := c.Kube.CoreV1().ServiceAccounts("aep-system").CreateToken(ctx, name, &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{ExpirationSeconds: &seconds}}, metav1.CreateOptions{})
+	t, e := c.Kube.CoreV1().ServiceAccounts(ns).CreateToken(ctx, name, &authv1.TokenRequest{Spec: authv1.TokenRequestSpec{ExpirationSeconds: &seconds}}, metav1.CreateOptions{})
 	if e != nil {
 		return "", time.Time{}, e
 	}
@@ -285,12 +290,7 @@ func (s *session) saveOperatorCredential(ctx context.Context, name string, c *re
 	if e != nil {
 		return e
 	}
-	cfg := clientcmdapi.NewConfig()
-	cfg.Clusters["app"] = &clientcmdapi.Cluster{Server: c.Host, CertificateAuthorityData: c.CAData, TLSServerName: c.ServerName}
-	cfg.AuthInfos["operator"] = &clientcmdapi.AuthInfo{Token: c.BearerToken}
-	cfg.Contexts["app"] = &clientcmdapi.Context{Cluster: "app", AuthInfo: "operator"}
-	cfg.CurrentContext = "app"
-	data, e := clientcmd.Write(*cfg)
+	data, e := operatorKubeconfig(c)
 	if e != nil {
 		return e
 	}
@@ -320,4 +320,14 @@ func (s *session) contractDrift(ctx context.Context, tier string, err error) err
 	}
 	delete(s.tiers, tier)
 	return fmt.Errorf("%s tier denied the operator, reinstalling its bootstrap contract: %w", tier, err)
+}
+
+// operatorKubeconfig serializes the token credential c.
+func operatorKubeconfig(c *rest.Config) ([]byte, error) {
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["app"] = &clientcmdapi.Cluster{Server: c.Host, CertificateAuthorityData: c.CAData, TLSServerName: c.ServerName}
+	cfg.AuthInfos["operator"] = &clientcmdapi.AuthInfo{Token: c.BearerToken}
+	cfg.Contexts["app"] = &clientcmdapi.Context{Cluster: "app", AuthInfo: "operator"}
+	cfg.CurrentContext = "app"
+	return clientcmd.Write(*cfg)
 }
