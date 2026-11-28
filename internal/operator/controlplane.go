@@ -55,7 +55,7 @@ const ControlPlaneFinalizer = "aep.aenix.io/control-plane-cleanup"
 const DeletePortalDatabaseAnnotation = "aep.aenix.io/delete-portal-database"
 
 // controlPlaneConditionTypes are the conditions of the implemented steps.
-var controlPlaneConditionTypes = []string{"TenantReady", "NetworkPathsReady", "ClusterReady", "AccessReady", "PrerequisitesReady", "OpenChoreoReady", "GatewayReady", "IngressReady", "Hardened"}
+var controlPlaneConditionTypes = []string{"TenantReady", "NetworkPathsReady", "ClusterReady", "AccessReady", "PrerequisitesReady", "OpenChoreoReady", "GatewayReady", "IngressReady", "ContentReady", "Hardened"}
 
 func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cp := &api.ControlPlane{}
@@ -69,6 +69,15 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !evaluateControlPlane(cp) {
 		return ctrl.Result{}, r.writeStatus(ctx, cp, before)
 	}
+	collision, err := r.organizationCollision(ctx, cp)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if collision != "" {
+		cp.Status.Phase = "Rejected"
+		setControlPlaneCondition(cp, "Ready", false, "InvalidSpec", collision)
+		return ctrl.Result{RequeueAfter: time.Minute}, r.writeStatus(ctx, cp, before)
+	}
 	if !slices.Contains(cp.Finalizers, ControlPlaneFinalizer) {
 		base := cp.DeepCopy()
 		cp.Finalizers = append(cp.Finalizers, ControlPlaneFinalizer)
@@ -78,6 +87,23 @@ func (r *ControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	s := r.session(cp)
 	return runReconcileSteps(ctx, controlPlaneStatus{s: s, before: before}, s.steps())
+}
+
+// organizationCollision reports Organizations whose tenant namespaces
+// include the tenant namespace of cp, or "". Installing there would mix the
+// control plane with an Organization's tenant.
+func (r *ControlPlaneReconciler) organizationCollision(ctx context.Context, cp *api.ControlPlane) (string, error) {
+	var organizations api.OrganizationList
+	if err := r.List(ctx, &organizations); err != nil {
+		return "", err
+	}
+	var collisions []string
+	for i := range organizations.Items {
+		if c := namespaceCollision(cp, &organizations.Items[i]); c != "" {
+			collisions = append(collisions, c)
+		}
+	}
+	return strings.Join(collisions, "; "), nil
 }
 
 func (r *ControlPlaneReconciler) writeStatus(ctx context.Context, cp *api.ControlPlane, before *api.ControlPlaneStatus) error {
@@ -140,6 +166,8 @@ type controlPlaneSession struct {
 	gatewayHost string
 	// hardenReason is the reason of the last Hardened failure.
 	hardenReason string
+	// contentMessage summarises the delivered content.
+	contentMessage string
 }
 
 func (r *ControlPlaneReconciler) session(cp *api.ControlPlane) *controlPlaneSession {
@@ -151,9 +179,9 @@ func (r *ControlPlaneReconciler) session(cp *api.ControlPlane) *controlPlaneSess
 	return s
 }
 
-// steps lists the control plane reconcile steps in dependency order.
-// Content (ContentReady) and audit (AuditReady) are not implemented yet and
-// do not hold Ready.
+// steps lists the control plane reconcile steps in dependency order. Content
+// does not block hardening, which Organizations wait for, but holds Ready.
+// Audit (AuditReady) is not implemented yet and does not hold Ready.
 func (s *controlPlaneSession) steps() []reconcileStep {
 	return []reconcileStep{
 		{name: "TenantReady", run: s.tenant},
@@ -165,6 +193,7 @@ func (s *controlPlaneSession) steps() []reconcileStep {
 		{name: "OpenChoreoReady", run: s.openChoreo},
 		{name: "GatewayReady", run: s.gateway, message: func() string { return s.cp.Status.Gateway.URL }},
 		{name: "IngressReady", run: s.ingress, message: func() string { return s.cp.Status.Endpoints.Console }},
+		{name: "ContentReady", run: s.content, nonBlocking: true, holdsReady: true, message: func() string { return s.contentMessage }},
 		{name: "Hardened", run: s.harden, reason: func(error) string { return s.hardenReason }},
 	}
 }
@@ -188,7 +217,6 @@ func (c controlPlaneStatus) setCondition(t string, ok bool, reason, msg string) 
 // only when it changed.
 func (c controlPlaneStatus) updateStatus(ctx context.Context) error {
 	cp := c.s.cp
-	setControlPlaneCondition(cp, "ContentReady", false, "NotImplemented", "Content delivery is not implemented in this operator version; Ready does not wait for it")
 	if cp.Spec.Audit == nil {
 		setControlPlaneCondition(cp, "AuditReady", true, "Disabled", "Audit is not configured")
 	} else {

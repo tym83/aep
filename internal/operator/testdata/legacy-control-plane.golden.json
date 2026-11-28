@@ -1,0 +1,205 @@
+{
+  "clusters": "waiting for nonprod TenantControlPlane to be created",
+  "gateway": "wss://cluster-gateway.10-96-57-50.nip.io:8443/ws",
+  "hardened": [
+    "True",
+    "Verified",
+    "No offending ClusterAuthzRoleBindings"
+  ],
+  "network": "",
+  "objects": {
+    "ciliumclusterwidenetworkpolicies/aep-acme-agent-egress": {
+      "apiVersion": "cilium.io/v2",
+      "kind": "CiliumClusterwideNetworkPolicy",
+      "metadata": {
+        "labels": {
+          "aep.aenix.io/organization": "org-uid"
+        },
+        "name": "aep-acme-agent-egress"
+      },
+      "spec": {
+        "egress": [
+          {
+            "toEndpoints": [
+              {
+                "matchLabels": {
+                  "k8s:cluster.x-k8s.io/cluster-name": "kubernetes-aepcp",
+                  "k8s:io.kubernetes.pod.namespace": "tenant-aepcp"
+                }
+              }
+            ],
+            "toPorts": [
+              {
+                "ports": [
+                  {
+                    "port": "30268",
+                    "protocol": "TCP"
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "endpointSelector": {
+          "matchExpressions": [
+            {
+              "key": "k8s:io.kubernetes.pod.namespace",
+              "operator": "In",
+              "values": [
+                "tenant-acme-nonprod",
+                "tenant-acme-prod"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "ciliumclusterwidenetworkpolicies/aep-acme-agent-ingress": {
+      "apiVersion": "cilium.io/v2",
+      "kind": "CiliumClusterwideNetworkPolicy",
+      "metadata": {
+        "labels": {
+          "aep.aenix.io/organization": "org-uid"
+        },
+        "name": "aep-acme-agent-ingress"
+      },
+      "spec": {
+        "endpointSelector": {
+          "matchLabels": {
+            "k8s:cluster.x-k8s.io/cluster-name": "kubernetes-aepcp",
+            "k8s:io.kubernetes.pod.namespace": "tenant-aepcp"
+          }
+        },
+        "ingress": [
+          {
+            "fromEndpoints": [
+              {
+                "matchExpressions": [
+                  {
+                    "key": "k8s:io.kubernetes.pod.namespace",
+                    "operator": "In",
+                    "values": [
+                      "tenant-acme-nonprod",
+                      "tenant-acme-prod"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "toPorts": [
+              {
+                "ports": [
+                  {
+                    "port": "30268",
+                    "protocol": "TCP"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "ciliumclusterwidenetworkpolicies/aep-acme-root-egress": {
+      "apiVersion": "cilium.io/v2",
+      "kind": "CiliumClusterwideNetworkPolicy",
+      "metadata": {
+        "labels": {
+          "aep.aenix.io/organization": "org-uid"
+        },
+        "name": "aep-acme-root-egress"
+      },
+      "spec": {
+        "egress": [
+          {
+            "toEndpoints": [
+              {
+                "matchLabels": {
+                  "k8s:app.kubernetes.io/instance": "etcd",
+                  "k8s:io.kubernetes.pod.namespace": "tenant-root"
+                }
+              }
+            ],
+            "toPorts": [
+              {
+                "ports": [
+                  {
+                    "port": "2379",
+                    "protocol": "TCP"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "toEndpoints": [
+              {
+                "matchLabels": {
+                  "cozystack.io/service": "ingress",
+                  "k8s:io.kubernetes.pod.namespace": "tenant-root"
+                }
+              }
+            ]
+          }
+        ],
+        "endpointSelector": {
+          "matchExpressions": [
+            {
+              "key": "k8s:io.kubernetes.pod.namespace",
+              "operator": "In",
+              "values": [
+                "tenant-acme-nonprod",
+                "tenant-acme-prod"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "kuberneteses/apps": {
+      "apiVersion": "apps.cozystack.io/v1alpha1",
+      "kind": "Kubernetes",
+      "metadata": {
+        "labels": {
+          "aep.aenix.io/organization": "org-uid"
+        },
+        "name": "apps",
+        "namespace": "tenant-acme-nonprod"
+      },
+      "spec": {
+        "addons": {
+          "certManager": {
+            "enabled": true
+          },
+          "gatewayAPI": {
+            "enabled": true
+          }
+        },
+        "storageClass": "replicated",
+        "version": "v1.35"
+      }
+    },
+    "kubernetesnodeses/apps-md0": {
+      "apiVersion": "apps.cozystack.io/v1alpha1",
+      "kind": "KubernetesNodes",
+      "metadata": {
+        "labels": {
+          "aep.aenix.io/organization": "org-uid"
+        },
+        "name": "apps-md0",
+        "namespace": "tenant-acme-nonprod"
+      },
+      "spec": {
+        "cluster": "apps",
+        "diskSize": "20Gi",
+        "instanceType": "u1.large",
+        "maxReplicas": 3,
+        "minReplicas": 2,
+        "roles": [],
+        "storageClass": "replicated",
+        "version": "v1.35"
+      }
+    }
+  },
+  "workaround": ""
+}

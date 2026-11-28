@@ -25,9 +25,12 @@ operator; they do not require a GitHub download. The optional LLM and SRE charts
 (including token-proxy), audit-forwarder, control-plane backup and ITSM bridge
 are included, but model weights must be staged separately on their PVC.
 
-This repository currently expects an existing OpenChoreo control plane: the
-operator does not install the control plane or ESO yet, although both charts are
-already inventoried and mirrored. Argo Workflows and the OpenChoreo observability
+A `ControlPlane` resource installs the OpenChoreo control plane and its content
+charts from the mirror; ESO is inventoried and mirrored but not installed yet.
+Set a fixed `spec.clusterGateway.host`: the default `nip.io` gateway host needs
+public DNS. The operator resolves the fixed host inside tier clusters; external
+fleet clusters need a corporate DNS record ([operator.md](operator.md#gateway-host-in-air-gaps)).
+Argo Workflows and the OpenChoreo observability
 plane are not covered; inventory and mirror them separately if your installation
 uses them.
 Cozystack, Kubernetes, cert-manager, CNI, storage and Flux are prerequisites, not

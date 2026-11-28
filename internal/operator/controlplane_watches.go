@@ -2,7 +2,9 @@ package operator
 
 import (
 	"context"
+	"maps"
 	"reflect"
+	"slices"
 
 	api "github.com/tym83/aep/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -80,8 +82,18 @@ func (r *ControlPlaneReconciler) controlPlanesForOrganization(ctx context.Contex
 			names[name] = true
 		}
 	}
+	// A ControlPlane sharing a tenant namespace with the Organization is rejected.
+	var planes api.ControlPlaneList
+	if err := r.List(ctx, &planes); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Cannot map Organization to ControlPlanes")
+	}
+	for i := range planes.Items {
+		if namespaceCollision(&planes.Items[i], o) != "" {
+			names[planes.Items[i].Name] = true
+		}
+	}
 	var requests []ctrl.Request
-	for name := range names {
+	for _, name := range slices.Sorted(maps.Keys(names)) {
 		requests = append(requests, ctrl.Request{NamespacedName: types.NamespacedName{Name: name}})
 	}
 	return requests

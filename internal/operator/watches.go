@@ -38,7 +38,47 @@ func (r *Reconciler) SetupWithManager(m ctrl.Manager) error {
 			handler.EnqueueRequestsFromMapFunc(r.organizationsForObject),
 			builder.WithPredicates(dependencyStatusPredicate()))
 	}
+	// Organizations follow the readiness, credential and gateway of their
+	// ControlPlane, and are rejected while one shares their tenant namespace.
+	b = b.Watches(&api.ControlPlane{}, handler.EnqueueRequestsFromMapFunc(r.organizationsForControlPlane), builder.WithPredicates(controlPlaneChangePredicate()))
 	return b.Complete(r)
+}
+
+// organizationsForControlPlane maps a ControlPlane to the Organizations it
+// serves or whose tenant namespaces it collides with.
+func (r *Reconciler) organizationsForControlPlane(ctx context.Context, object client.Object) []ctrl.Request {
+	cp, ok := object.(*api.ControlPlane)
+	if !ok {
+		return nil
+	}
+	var organizations api.OrganizationList
+	if err := r.List(ctx, &organizations); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Cannot map ControlPlane to Organizations")
+		return nil // The periodic requeue remains a fallback.
+	}
+	var requests []ctrl.Request
+	for i := range organizations.Items {
+		o := &organizations.Items[i]
+		if r.Options.usesControlPlane(o, cp.Name) || namespaceCollision(cp, o) != "" {
+			requests = append(requests, ctrl.Request{NamespacedName: types.NamespacedName{Name: o.Name}})
+		}
+	}
+	return requests
+}
+
+// controlPlaneChangePredicate passes ControlPlane creation, deletion and
+// changes of spec or status.
+func controlPlaneChangePredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc:  func(event.CreateEvent) bool { return true },
+		DeleteFunc:  func(event.DeleteEvent) bool { return true },
+		GenericFunc: func(event.GenericEvent) bool { return false },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			old, ok := e.ObjectOld.(*api.ControlPlane)
+			updated, ok2 := e.ObjectNew.(*api.ControlPlane)
+			return !ok || !ok2 || old.Generation != updated.Generation || !reflect.DeepEqual(old.Status, updated.Status)
+		},
+	}
 }
 
 // Match actual Organizations instead of splitting namespace names, so tenant-root

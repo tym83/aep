@@ -12,9 +12,9 @@ aepcpKubeconfigSecret: ""
 aepcpTenantNamespace: tenant-aep-cp
 aepcpCluster: aepcp
 controlPlane:
-  # Name of the ControlPlane resource for Organizations without
-  # spec.controlPlaneRef. ControlPlanes are validated but not yet installed by
-  # this release, so Organizations still need aepcpKubeconfigSecret.
+  # Name of the ControlPlane resource serving Organizations without
+  # spec.controlPlaneRef when aepcpKubeconfigSecret is empty. With both set,
+  # unreferenced Organizations stay on the legacy aep-cp.
   default: ""
 gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
 tenantEgressWorkaround: true

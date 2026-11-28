@@ -55,7 +55,7 @@ func (o Options) usesControlPlane(org *api.Organization, name string) bool {
 }
 
 // delete tears the control plane down in dependency order, one layer at a
-// time: the control plane chart, kgateway, the ingress and network policy,
+// time: the content charts, the control plane chart, kgateway, the ingress and network policy,
 // the cluster, the portal database (only on request), the tenant and the
 // operator credential. Objects inside aep-cp go with its cluster.
 func (s *controlPlaneSession) delete(ctx context.Context) error {
@@ -75,7 +75,7 @@ func (s *controlPlaneSession) delete(ctx context.Context) error {
 		}
 	}
 	mgmt := s.r.Management
-	for _, chart := range []string{ControlPlaneChart, "kgateway", "kgateway-crds"} {
+	for _, chart := range []string{BuildsChart, ComponentTypesChart, ControlPlaneChart, "kgateway", "kgateway-crds"} {
 		if e := s.deleteNamed(ctx, mgmt, helmAPI, "helmreleases", s.ns, releaseName(chart)); e != nil {
 			return e
 		}

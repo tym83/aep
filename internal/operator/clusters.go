@@ -2,6 +2,9 @@ package operator
 
 import (
 	"context"
+	"fmt"
+	"net"
+
 	api "github.com/tym83/aep/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,11 +38,18 @@ func BootstrapRemediation(cpReady bool, nodeCount int, hasToken bool, since, now
 	return cpReady && nodeCount == 0 && !hasToken && !since.IsZero() && now.Sub(since) > 10*time.Minute
 }
 func (s *session) clusters(ctx context.Context) error {
+	dns, e := s.gatewayDNS(ctx)
+	if e != nil {
+		return e
+	}
 	for _, tier := range Tiers(s.o) {
 		ns := TenantNamespace(s.o.Name, tier)
 		spec := s.o.Spec.Tiers[tier].Cluster
 		n := spec.NodeGroups["md0"]
 		addons := tierAddons(s.o, s.r.Options, tier)
+		if dns != nil {
+			addons["coredns"] = dns
+		}
 		for _, u := range []*unstructured.Unstructured{
 			obj(appsAPI, "Kubernetes", ns, "apps", M{"version": spec.Version, "storageClass": "replicated", "addons": addons}),
 			obj(appsAPI, "KubernetesNodes", ns, "apps-md0", M{"cluster": "apps", "version": spec.Version, "storageClass": "replicated", "diskSize": "20Gi", "instanceType": n.InstanceType, "minReplicas": int64(n.MinReplicas), "maxReplicas": int64(n.MaxReplicas), "roles": tierNodeRoles(addons)})} {
@@ -213,6 +223,41 @@ func tierAddons(o *api.Organization, opt Options, tier string) M {
 		}
 	}
 	return addons
+}
+
+// gatewayDNS is the CoreDNS addon of the tier clusters when the serving
+// ControlPlane fixes its cluster-gateway host, or nil. A fixed host is not
+// in public DNS (it exists for air gaps), so each tier cluster resolves it
+// to the management mirror of the gateway itself.
+func (s *session) gatewayDNS(ctx context.Context) (M, error) {
+	t, e := s.target(ctx)
+	if e != nil || !t.managed() || t.cp.Spec.ClusterGateway.Host == "" {
+		return nil, e
+	}
+	g := t.cp.Status.Gateway
+	ns, name, ok := strings.Cut(g.MirrorService, "/")
+	if !ok || g.Host == "" {
+		return nil, pending("waiting for ControlPlane %s to publish its gateway mirror Service", t.cp.Name)
+	}
+	svc, e := s.r.Management.Kube.CoreV1().Services(ns).Get(ctx, name, metav1.GetOptions{})
+	if e != nil {
+		return nil, e
+	}
+	if net.ParseIP(svc.Spec.ClusterIP) == nil {
+		return nil, fmt.Errorf("gateway mirror Service %s has no ClusterIP", g.MirrorService)
+	}
+	return CoreDNSHostsAddon(g.Host, svc.Spec.ClusterIP), nil
+}
+
+// CoreDNSHostsAddon is the Cozystack Kubernetes coredns addon resolving host
+// to ip inside the cluster. Helm replaces lists, so an entry in the chart's
+// servers list would replace the Cozystack Corefile; extraConfig is a map
+// merged with the chart defaults and renders before the default server, so
+// a separate server block authoritative for host leaves the Cozystack
+// Corefile untouched. The indentation matches the chart's Corefile block.
+func CoreDNSHostsAddon(host, ip string) M {
+	block := "{\n      hosts {\n        " + ip + " " + host + "\n        ttl 30\n      }\n    }"
+	return M{"valuesOverride": M{"coredns": M{"extraConfig": M{host + ":53": M{"parameters": block}}}}}
 }
 
 // tierNodeRoles labels the tier workers that host the tier ingress controller.

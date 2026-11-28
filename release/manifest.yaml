@@ -232,7 +232,7 @@ artifacts:
   ref: oci://ghcr.io/tym83/aep/charts/aep-mcp
   signature: required-at-publish
   version: 0.1.5
-- digest: sha256:e342e30ccbb291c032ea63df1b5e7b8e42340ea80f76750641b02f2ef86d1df7
+- digest: sha256:d09c401a981cc5aa3da43db19b26041c0fc5ad7ab6cc29447a883ced985411b3
   kind: chart
   layout: release/artifacts
   ref: oci://ghcr.io/tym83/aep/charts/aep-operator
@@ -385,5 +385,5 @@ artifacts:
   ref: registry.k8s.io/kubectl
   signature: sha256:77ca989196efec4180f9ece74600f78388bf5dc6b514f0f26a7ecee0562ab8e8
   version: v1.36.0
-inputs: acb785a9b816b0a254cb711b181c68c1fb7036ae9fa7686b628fdf091bdb5f7d
+inputs: 83be72c970b1bdf3915f62beddd574d1d23c57910e101adc91ad330b9cc493b1
 schema: 1

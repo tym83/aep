@@ -293,6 +293,20 @@ func (f *cpFixture) release(name string) *unstructured.Unstructured {
 // state, until it is Ready.
 func (f *cpFixture) converge() {
 	f.t.Helper()
+	f.install()
+	// Content does not hold hardening, which Organizations wait for.
+	f.expect("ContentReady", false, "waiting for HelmRelease tenant-aepcp/aep-cp-aep-component-types Ready")
+	f.expect("Hardened", true, "")
+	if f.cp.Status.Phase != "Pending" {
+		f.t.Fatal("content must hold Ready", f.cp.Status.Phase)
+	}
+	f.markReady(f.mgmtDyn, helmAPI, "helmreleases", cpNS, "aep-cp-aep-component-types")
+	f.expect("Ready", true, "Control plane is ready")
+}
+
+// install drives a ControlPlane through every step up to its content.
+func (f *cpFixture) install() {
+	f.t.Helper()
 	f.expect("TenantReady", false, "waiting for Tenant tenant-root/aepcp Ready")
 	if !slices.Contains(f.cp.Finalizers, ControlPlaneFinalizer) {
 		f.t.Fatal("finalizer missing")
@@ -329,7 +343,6 @@ func (f *cpFixture) converge() {
 	f.seedIngressMirror()
 	f.expect("IngressReady", false, "waiting for TLS Secret tenant-aepcp/aep-cp-public-tls")
 	f.secret(f.mgmtKube, cpNS, "aep-cp-public-tls", corev1.SecretTypeTLS, map[string][]byte{"tls.crt": []byte("cert")})
-	f.expect("Ready", true, "Control plane is ready")
 }
 
 func TestControlPlaneConverges(t *testing.T) {
@@ -348,7 +361,7 @@ func TestControlPlaneConverges(t *testing.T) {
 	for _, tc := range []struct {
 		t, reason string
 		ok        bool
-	}{{"ContentReady", "NotImplemented", false}, {"AuditReady", "Disabled", true}, {"Hardened", "Reconciled", true}} {
+	}{{"ContentReady", "Reconciled", true}, {"AuditReady", "Disabled", true}, {"Hardened", "Reconciled", true}} {
 		if c := meta.FindStatusCondition(st.Conditions, tc.t); c == nil || (c.Status == metav1.ConditionTrue) != tc.ok || c.Reason != tc.reason {
 			t.Fatalf("%s: %+v", tc.t, c)
 		}
@@ -411,7 +424,7 @@ func TestControlPlaneConverges(t *testing.T) {
 	}
 	t.Run("idempotent", func(t *testing.T) {
 		releases := map[string]any{}
-		for _, name := range []string{"aep-cp-kgateway-crds", "aep-cp-kgateway", "aep-cp-openchoreo-control-plane"} {
+		for _, name := range []string{"aep-cp-kgateway-crds", "aep-cp-kgateway", "aep-cp-openchoreo-control-plane", "aep-cp-aep-component-types"} {
 			releases[name] = f.release(name).Object["spec"]
 		}
 		backend := dataValue(t, portal, "backend-secret")
