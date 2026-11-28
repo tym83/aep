@@ -208,7 +208,8 @@
                                   "type": "string",
                                   "enum": [
                                     "Postgres",
-                                    "Redis"
+                                    "Redis",
+                                    "Kafka"
                                   ]
                                 },
                                 "x-kubernetes-list-type": "set"
@@ -306,7 +307,8 @@
                                   "type": "string",
                                   "enum": [
                                     "Postgres",
-                                    "Redis"
+                                    "Redis",
+                                    "Kafka"
                                   ]
                                 },
                                 "x-kubernetes-list-type": "set"
