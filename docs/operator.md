@@ -354,7 +354,8 @@ serves.
 An Organization is `Rejected` when `spec.controlPlaneRef` names a ControlPlane
 that does not exist, or when a ControlPlane tenant namespace equals one of the
 Organization's (`tenant-<org>`, `tenant-<org>-<tier>`); a ControlPlane is
-`Rejected` for the same collision, whichever came first. The reference is
+`Rejected` for the same collision. Both stay rejected, whichever came first,
+until one is renamed or removed; nothing already installed is deleted. The reference is
 immutable once set. On an Organization that was already reconciled without one,
 the operator accepts a new reference only with the annotation
 `aep.aenix.io/adopt-control-plane=<name>` naming the same ControlPlane;
