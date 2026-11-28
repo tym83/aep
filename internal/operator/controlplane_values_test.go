@@ -2,11 +2,15 @@ package operator
 
 import (
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 func TestControlPlaneValues(t *testing.T) {
@@ -82,5 +86,108 @@ func TestMirrorValuesIdempotent(t *testing.T) {
 		if strings.Contains(string(a), "mirror.local/cache/mirror.local/cache") {
 			t.Fatalf("%s: double prefix %s", chart.Name, a)
 		}
+	}
+}
+
+func goldenSettings() ControlPlaneSettings {
+	return ControlPlaneSettings{Domain: "cp.example.org", Issuer: "https://id.example.org/realms/aep", GatewayHost: "cluster-gateway.cp.aep.internal",
+		PortalTag: "v1.2.3@sha256:0000000000000000000000000000000000000000000000000000000000000000", PortalClientID: "aep-cp-portal",
+		ReadAPIURL: "https://read.example.org", ChangeAPIURL: "https://change.example.org", OIDCCA: true}
+}
+
+func TestControlPlaneValuesGolden(t *testing.T) {
+	got, err := yaml.Marshal(ControlPlaneValues(goldenSettings()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("UPDATE_GOLDEN") == "1" {
+		if err := os.WriteFile("testdata/controlplane-values.yaml", got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile("testdata/controlplane-values.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Fatalf("ControlPlaneValues drifted from testdata/controlplane-values.yaml (UPDATE_GOLDEN=1 regenerates):\n%s", got)
+	}
+}
+
+// The control plane never disables TLS verification, and its bootstrap
+// mappings grant only system clients, so hardening finds nothing to prune.
+func TestControlPlaneValuesSafety(t *testing.T) {
+	for _, s := range []ControlPlaneSettings{goldenSettings(), inventoryControlPlane} {
+		v := ControlPlaneValues(s)
+		b, _ := json.Marshal(v)
+		for _, unsafe := range []string{"NODE_TLS_REJECT_UNAUTHORIZED", `"skip_tls_verify":true`, `InsecureSkipVerify":true`} {
+			if strings.Contains(string(b), unsafe) {
+				t.Fatalf("unsafe %s in %s", unsafe, b)
+			}
+		}
+		if strings.Contains(string(b), "NODE_EXTRA_CA_CERTS") != s.OIDCCA {
+			t.Fatal("the extra CA bundle is mounted exactly when configured")
+		}
+		mappings, _, _ := unstructured.NestedSlice(v, "openchoreoApi", "config", "security", "authorization", "bootstrap", "mappings")
+		if len(mappings) == 0 {
+			t.Fatal("bootstrap mappings must replace the chart defaults")
+		}
+		allowed := DefaultBootstrapBindingSystemClients + "," + orDefault(s.PortalClientID, "openchoreo-backstage-client")
+		for _, m := range mappings {
+			m := m.(M)
+			binding := obj(ocAPI, "ClusterAuthzRoleBinding", "", m["name"].(string), M{"entitlement": m["entitlement"]})
+			if bootstrapBindingOffends(binding, allowed) {
+				t.Fatalf("bootstrap mapping %v would be pruned", m)
+			}
+		}
+	}
+	defaults := ControlPlaneValues(ControlPlaneSettings{Domain: "cp.example.org", Issuer: "https://id.example.org/realms/aep"})
+	if names, _, _ := unstructured.NestedSlice(defaults, "clusterGateway", "tls", "dnsNames"); len(names) != 2 {
+		t.Fatal("an unknown gateway host is not placed in the certificate", names)
+	}
+	for want, path := range map[string][]string{
+		"preferred_username": {"openchoreoApi", "config", "security", "subjects", "user", "mechanisms", "jwt", "readable_id_claim"},
+		"https://id.example.org/realms/aep/.well-known/openid-configuration": {"security", "oidc", "wellKnownEndpoint"},
+		"openchoreo-backstage-client":                                        {"backstage", "auth", "clientId"},
+	} {
+		if got, _, _ := unstructured.NestedString(defaults, path...); got != want {
+			t.Errorf("%v = %q, want %q", path, got, want)
+		}
+	}
+}
+
+// Render the pinned upstream chart with the control plane values: the chart
+// must accept them, and the rendered bootstrap hook must create no group or
+// shared publisher binding.
+func TestControlPlaneChartRendering(t *testing.T) {
+	dir := os.Getenv("AEP_UPSTREAM_CHARTS")
+	if dir == "" {
+		t.Skip("set AEP_UPSTREAM_CHARTS for upstream Helm rendering")
+	}
+	values := PullSecretValues(ControlPlaneChart, "openchoreo-control-plane", MirrorValues(ControlPlaneChart, "mirror.local/cache", ControlPlaneValues(goldenSettings())))
+	b, err := json.Marshal(values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("helm", "template", ControlPlaneChart, filepath.Join(dir, ControlPlaneChart), "--namespace", "openchoreo-control-plane", "--values", "-")
+	cmd.Stdin = strings.NewReader(string(b))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	rendered := string(out)
+	for _, want := range []string{"mirror.local/cache/ghcr.io/tym83/aep-portal:v1.2.3@sha256:", "app-config.production.yaml", "skip_tls_verify: false", "readable_id_claim: preferred_username",
+		"name: " + authzBootstrapName, "serviceAccountName: " + authzBootstrapName, "value: aep-cp-portal", `- "cluster-gateway.cp.aep.internal"`, "NODE_EXTRA_CA_CERTS"} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("rendered chart lacks %q", want)
+		}
+	}
+	for _, unsafe := range []string{"NODE_TLS_REJECT_UNAUTHORIZED", "skip_tls_verify: true", "value: admins", "value: developers", "service_mcp_client", "workload-publisher-binding"} {
+		if strings.Contains(rendered, unsafe) {
+			t.Errorf("rendered chart contains %q", unsafe)
+		}
+	}
+	if n := strings.Count(rendered, "kind: ClusterAuthzRoleBinding"); n != 4 {
+		t.Errorf("rendered %d bootstrap bindings, want the 4 system ones", n)
 	}
 }
