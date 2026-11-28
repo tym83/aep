@@ -10,6 +10,10 @@ import (
 	"slices"
 )
 
+// Once an object is being deleted, the garbage collector and OpenChoreo controllers
+// must still release their finalizers; an update that leaves spec untouched can do nothing else.
+const finalizerReleaseExemption = "!(request.operation == 'UPDATE' && has(oldObject.metadata.deletionTimestamp) && has(object.spec) == has(oldObject.spec) && (!has(object.spec) || object.spec == oldObject.spec))"
+
 // Delegated role administration is safe only when Kubernetes admission also constrains
 // the roles and bindings written by the OpenChoreo API service account.
 func (s *session) admission(ctx context.Context) error {
@@ -66,7 +70,7 @@ func (s *session) admission(ctx context.Context) error {
 	}
 	for _, group := range groups {
 		name := "aep-" + s.o.Name + "-" + group.suffix
-		policy := obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", name, M{"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"openchoreo.dev"}, "apiVersions": []any{"v1alpha1"}, "operations": []any{"CREATE", "UPDATE", "DELETE"}, "resources": stringsAny(group.resources)}}}, "matchConditions": []any{M{"name": "operator-exemption", "expression": "request.userInfo.username != " + string(encoded)}}, "validations": group.checks})
+		policy := obj("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy", "", name, M{"failurePolicy": "Fail", "matchConstraints": M{"resourceRules": []any{M{"apiGroups": []any{"openchoreo.dev"}, "apiVersions": []any{"v1alpha1"}, "operations": []any{"CREATE", "UPDATE", "DELETE"}, "resources": stringsAny(group.resources)}}}, "matchConditions": []any{M{"name": "operator-exemption", "expression": "request.userInfo.username != " + string(encoded)}, M{"name": "finalizer-release", "expression": finalizerReleaseExemption}}, "validations": group.checks})
 		if e = s.cp.apply(ctx, s.o, "validatingadmissionpolicies", policy); e != nil {
 			return e
 		}

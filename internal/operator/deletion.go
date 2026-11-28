@@ -96,6 +96,14 @@ func (s *session) delete(ctx context.Context) error {
 			return e
 		}
 	}
+	// Organizations created by older releases carry admission rules that block finalizer release.
+	if _, e := s.cp.get(ctx, "v1", "namespaces", "", s.o.Name); e == nil {
+		if e = s.admission(ctx); e != nil {
+			return e
+		}
+	} else if !errors.IsNotFound(e) {
+		return e
+	}
 	var external api.ExternalClusterList
 	if err := s.r.List(ctx, &external, client.InNamespace("tenant-"+s.o.Name)); err != nil {
 		return err
