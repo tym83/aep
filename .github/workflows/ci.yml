@@ -77,4 +77,4 @@ jobs:
       - name: Verify mirrored manifests and disconnected transfer
         env:
           AEP_UPSTREAM_CHARTS: ${{ github.workspace }}/release/.cache
-        run: go test ./internal/operator ./internal/release ./internal/registrymirror ./charts
+        run: go test ./internal/operator ./internal/release ./internal/registrymirror ./internal/bridge ./charts
