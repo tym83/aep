@@ -66,6 +66,26 @@ applications disappear; backup operators must explicitly retire obsolete schedul
 Per-tier BackupClasses and CNPG strategies are deliberately retained for historical
 backup restoration. Archive and verify the backup catalog before tenant deletion.
 
+## Manual restore
+
+Restore into a new application in the same tenant namespace, then repoint
+consumers. Create the target with the same version, databases and users, wait for
+`WorkloadsReady`, and reference a Ready backup:
+
+```yaml
+apiVersion: backups.cozystack.io/v1alpha1
+kind: RestoreJob
+metadata:
+  name: orders-restore
+  namespace: tenant-acme-nonprod
+spec:
+  backupRef: {name: <backup name>}
+  targetApplicationRef: {apiGroup: apps.cozystack.io, kind: Postgres, name: orders-restored}
+```
+
+`kubectl get backups.backups.cozystack.io -n <tenant namespace>` lists the backups
+of a Plan; each scheduled run produces one `BackupJob` and one `Backup`.
+
 ## Monthly production restore verification
 
 Enable operator `--restore-verification` (Helm `restoreVerification: true`); the

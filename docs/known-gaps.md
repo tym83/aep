@@ -20,10 +20,9 @@
   cert-manager CA issuer requires both certificate and key in `aep-agent-ca`.
   Each tier has its own CA, also stored on management. A later CSR signing flow
   must remove this residual risk; CA rollover is currently manual.
-- **Backup policy execution is not part of the current bridge.** Organization
-  accepts `services.backupPolicy`, but no Backups Plan is created. Federation
-  mapping, default SecretStore provisioning, and tenant user OIDC RBAC also remain
-  manual. See `docs/operator.md` before deploying.
+- **Federation mapping, default SecretStore provisioning and tenant user OIDC RBAC
+  remain manual.** See `docs/operator.md` before deploying. Managed-service backups
+  are covered by [backup policies](backup.md).
 - **Kafka state is visible only through ServiceClaim status.** Strimzi runs in
   the tier application cluster, which the read API, portal and MCP evidence
   (management-cluster clients) cannot read; Kafka has no backup integration and

@@ -283,8 +283,6 @@ of expiration to require a planned trust rotation.
 - ESO and the `default` ClusterSecretStore/backend on every data plane. The core
   charts do not provision a secret backend; components needing SecretReference
   require that prerequisite.
-- `backupPolicy` is represented in the API but Backups Plan materialization is not
-  implemented by the current bridge. Do not interpret it as a backup guarantee.
 - IdP federation mapping, tenant OIDC/user RBAC, CA rollover/CSR signing,
   decommission workflow, and environment-removal migration are follow-ups. Removed
   environments are not pruned automatically; removal requires platform review.

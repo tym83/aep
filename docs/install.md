@@ -165,6 +165,11 @@ The chart installs the ChangeRequest CRD from `crds/`. Helm does not upgrade or
 remove CRDs automatically: review and apply `config/crd/aep.aenix.io_changerequests.yaml`
 explicitly when upgrading its schema. The CRD is shared by all organizations.
 
+The same applies to the operator chart's Organization CRD: before upgrading the
+operator, apply the release's `config/crd/aep.aenix.io_organizations.yaml` with
+`kubectl apply --server-side --force-conflicts -f`, otherwise new fields and service
+kinds are rejected by the old schema.
+
 Both services use their own in-cluster ServiceAccount; no kubeconfig is mounted.
 The API listens on port 8080. Its chart requires an audience even though the binary
 allows omitting that check. The controller watches ChangeRequests cluster-wide
