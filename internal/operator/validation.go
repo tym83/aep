@@ -30,6 +30,9 @@ func Validate(o *api.Organization) error {
 	if err := validateIntegrations(o); err != nil {
 		return err
 	}
+	if err := validateControlPlaneRef(o); err != nil {
+		return err
+	}
 	for _, ns := range o.Spec.Policy.PlatformNamespaces {
 		if len(validation.IsDNS1123Label(ns)) > 0 || strings.HasPrefix(ns, "dp-") {
 			return fmt.Errorf("platformNamespaces must contain exact namespace names outside dp-*")
@@ -195,4 +198,24 @@ func shortName(name string) string {
 		return name
 	}
 	return fmt.Sprintf("%s-%x", name[:46], sha256.Sum256([]byte(name)))[:63]
+}
+
+// validateControlPlaneRef enforces what the CRD cannot: the API server rule
+// keeps spec.controlPlaneRef immutable once set but cannot read annotations,
+// so an Organization already reconciled without a reference (it carries the
+// finalizer and no accepted reference) may only gain one through the
+// adoption annotation naming the same ControlPlane. The reference is not
+// resolved yet: Organizations still use the legacy aep-cp flags.
+func validateControlPlaneRef(o *api.Organization) error {
+	ref, accepted := o.Spec.ControlPlaneRef, o.Status.ControlPlaneRef
+	if ref != "" && len(validation.IsDNS1123Subdomain(ref)) > 0 {
+		return fmt.Errorf("controlPlaneRef must be a ControlPlane name")
+	}
+	switch {
+	case accepted != "" && ref != accepted:
+		return fmt.Errorf("controlPlaneRef is immutable once set (accepted %q)", accepted)
+	case ref != "" && accepted == "" && slices.Contains(o.Finalizers, finalizer) && o.Annotations[api.AdoptControlPlaneAnnotation] != ref:
+		return fmt.Errorf("setting controlPlaneRef on an existing Organization requires annotation %s=%s", api.AdoptControlPlaneAnnotation, ref)
+	}
+	return nil
 }

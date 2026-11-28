@@ -30,6 +30,9 @@ type Options struct {
 	Namespace, CPSecret, CPFile, CPNamespace, CPCluster, GatewayHostTemplate, BridgeImage string
 	TenantEgressWorkaround, KeycloakEnabled                                               bool
 	KeycloakURL, KeycloakRealm, KeycloakCredentialsSecret                                 string
+	// DefaultControlPlane names the ControlPlane for Organizations without
+	// controlPlaneRef. It is accepted but not resolved yet.
+	DefaultControlPlane string
 }
 type Reconciler struct {
 	client.Client
@@ -85,6 +88,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		o.Status.Phase = "Rejected"
 		return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
 	}
+	// Record an accepted reference before the finalizer marks the
+	// Organization as reconciled, so a failed status write cannot turn a
+	// reference given at creation into an unannotated late change.
+	if o.Spec.ControlPlaneRef != "" && o.Status.ControlPlaneRef == "" {
+		o.Status.ControlPlaneRef = o.Spec.ControlPlaneRef
+		if e := r.Status().Update(ctx, o); e != nil {
+			return ctrl.Result{}, e
+		}
+	}
 	if !slices.Contains(o.Finalizers, finalizer) {
 		base := o.DeepCopy()
 		o.Finalizers = append(o.Finalizers, finalizer)
@@ -123,17 +135,102 @@ type reconcileStep struct {
 	// partial steps are the first half of a condition completed by a later
 	// step; success does not mark the condition True.
 	partial bool
+	// nonBlocking failures leave later steps running.
+	nonBlocking bool
+	// holdsReady failures, when nonBlocking, keep the phase Pending after
+	// all other steps succeeded.
+	holdsReady bool
+	// reason, when it returns non-empty, replaces the failure reason.
+	reason func(error) string
+	// message replaces the success message.
+	message func() string
 }
 
-// Policy delivery is observable independently of organization access.
-func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []reconcileStep) (ctrl.Result, error) {
-	o.Status.Phase = "Reconciling"
-	for _, t := range conditionTypes {
-		if c := meta.FindStatusCondition(o.Status.Conditions, t); c == nil || c.ObservedGeneration != o.Generation {
-			setCondition(o, t, false, "Pending", "Waiting for dependencies")
+// stepStatus is the status surface of a resource driven by runReconcileSteps.
+type stepStatus interface {
+	// conditionTypes are reset to Pending when stale for the generation.
+	conditionTypes() []string
+	conditions() []metav1.Condition
+	generation() int64
+	setCondition(t string, ok bool, reason, msg string)
+	setPhase(string)
+	// readyPhase is the phase after every step succeeded.
+	readyPhase() string
+	updateStatus(context.Context) error
+}
+
+// organizationStatus adapts an Organization to the step runner.
+type organizationStatus struct {
+	r *Reconciler
+	o *api.Organization
+}
+
+func (s organizationStatus) conditionTypes() []string       { return conditionTypes }
+func (s organizationStatus) conditions() []metav1.Condition { return s.o.Status.Conditions }
+func (s organizationStatus) generation() int64              { return s.o.Generation }
+func (s organizationStatus) setPhase(phase string)          { s.o.Status.Phase = phase }
+func (s organizationStatus) updateStatus(ctx context.Context) error {
+	return s.r.Status().Update(ctx, s.o)
+}
+func (s organizationStatus) setCondition(t string, ok bool, reason, msg string) {
+	setCondition(s.o, t, ok, reason, msg)
+}
+func (s organizationStatus) readyPhase() string {
+	if !meta.IsStatusConditionTrue(s.o.Status.Conditions, "ControlPlaneHardened") {
+		return "Pending"
+	}
+	return "Ready"
+}
+
+// organizationStepPolicy marks the Organization steps that do not block the
+// others. Policy delivery is observable independently of organization access.
+func organizationStepPolicy(o *api.Organization, steps []reconcileStep) []reconcileStep {
+	out := slices.Clone(steps)
+	for i := range out {
+		switch out[i].name {
+		case "VCSReady":
+			out[i].nonBlocking = true
+			out[i].message = func() string {
+				if o.Spec.VCS == nil {
+					return "Corporate VCS not configured"
+				}
+				return "Desired state verified"
+			}
+		case "ArgoCDReady":
+			out[i].nonBlocking = true
+			out[i].message = func() string {
+				if o.Status.ArgoCDURL != "" {
+					return o.Status.ArgoCDURL
+				}
+				return "Argo CD disabled"
+			}
+		case "PoliciesReady":
+			out[i].nonBlocking, out[i].holdsReady = true, true
+			out[i].reason = func(err error) string {
+				if errors.Is(err, errCosignKeyMissing) {
+					return "CosignKeyMissing"
+				}
+				return ""
+			}
 		}
 	}
-	var policyErr error
+	return out
+}
+
+func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []reconcileStep) (ctrl.Result, error) {
+	return runReconcileSteps(ctx, organizationStatus{r: r, o: o}, organizationStepPolicy(o, steps))
+}
+
+// runReconcileSteps runs steps in order and records one condition per step
+// name. A blocking failure marks later steps DependencyPending and stops.
+func runReconcileSteps(ctx context.Context, st stepStatus, steps []reconcileStep) (ctrl.Result, error) {
+	st.setPhase("Reconciling")
+	for _, t := range st.conditionTypes() {
+		if c := meta.FindStatusCondition(st.conditions(), t); c == nil || c.ObservedGeneration != st.generation() {
+			st.setCondition(t, false, "Pending", "Waiting for dependencies")
+		}
+	}
+	held := false
 	for index, step := range steps {
 		err := step.run(ctx)
 		if err != nil {
@@ -142,24 +239,23 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 			if errors.As(err, &waiting) {
 				reason = "Pending"
 			}
-			setCondition(o, step.name, false, reason, err.Error())
-			if step.name == "VCSReady" || step.name == "ArgoCDReady" {
-				continue
-			}
-			if step.name == "PoliciesReady" {
-				policyErr = err
-				if errors.Is(err, errCosignKeyMissing) {
-					setCondition(o, step.name, false, "CosignKeyMissing", err.Error())
+			if step.reason != nil {
+				if custom := step.reason(err); custom != "" {
+					reason = custom
 				}
+			}
+			st.setCondition(step.name, false, reason, err.Error())
+			if step.nonBlocking {
+				held = held || step.holdsReady
 				continue
 			}
 			for _, dependent := range steps[index+1:] {
 				if dependent.name != step.name {
-					setCondition(o, dependent.name, false, "DependencyPending", "Waiting for "+step.name)
+					st.setCondition(dependent.name, false, "DependencyPending", "Waiting for "+step.name)
 				}
 			}
-			o.Status.Phase = "Pending"
-			if e := r.Status().Update(ctx, o); e != nil {
+			st.setPhase("Pending")
+			if e := st.updateStatus(ctx); e != nil {
 				return ctrl.Result{}, e
 			}
 			if waiting != nil {
@@ -169,31 +265,21 @@ func (r *Reconciler) runSteps(ctx context.Context, o *api.Organization, steps []
 		}
 		if !step.partial {
 			message := "Desired state verified"
-			if step.name == "ArgoCDReady" {
-				if o.Status.ArgoCDURL != "" {
-					message = o.Status.ArgoCDURL
-				} else {
-					message = "Argo CD disabled"
-				}
+			if step.message != nil {
+				message = step.message()
 			}
-			if step.name == "VCSReady" && o.Spec.VCS == nil {
-				message = "Corporate VCS not configured"
-			}
-			setCondition(o, step.name, true, "Reconciled", message)
+			st.setCondition(step.name, true, "Reconciled", message)
 		}
 	}
-	if policyErr != nil {
-		o.Status.Phase = "Pending"
-		if err := r.Status().Update(ctx, o); err != nil {
+	if held {
+		st.setPhase("Pending")
+		if err := st.updateStatus(ctx); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: time.Minute}, nil
 	}
-	o.Status.Phase = "Ready"
-	if !meta.IsStatusConditionTrue(o.Status.Conditions, "ControlPlaneHardened") {
-		o.Status.Phase = "Pending"
-	}
-	return ctrl.Result{RequeueAfter: time.Minute}, r.Status().Update(ctx, o)
+	st.setPhase(st.readyPhase())
+	return ctrl.Result{RequeueAfter: time.Minute}, st.updateStatus(ctx)
 }
 func setCondition(o *api.Organization, t string, ok bool, reason, msg string) {
 	status := metav1.ConditionFalse

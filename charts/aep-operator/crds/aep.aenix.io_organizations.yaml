@@ -63,6 +63,13 @@
                   "costCenter": {
                     "type": "string"
                   },
+                  "controlPlaneRef": {
+                    "type": "string",
+                    "description": "Name of the ControlPlane that serves this Organization. Empty uses the operator default control plane or the legacy aep-cp flags. Immutable once set; setting it on an existing Organization requires the annotation aep.aenix.io/adopt-control-plane with the same name.",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+                  },
                   "quotas": {
                     "type": "object",
                     "required": [
@@ -582,6 +589,10 @@
                   {
                     "rule": "self.environments.all(e, oldSelf.environments.all(o, o.name != e.name || has(o.dataPlane) == has(e.dataPlane)))",
                     "message": "Environment DataPlane selection is immutable; create a new environment"
+                  },
+                  {
+                    "rule": "!has(oldSelf.controlPlaneRef) || (has(self.controlPlaneRef) && self.controlPlaneRef == oldSelf.controlPlaneRef)",
+                    "message": "controlPlaneRef is immutable once set"
                   }
                 ]
               },
@@ -589,6 +600,9 @@
                 "type": "object",
                 "properties": {
                   "phase": {
+                    "type": "string"
+                  },
+                  "controlPlaneRef": {
                     "type": "string"
                   },
                   "deletionStarted": {

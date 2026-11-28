@@ -6,9 +6,16 @@ bridgeImage:
   repository: ghcr.io/tym83/aep-bridge
   tag: ""
   digest: ""
+# Legacy aep-cp access: management namespace/name Secret, key super-admin.svc.
+# Required unless controlPlane.default is set.
 aepcpKubeconfigSecret: ""
 aepcpTenantNamespace: tenant-aep-cp
 aepcpCluster: aepcp
+controlPlane:
+  # Name of the ControlPlane resource for Organizations without
+  # spec.controlPlaneRef. ControlPlanes are validated but not yet installed by
+  # this release, so Organizations still need aepcpKubeconfigSecret.
+  default: ""
 gatewayHostTemplate: 'cluster-gateway.{{.DashedIP}}.nip.io'
 tenantEgressWorkaround: true
 pruneBootstrapBindings: true

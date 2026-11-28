@@ -193,8 +193,9 @@ justify transferring ownership to pre-existing objects.
 |---|---|
 | `--mgmt-kubeconfig` | Empty: in-cluster credentials |
 | `--namespace` | `aep-system`; chart uses its release namespace |
-| `--aepcp-kubeconfig-secret` | Required unless local file; management `namespace/name`, key `super-admin.svc` |
+| `--aepcp-kubeconfig-secret` | Required unless local file or `--default-control-plane`; management `namespace/name`, key `super-admin.svc` |
 | `--aepcp-kubeconfig` | Local file; mutually exclusive with Secret reference |
+| `--default-control-plane` | Empty; `ControlPlane` name for Organizations without `controlPlaneRef` (chart `controlPlane.default`); makes the legacy kubeconfig optional. Not resolved yet, see below |
 | `--aepcp-tenant-namespace` | `tenant-aep-cp` |
 | `--aepcp-cluster` | `aepcp` |
 | `--gateway-host-template` | `cluster-gateway.{{.DashedIP}}.nip.io`; also exposes `.ClusterIP` |
@@ -212,6 +213,31 @@ Local execution still needs routes to the internal tier API Service addresses;
 Use explicit local aep-cp kubeconfig/port-forward if needed. The management operator
 is the supported continuous mode. Do not persist port-forward endpoints in tier
 credentials used by bridge pods.
+
+## ControlPlane resource (not yet reconciled)
+
+`ControlPlane.aep.aenix.io/v1alpha1` (cluster-scoped, short name `aepcp`)
+declares an operator-managed aep-cp: Cozystack tenant and cluster, `domain`
+(`console.<domain>`, `api.<domain>`), ingress with exactly one of
+`clusterIssuer` or `tlsSecretRef`, OIDC, portal, cluster gateway host, content,
+audit, backup and adoption. The CRD defaults the tenant (`tenant-root`/`aepcp`, namespace `tenant-aepcp`;
+tenant names are alphanumeric because Cozystack joins them with dashes),
+cluster (`aepcp`, `v1.35`, `replicated`, 3–4 × `u1.large`, 20Gi) and portal
+database, and keeps the tenant and cluster names immutable.
+
+This release only validates ControlPlanes: `Ready` stays False with reason
+`NotImplemented` for a valid spec, `InvalidSpec` (phase `Rejected`) otherwise,
+or `Suspended` when `spec.suspend` is set. The operator creates nothing for a
+ControlPlane, and objects it will own are labelled
+`aep.aenix.io/control-plane=<UID>`, never with the Organization label.
+
+`Organization.spec.controlPlaneRef` is accepted and recorded in
+`status.controlPlaneRef` but not resolved: every Organization still uses the
+legacy `--aepcp-*` flags, so keep `aepcpKubeconfigSecret` set even when
+`controlPlane.default` is. The reference is immutable once set. On an
+Organization that was already reconciled without one, the operator accepts a new
+reference only with the annotation `aep.aenix.io/adopt-control-plane=<name>`
+naming the same ControlPlane; otherwise the Organization is `Rejected`.
 
 ## Kafka
 
