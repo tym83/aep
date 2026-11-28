@@ -385,5 +385,5 @@ artifacts:
   ref: registry.k8s.io/kubectl
   signature: sha256:77ca989196efec4180f9ece74600f78388bf5dc6b514f0f26a7ecee0562ab8e8
   version: v1.36.0
-inputs: cc32b1501b4904e31616917c2e11e3ff2df602537b16fe149c78b32d5ed34eb5
+inputs: acb785a9b816b0a254cb711b181c68c1fb7036ae9fa7686b628fdf091bdb5f7d
 schema: 1
