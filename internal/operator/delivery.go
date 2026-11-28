@@ -13,6 +13,7 @@ var charts = []struct{ name, version, url string }{
 }
 
 func (s *session) delivery(ctx context.Context) error {
+	var waiting error
 	for _, tier := range Tiers(s.o) {
 		c, e := s.bootstrap(ctx, tier)
 		if e != nil {
@@ -69,8 +70,14 @@ func (s *session) delivery(ctx context.Context) error {
 				return e
 			}
 		}
+		if e = s.deliverGatewayParameters(ctx, c); e != nil {
+			if _, ok := e.(*pendingError); !ok {
+				return s.contractDrift(ctx, tier, e)
+			}
+			waiting = e
+		}
 	}
-	return nil
+	return waiting
 }
 func (s *session) connected(ctx context.Context) error {
 	for _, tier := range Tiers(s.o) {

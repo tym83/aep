@@ -39,8 +39,9 @@ func operatorRules() []any {
 }
 func roleScopes(org string) map[string][]any {
 	return map[string][]any{
-		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"})},
-		"kube-system":           {rule("", []string{"secrets"}, []string{"list"})},
+		"openchoreo-data-plane": {rule("", []string{"secrets", "configmaps"}, []string{"get", "create", "patch"}),
+			rule("gateway.kgateway.dev", []string{"gatewayparameters"}, []string{"get", "create", "patch"})},
+		"kube-system": {rule("", []string{"secrets"}, []string{"list"})},
 		"aep-system": {M{"apiGroups": []any{""}, "resources": []any{"serviceaccounts/token"}, "resourceNames": []any{"aep-bridge", "aep-operator"}, "verbs": []any{"create"}},
 			// Build credentials for the workflow plane's local secret store and
 			// the registry pull credential that Kyverno clones into environments.
