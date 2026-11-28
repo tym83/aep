@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/url"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"text/template"
@@ -81,6 +82,8 @@ func ControlPlaneNamespace(cp *api.ControlPlane) string {
 	return cp.Spec.Tenant.Parent + "-" + cp.Spec.Tenant.Name
 }
 
+var tenantName = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
+
 // ValidateControlPlane repeats the CRD rules, so a stale CRD cannot admit an
 // unsafe spec, and adds checks the schema cannot express.
 func ValidateControlPlane(cp *api.ControlPlane) error {
@@ -91,8 +94,9 @@ func ValidateControlPlane(cp *api.ControlPlane) error {
 	if !strings.HasPrefix(s.Tenant.Parent, "tenant-") || len(validation.IsDNS1123Label(s.Tenant.Parent)) > 0 {
 		return fmt.Errorf("tenant.parent must be a tenant namespace")
 	}
-	if len(validation.IsDNS1123Label(s.Tenant.Name)) > 0 || len(s.Tenant.Name) > 32 {
-		return fmt.Errorf("tenant.name must be a DNS label of at most 32 characters")
+	// Cozystack joins tenant names with dashes, so a dash would be ambiguous.
+	if !tenantName.MatchString(s.Tenant.Name) {
+		return fmt.Errorf("tenant.name must be 1-32 lowercase alphanumeric characters")
 	}
 	if ns := ControlPlaneNamespace(cp); len(validation.IsDNS1123Label(ns)) > 0 {
 		return fmt.Errorf("tenant namespace %s is not a valid namespace name", ns)

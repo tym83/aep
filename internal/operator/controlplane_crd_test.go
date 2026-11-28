@@ -105,7 +105,7 @@ func TestControlPlaneCRDDefaults(t *testing.T) {
 		t.Fatal(errs)
 	}
 	b, _ := json.Marshal(got["spec"])
-	for _, want := range []string{`"parent":"tenant-root"`, `"name":"aep-cp"`, `"name":"aepcp"`, `"version":"v1.35"`, `"storageClass":"replicated"`,
+	for _, want := range []string{`"parent":"tenant-root"`, `"name":"aepcp"`, `"name":"aepcp"`, `"version":"v1.35"`, `"storageClass":"replicated"`,
 		`"instanceType":"u1.large"`, `"minReplicas":3`, `"maxReplicas":4`, `"diskSize":"20Gi"`, `"className":"tenant-root"`,
 		`"usernameClaim":"preferred_username"`, `"clientID":"openchoreo-backstage-client"`, `"cliClientID":"openchoreo-cli"`,
 		`"size":"5Gi"`, `"replicas":1`, `"resourcesPreset":"small"`, `"componentTypes":true`} {
@@ -149,6 +149,7 @@ func TestControlPlaneCRDValidation(t *testing.T) {
 		{"bad preset", func(s M) { s["portal"] = M{"database": M{"resourcesPreset": "t1.small"}} }, "resourcesPreset"},
 		{"bad adoption", func(s M) { s["adoption"] = M{"confirm": "aepcp"} }, "spec.adoption.confirm"},
 		{"bad parent", func(s M) { s["tenant"] = M{"parent": "aepdev"} }, "spec.tenant.parent"},
+		{"dashed tenant name", func(s M) { s["tenant"] = M{"name": "aep-cp"} }, "spec.tenant.name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, errs := a.admit(t, edit(base, tc.change), nil)

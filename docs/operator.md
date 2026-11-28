@@ -220,7 +220,8 @@ credentials used by bridge pods.
 declares an operator-managed aep-cp: Cozystack tenant and cluster, `domain`
 (`console.<domain>`, `api.<domain>`), ingress with exactly one of
 `clusterIssuer` or `tlsSecretRef`, OIDC, portal, cluster gateway host, content,
-audit, backup and adoption. The CRD defaults the tenant (`tenant-root`/`aep-cp`),
+audit, backup and adoption. The CRD defaults the tenant (`tenant-root`/`aepcp`, namespace `tenant-aepcp`;
+tenant names are alphanumeric because Cozystack joins them with dashes),
 cluster (`aepcp`, `v1.35`, `replicated`, 3–4 × `u1.large`, 20Gi) and portal
 database, and keeps the tenant and cluster names immutable.
 

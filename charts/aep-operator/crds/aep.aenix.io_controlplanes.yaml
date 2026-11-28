@@ -342,9 +342,11 @@ spec:
                   namespace is tenant-<name> under tenant-root, otherwise <parent>-<name>.
                 properties:
                   name:
-                    default: aep-cp
+                    default: aepcp
+                    description: 'Name is alphanumeric: Cozystack joins tenant names
+                      with dashes.'
                     maxLength: 32
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    pattern: ^[a-z0-9]+$
                     type: string
                     x-kubernetes-validations:
                     - message: tenant name is immutable

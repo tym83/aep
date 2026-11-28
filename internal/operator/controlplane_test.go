@@ -18,7 +18,7 @@ import (
 func controlPlane() *api.ControlPlane {
 	enabled := true
 	return &api.ControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "default", UID: "cp-uid", Generation: 2}, Spec: api.ControlPlaneSpec{
-		Tenant:  api.ControlPlaneTenant{Parent: "tenant-root", Name: "aep-cp"},
+		Tenant:  api.ControlPlaneTenant{Parent: "tenant-root", Name: "aepcp"},
 		Cluster: api.ControlPlaneCluster{Name: "aepcp", Version: "v1.35", StorageClass: "replicated", NodeGroup: api.ControlPlaneNodeGroup{InstanceType: "u1.large", MinReplicas: 3, MaxReplicas: 4, DiskSize: "20Gi"}},
 		Domain:  "cp.example.com",
 		Ingress: api.ControlPlaneIngress{ClassName: "tenant-root", ClusterIssuer: "letsencrypt-prod"},
@@ -40,7 +40,7 @@ func defaultedSpec(t *testing.T, raw json.RawMessage) api.ControlPlaneSpec {
 
 func TestControlPlaneNamespace(t *testing.T) {
 	cp := controlPlane()
-	if ns := ControlPlaneNamespace(cp); ns != "tenant-aep-cp" {
+	if ns := ControlPlaneNamespace(cp); ns != "tenant-aepcp" {
 		t.Fatal(ns)
 	}
 	cp.Spec.Tenant = api.ControlPlaneTenant{Parent: "tenant-aepdev", Name: "cp2"}
@@ -60,6 +60,7 @@ func TestValidateControlPlane(t *testing.T) {
 	}{
 		{"long name", func(cp *api.ControlPlane) { cp.Name = strings.Repeat("a", 41) }, "name must be"},
 		{"parent outside tenants", func(cp *api.ControlPlane) { cp.Spec.Tenant.Parent = "kube-system" }, "tenant.parent"},
+		{"dashed tenant name", func(cp *api.ControlPlane) { cp.Spec.Tenant.Name = "aep-cp" }, "tenant.name must be"},
 		{"namespace too long", func(cp *api.ControlPlane) {
 			cp.Spec.Tenant = api.ControlPlaneTenant{Parent: "tenant-" + strings.Repeat("p", 40), Name: strings.Repeat("n", 30)}
 		}, "not a valid namespace"},
@@ -82,7 +83,7 @@ func TestValidateControlPlane(t *testing.T) {
 		{"bad forwarder", func(cp *api.ControlPlane) { cp.Spec.Audit = &api.ControlPlaneAudit{ForwarderService: "forwarder"} }, "audit.forwarderService"},
 		{"adoption mismatch", func(cp *api.ControlPlane) {
 			cp.Spec.Adoption = &api.ControlPlaneAdoption{Confirm: "tenant-aepdev-cp/aepcp"}
-		}, "adoption.confirm must be tenant-aep-cp/aepcp"},
+		}, "adoption.confirm must be tenant-aepcp/aepcp"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp := controlPlane()
@@ -94,7 +95,7 @@ func TestValidateControlPlane(t *testing.T) {
 	}
 	cp := controlPlane()
 	cp.Spec.Content.ResourceTypes = []string{"cozystack-redis", "cozystack-postgres"}
-	cp.Spec.Adoption = &api.ControlPlaneAdoption{Confirm: "tenant-aep-cp/aepcp"}
+	cp.Spec.Adoption = &api.ControlPlaneAdoption{Confirm: "tenant-aepcp/aepcp"}
 	cp.Spec.Ingress = api.ControlPlaneIngress{ClassName: "tenant-root", TLSSecretRef: &api.SecretNameReference{Name: "tls"}}
 	if err := ValidateControlPlane(cp); err != nil {
 		t.Fatal(err)

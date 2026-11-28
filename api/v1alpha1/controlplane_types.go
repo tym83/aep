@@ -51,9 +51,10 @@ type ControlPlaneTenant struct {
 	// +kubebuilder:validation:Pattern=`^tenant-[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="tenant parent is immutable"
 	Parent string `json:"parent,omitempty"`
-	// +kubebuilder:default=aep-cp
+	// Name is alphanumeric: Cozystack joins tenant names with dashes.
+	// +kubebuilder:default=aepcp
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]+$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="tenant name is immutable"
 	Name string `json:"name,omitempty"`
 	// Quotas are Cozystack tenant resourceQuotas, for example cpu or memory.
